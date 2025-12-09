@@ -8,7 +8,6 @@ import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
 
 
 // Schema definitions
@@ -253,17 +252,18 @@ export async function deleteProject(projectId: string) {
 // Data fetching functions
 
 export const getUsers = async (): Promise<User[]> => {
-  const usersCol = db.collection('users');
-  const userSnapshot = await usersCol.get();
-  const userList = userSnapshot.docs.map(doc => {
-    const data = doc.data();
-    return {
-      ...data,
-      uid: doc.id,
-      createdAt: (data.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
-    } as User;
-  });
-  return userList;
+    const usersCol = db.collection('users');
+    const userSnapshot = await usersCol.get();
+    const userList = userSnapshot.docs.map(doc => {
+      const data = doc.data();
+      const createdAt = data.createdAt as FirebaseFirestore.Timestamp;
+      return {
+        ...data,
+        uid: doc.id, // Use the document ID as the uid
+        createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
+      } as User;
+    });
+    return userList;
 };
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
@@ -302,10 +302,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
     }
     
     const projectData = projectDoc.data()!;
+    const createdAtTimestamp = projectData.createdAt as FirebaseFirestore.Timestamp;
     const project: Project = { 
         id: projectDoc.id, 
         ...projectData,
-        createdAt: (projectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString()
+        createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
     } as Project;
   
     const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
@@ -325,10 +326,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         let latestLog = null;
         if (logsSnapshot.docs.length > 0) {
             const logData = logsSnapshot.docs[0].data();
+            const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
             latestLog = {
                 ...logData,
                 id: logsSnapshot.docs[0].id,
-                updatedAt: (logData.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+                updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog
         }
@@ -339,13 +341,13 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             : true;
 
         const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
-        const createdAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
+        const subProjectCreatedAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
 
         subProjects.push({
             ...subProjectData,
             id: subProjectDoc.id,
             expectedCompletionDate: expectedCompletionDateTimestamp ? expectedCompletionDateTimestamp.toDate().toISOString() : new Date().toISOString(),
-            createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
+            createdAt: subProjectCreatedAtTimestamp ? subProjectCreatedAtTimestamp.toDate().toISOString() : new Date().toISOString(),
             projectId: project.id,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
@@ -364,7 +366,15 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const projectsCol = db.collection('projects');
     const projectsSnapshot = await projectsCol.get();
-    const projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+    const projects = projectsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const createdAt = data.createdAt as FirebaseFirestore.Timestamp;
+        return { 
+            id: doc.id, 
+            ...data,
+            createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
+        } as Project
+    });
 
     const users = await getUsers();
 
@@ -386,10 +396,11 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             let latestLog = null;
             if (logsSnapshot.docs.length > 0) {
                  const logData = logsSnapshot.docs[0].data();
+                 const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
                  latestLog = {
                     ...logData,
                     id: logsSnapshot.docs[0].id,
-                    updatedAt: (logData.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+                    updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
                     createdByName: userMap.get(logData.createdBy),
                  } as ProgressLog;
             }
