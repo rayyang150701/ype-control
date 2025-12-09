@@ -73,7 +73,7 @@ const TimelineItem = ({ log, isLast }: { log: ProgressLog; isLast: boolean }) =>
             <div className="mb-2 flex items-center justify-between">
                 <p className="font-semibold text-primary">{log.reportingPeriod}</p>
                 <p className="text-xs text-muted-foreground">
-                {format(log.updatedAt.toDate(), 'yyyy/MM/dd HH:mm')} by {log.createdByName}
+                {format(log.updatedAt as Date, 'yyyy/MM/dd HH:mm')} by {log.createdByName}
                 </p>
             </div>
             <div className="space-y-4 rounded-md border p-4">

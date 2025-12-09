@@ -83,11 +83,14 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
             return {
                 ...sp,
+                expectedCompletionDate: sp.expectedCompletionDate.toDate(),
+                createdAt: sp.createdAt.toDate(),
                 projectName: project?.name,
                 projectCaseNumber: project?.caseNumber,
                 ownerName: owner?.displayName,
                 latestLog: latestLog ? {
                     ...latestLog,
+                    updatedAt: latestLog.updatedAt.toDate(),
                     createdByName: mockUsers.find(u => u.uid === latestLog.createdBy)?.displayName,
                 } : null,
                 isOverdue
@@ -104,9 +107,10 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
             .filter(log => log.id.startsWith(`log-${subProjectId.split('-')[1]}-${subProjectId.split('-')[2]}`))
             .map(log => ({
                 ...log,
+                updatedAt: log.updatedAt.toDate(),
                 createdByName: mockUsers.find(u => u.uid === log.createdBy)?.displayName
             }))
-            .sort((a, b) => b.updatedAt.seconds - a.updatedAt.seconds);
+            .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
         resolve(logs);
     }, 700));
 };
@@ -121,6 +125,10 @@ export const addProgressLog = async (subProjectId: string, logData: Omit<Progres
         };
         mockProgressLogs.push(newLog);
         console.log("Added new log:", newLog);
-        resolve(newLog);
+        const resolvedLog = {
+            ...newLog,
+            updatedAt: newLog.updatedAt.toDate()
+        }
+        resolve(resolvedLog);
     }, 500));
 }

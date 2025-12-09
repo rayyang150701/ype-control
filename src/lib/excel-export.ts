@@ -78,7 +78,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[])
   ];
 
   subProjects.forEach(sp => {
-    const expectedDate = sp.expectedCompletionDate.toDate();
+    const expectedDate = sp.expectedCompletionDate as Date;
     const completionPercentage = sp.latestLog?.completionPercentage ?? 0;
     const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
 
@@ -142,7 +142,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
             log.nextWeekPlan,
             log.roadblocks || '無',
             log.completionPercentage,
-            format(log.updatedAt.toDate(), 'yyyy/MM/dd HH:mm'),
+            format(log.updatedAt as Date, 'yyyy/MM/dd HH:mm'),
             log.createdByName ?? ''
         ]);
     });

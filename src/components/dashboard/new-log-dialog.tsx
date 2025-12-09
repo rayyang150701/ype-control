@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { add, sub } from 'date-fns/locale/add';
-import { addProgressLog, getAiSuggestions } from '@/lib/actions';
+import { addProgressLog as serverAddProgressLog, getAiSuggestions } from '@/lib/actions';
+import { addProgressLog as clientAddProgressLog } from '@/lib/data';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -99,11 +100,16 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
 
   const onSubmit = (data: LogFormData) => {
     startTransition(async () => {
-      // Here you would call a server action to save the data
-      // For now, we simulate it
-      console.log({ ...data, reportingPeriod, subProjectId: subProject.id });
-      await new Promise(res => setTimeout(res, 1000));
-      onLogAdded({ ...data, id: Date.now().toString(), updatedAt: {seconds: Date.now()/1000, nanoseconds:0, toDate:()=>new Date()}, createdBy: 'user-1', reportingPeriod } as ProgressLog, subProject.id);
+      const newLogData = {
+        ...data,
+        roadblocks: data.roadblocks ?? '',
+        reportingPeriod,
+      };
+
+      const newLog = await clientAddProgressLog(subProject.id, newLogData);
+      
+      onLogAdded(newLog, subProject.id);
+
       toast({ title: '週報新增成功' });
       setIsOpen(false);
     });
