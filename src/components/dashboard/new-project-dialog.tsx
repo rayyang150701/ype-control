@@ -87,7 +87,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[700px]">
+      <DialogContent className="sm:max-w-[700px]" modal={false}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle className="font-headline text-xl">新增專案</DialogTitle>
@@ -162,9 +162,9 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                     {/* 預計完成日 */}
                     <div className="col-span-6 sm:col-span-4">
                       <Label>預計完成日</Label>
-                      <Controller
-                        name={`subProjects.${index}.expectedCompletionDate`}
+                       <Controller
                         control={control}
+                        name={`subProjects.${index}.expectedCompletionDate`}
                         render={({ field }) => (
                           <Popover>
                             <PopoverTrigger asChild>
@@ -176,7 +176,11 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                 )}
                               >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? format(field.value, "yyyy/MM/dd") : <span>選擇日期</span>}
+                                {field.value ? (
+                                  format(field.value, "yyyy/MM/dd")
+                                ) : (
+                                  <span>選擇日期</span>
+                                )}
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0" align="start">
@@ -192,7 +196,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                       />
                       {errors.subProjects?.[index]?.expectedCompletionDate && (
                         <p className="text-sm text-destructive">
-                          {errors.subProjects?.[index]?.expectedCompletionDate?.message}
+                          {errors.subProjects[index]?.expectedCompletionDate?.message}
                         </p>
                       )}
                     </div>
