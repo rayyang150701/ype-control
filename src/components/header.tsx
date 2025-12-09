@@ -31,10 +31,10 @@ export function Header() {
             <Image
               src={logo.imageUrl}
               alt={logo.description}
-              width={120}
+              width={240}
               height={40}
               data-ai-hint={logo.imageHint}
-              className="hidden sm:block"
+              className="hidden sm:block object-contain"
             />
           )}
           <h1 className="font-headline text-xl md:text-2xl lg:text-3xl font-bold text-primary whitespace-nowrap">
