@@ -4,9 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
-import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy, getDoc } from 'firebase/firestore';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import type { User, ProgressLog } from '@/types';
+
+// IMPORTANT: Import from 'firebase-admin' not 'firebase-admin/firestore'
+// to avoid module resolution conflicts with client-side 'firebase/firestore'
+import { getFirestore } from 'firebase-admin/firestore';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -23,30 +26,30 @@ const projectSchema = z.object({
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const { firestore } = await initializeFirebaseOnServer();
-    const batch = writeBatch(firestore);
+    const batch = firestore.batch();
 
     // This is a placeholder for the current user's ID.
     // In a real application, you would get this from the authenticated user session.
     const userId = 'user-3'; // Assuming Charlie (Admin) is creating the project
 
-    const newProjectRef = doc(collection(firestore, 'projects'));
+    const newProjectRef = firestore.collection('projects').doc();
     const newProjectData = {
         name: data.name,
         caseNumber: data.caseNumber,
         status: 'active',
         createdBy: userId,
-        createdAt: serverTimestamp(),
+        createdAt: getFirestore().FieldValue.serverTimestamp(),
     };
     batch.set(newProjectRef, newProjectData);
 
     data.subProjects.forEach(subProject => {
-        const newSubProjectRef = doc(collection(firestore, `projects/${newProjectRef.id}/sub_projects`));
+        const newSubProjectRef = firestore.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
         const newSubProjectData = {
             name: subProject.name,
             owner: subProject.owner,
             expectedCompletionDate: subProject.expectedCompletionDate,
             projectId: newProjectRef.id,
-            createdAt: serverTimestamp(),
+            createdAt: getFirestore().FieldValue.serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
     });
@@ -71,13 +74,11 @@ export async function addProgressLog (
     // In a real application, you would get this from the authenticated user session.
     const userId = 'user-1'; 
 
-    // To add a progress log, we need the project ID. We can find it by querying projects.
-    // This is not efficient, a better data model would have projectId on the subproject card.
-    const projectsSnapshot = await getDocs(collection(firestore, 'projects'));
+    const projectsSnapshot = await firestore.collection('projects').get();
     let projectId: string | null = null;
     for (const projectDoc of projectsSnapshot.docs) {
-        const subProjectDoc = await getDoc(doc(firestore, `projects/${projectDoc.id}/sub_projects`, subProjectId));
-        if (subProjectDoc.exists()) {
+        const subProjectDoc = await firestore.doc(`projects/${projectDoc.id}/sub_projects/${subProjectId}`).get();
+        if (subProjectDoc.exists) {
             projectId = projectDoc.id;
             break;
         }
@@ -87,16 +88,16 @@ export async function addProgressLog (
         throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
     }
     
-    const newLogRef = doc(collection(firestore, `projects/${projectId}/sub_projects/${subProjectId}/progress_logs`));
+    const newLogRef = firestore.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
     
     const newLogData = {
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: serverTimestamp() // Use server-side timestamp
+        updatedAt: getFirestore().FieldValue.serverTimestamp() // Use server-side timestamp
     };
     
-    await setDoc(newLogRef, newLogData);
+    await newLogRef.set(newLogData);
     
     revalidatePath('/dashboard');
 
@@ -161,26 +162,27 @@ export async function deleteProject(projectId: string) {
 
 export const getUsers = async (): Promise<User[]> => {
   const { firestore } = await initializeFirebaseOnServer();
-  const usersCol = collection(firestore, 'users');
-  const userSnapshot = await getDocs(usersCol);
+  const usersCol = firestore.collection('users');
+  const userSnapshot = await usersCol.get();
   const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
   return userList;
 }
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
     const { firestore } = await initializeFirebaseOnServer();
-    const projectsCol = collection(firestore, 'projects');
-    const projectSnapshot = await getDocs(projectsCol);
+    const projectsCol = firestore.collection('projects');
+    const projectSnapshot = await projectsCol.get();
     const projects = projectSnapshot.docs.map(doc => ({...doc.data(), id: doc.id}));
 
     let logs: ProgressLog[] = [];
 
     for (const project of projects) {
-        const subProjectDoc = await getDoc(doc(firestore, `projects/${project.id}/sub_projects`, subProjectId));
-        if (subProjectDoc.exists()) {
-            const logsCol = collection(firestore, `projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
-            const q = query(logsCol, orderBy('updatedAt', 'desc'));
-            const logsSnapshot = await getDocs(q);
+        const subProjectDoc = await firestore.doc(`projects/${project.id}/sub_projects/${subProjectId}`).get();
+
+        if (subProjectDoc.exists) {
+            const logsCol = firestore.collection(`projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
+            const q = logsCol.orderBy('updatedAt', 'desc');
+            const logsSnapshot = await q.get();
             
             if (!logsSnapshot.empty) {
                 const users = await getUsers();
