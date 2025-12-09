@@ -189,6 +189,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                 selected={field.value}
                                 onSelect={field.onChange}
                                 initialFocus
+                                required
                               />
                             </PopoverContent>
                           </Popover>
