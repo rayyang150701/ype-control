@@ -10,7 +10,7 @@ import type { User, ProgressLog } from '@/types';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
-    owner: z.string().min(1, '子專案負責人為必填'),
+    owner: z.string().optional(),
     expectedCompletionDate: z.date().optional(),
 });
 
@@ -39,7 +39,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         const newSubProjectRef = db.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
         const newSubProjectData = {
             name: subProject.name,
-            owner: subProject.owner,
+            owner: subProject.owner ?? '',
             expectedCompletionDate: subProject.expectedCompletionDate ? subProject.expectedCompletionDate : null,
             projectId: newProjectRef.id,
             createdAt: new Date(),

@@ -27,7 +27,7 @@ import { createProject, getUsers } from '@/lib/actions';
 
 const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().min(1, '子專案負責人為必填'),
+  owner: z.string().optional(),
   expectedCompletionDate: z.date().optional(),
 });
 
