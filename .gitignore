@@ -4,7 +4,6 @@
 /node_modules
 /.pnp
 .pnp.js
-.yarn/install-state.gz
 
 # testing
 /coverage
@@ -26,8 +25,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
-.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
@@ -36,12 +37,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# studio
-.firebase/
-apphosting.yaml
-firestore.rules
-database.rules.json
-storage.rules
-components.json
-docs/backend.json
+# genkit
+.genkit/
+.genkit-cache.json
+
+# Firebase service account key
 docs/service-account.json
