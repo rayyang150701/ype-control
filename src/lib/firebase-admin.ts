@@ -1,28 +1,37 @@
-'use server';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { Auth, getAuth } from 'firebase-admin/auth';
 
-import * as admin from 'firebase-admin';
-import { getApps, initializeApp, cert } from 'firebase-admin/app';
-import serviceAccount from '../../docs/service-account.json';
+let db: Firestore;
+let auth: Auth;
 
 if (!getApps().length) {
   try {
-    const privateKey = serviceAccount.private_key.replace(/\\n/g, '\n');
+    const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+    if (!serviceAccountString) {
+      throw new Error(
+        'Firebase service account key is not set in the environment variables. Please set FIREBASE_SERVICE_ACCOUNT_KEY.'
+      );
+    }
     
+    const serviceAccount = JSON.parse(serviceAccountString);
+
     initializeApp({
-      // The cert function can take the full service account object directly,
-      // but we must manually handle the private key's newline characters.
       credential: cert({
-        ...serviceAccount,
-        private_key: privateKey,
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email,
+        privateKey: serviceAccount.private_key.replace(/\\n/g, '\n'),
       }),
     });
+    
   } catch (error) {
     console.error('Firebase admin init error:', error);
-    // Re-throw the error to halt execution if initialization fails.
-    // This provides a clearer error message in the server logs.
-    throw error;
+    throw error; // Re-throw the error to halt execution if initialization fails
   }
 }
 
-export const db = admin.firestore();
-export const auth = admin.auth();
+db = getFirestore();
+auth = getAuth();
+
+export { db, auth };
