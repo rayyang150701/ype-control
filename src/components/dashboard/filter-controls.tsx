@@ -3,7 +3,9 @@
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Search } from 'lucide-react';
+import { Download, Plus, Search, LayoutGrid, List } from 'lucide-react';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from '@/lib/utils';
 
 type FilterControlsProps = {
   searchQuery: string;
@@ -12,6 +14,8 @@ type FilterControlsProps = {
   setFilter: (filter: string) => void;
   onExportAll: () => void;
   onAddNewProject: () => void;
+  viewMode: 'grid' | 'table';
+  setViewMode: (mode: 'grid' | 'table') => void;
 };
 
 export function FilterControls({
@@ -21,6 +25,8 @@ export function FilterControls({
   setFilter,
   onExportAll,
   onAddNewProject,
+  viewMode,
+  setViewMode,
 }: FilterControlsProps) {
   return (
     <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -44,6 +50,16 @@ export function FilterControls({
             <SelectItem value="completed">已完成</SelectItem>
           </SelectContent>
         </Select>
+
+        <ToggleGroup type="single" value={viewMode} onValueChange={(value: 'grid' | 'table') => value && setViewMode(value)}>
+          <ToggleGroupItem value="grid" aria-label="Grid view">
+            <LayoutGrid className="h-4 w-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="table" aria-label="Table view">
+            <List className="h-4 w-4" />
+          </ToggleGroupItem>
+        </ToggleGroup>
+        
         <Button onClick={onAddNewProject} variant="outline">
           <Plus className="mr-2 h-4 w-4" />
           新增專案

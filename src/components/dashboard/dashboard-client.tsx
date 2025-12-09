@@ -21,6 +21,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [subProjects, setSubProjects] = useState<SubProjectWithLatestLog[]>(initialSubProjects);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
@@ -160,14 +161,25 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setFilter={setFilter}
         onExportAll={handleExportAll}
         onAddNewProject={() => setIsNewProjectOpen(true)}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
       />
 
       {filteredSubProjects.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredSubProjects.map(sp => (
-            <ProjectCard key={sp.id} subProject={sp} onCardClick={handleCardClick} onLogAdded={onLogAdded}/>
-          ))}
-        </div>
+        <>
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredSubProjects.map(sp => (
+                <ProjectCard key={sp.id} subProject={sp} onCardClick={handleCardClick} onLogAdded={onLogAdded}/>
+              ))}
+            </div>
+          )}
+          {viewMode === 'table' && (
+            <div className='border rounded-lg p-4'>
+              <p>Table View Placeholder</p>
+            </div>
+          )}
+        </>
       ) : (
         <EmptyState
           title="無符合條件的專案"
