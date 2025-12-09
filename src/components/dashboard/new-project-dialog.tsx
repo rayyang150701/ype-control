@@ -183,7 +183,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                 )}
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
+                            <PopoverContent className="w-auto p-0 z-[9999]" align="start">
                               <Calendar
                                 mode="single"
                                 selected={field.value}
