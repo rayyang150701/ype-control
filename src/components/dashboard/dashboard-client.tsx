@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SubProjectWithLatestLog, ProgressLog, User } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { ProjectCard } from './project-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';

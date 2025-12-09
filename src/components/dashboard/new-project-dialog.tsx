@@ -22,8 +22,7 @@ import { User } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
-import { createProject } from '@/lib/actions';
-import { getUsers } from '@/lib/data';
+import { createProject, getUsers } from '@/lib/actions';
 
 
 const subProjectSchema = z.object({
@@ -44,7 +43,6 @@ type NewProjectDialogProps = {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   onProjectAdded: () => void;
-  // users: User[]; // No longer needed as we fetch inside
 };
 
 // 自製日曆組件
