@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition, useState } from 'react';
+import { useTransition, useState, useEffect } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -22,12 +22,14 @@ import { User } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
-import { mockUsers } from '@/lib/data'; // Import mockUsers for the dropdown
+import { createProject } from '@/lib/actions';
+import { getUsers } from '@/lib/data';
+
 
 const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().min(1, '子專案負責人為必填'),
-  expectedCompletionDate: z.date({ required_error: '預計完成日為必填' }).optional(),
+  expectedCompletionDate: z.date().optional(),
 });
 
 const projectSchema = z.object({
@@ -42,7 +44,7 @@ type NewProjectDialogProps = {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   onProjectAdded: () => void;
-  users: User[];
+  // users: User[]; // No longer needed as we fetch inside
 };
 
 // 自製日曆組件
@@ -187,10 +189,21 @@ function CustomCalendar({
   );
 }
 
-export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: NewProjectDialogProps) {
+export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProjectDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [openCalendarIndex, setOpenCalendarIndex] = useState<number | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    async function fetchUsers() {
+      const userList = await getUsers();
+      setUsers(userList);
+    }
+    if (isOpen) {
+      fetchUsers();
+    }
+  }, [isOpen]);
 
   const {
     register,
@@ -221,11 +234,15 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
 
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
-      console.log('New project data (simulated):', data);
-      toast({ title: '專案新增成功 (模擬)' });
-      onProjectAdded();
-      reset();
-      setIsOpen(false);
+      const result = await createProject(data);
+      if (result.success) {
+        toast({ title: result.message });
+        onProjectAdded();
+        reset();
+        setIsOpen(false);
+      } else {
+        toast({ title: '錯誤', description: result.message, variant: 'destructive' });
+      }
     });
   };
 
@@ -288,7 +305,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                               <SelectValue placeholder="選擇負責人" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockUsers.map(user => (
+                              {users.map(user => (
                                 <SelectItem key={user.uid} value={user.uid}>
                                   {user.displayName}
                                 </SelectItem>
