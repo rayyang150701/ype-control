@@ -7,8 +7,6 @@ import serviceAccount from '../../docs/service-account.json';
 if (!getApps().length) {
   try {
     // Ensure the service account has the correct properties.
-    // The 'as any' is used here because the imported JSON might not perfectly match the type signature,
-    // but cert() can handle it.
     if (
       !serviceAccount.project_id ||
       !serviceAccount.client_email ||
@@ -20,7 +18,12 @@ if (!getApps().length) {
     }
     
     initializeApp({
-      credential: cert(serviceAccount as any),
+      credential: cert({
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email,
+        // The key is to replace the literal `\n` strings with actual newline characters.
+        privateKey: serviceAccount.private_key.replace(/\\n/g, '\n'),
+      }),
     });
 
   } catch (error) {
