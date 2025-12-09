@@ -2,12 +2,12 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog, User } from '@/types';
 import { ProjectCard } from './project-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
-import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
+import { exportAllProjectsSummary, exportSubProjectHistory, getUsers } from '@/lib/excel-export';
 import { getProgressLogsForSubProject } from '@/lib/actions';
 import { NewProjectDialog } from './new-project-dialog';
 
@@ -62,21 +62,35 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     }
   };
 
-  const handleExportHistory = () => {
+  const handleExportHistory = async () => {
     if (selectedSubProject) {
-        exportSubProjectHistory(selectedSubProject, timelineLogs);
+        const users = await getUsers();
+        exportSubProjectHistory(selectedSubProject, timelineLogs, users);
     }
   }
 
-  const handleExportAll = () => {
-    exportAllProjectsSummary(initialSubProjects);
+  const handleExportAll = async () => {
+    const users = await getUsers();
+    exportAllProjectsSummary(initialSubProjects, users);
   }
 
   const onLogAdded = (newLog: ProgressLog, subProjectId: string) => {
-    // In a real app, you would refetch or update the state more robustly.
-    // For this simulation, we just close the dialog.
-    console.log('Log added for', subProjectId, newLog);
-    router.refresh();
+    setSubProjects(prevSubProjects => 
+        prevSubProjects.map(sp => {
+            if (sp.id === subProjectId) {
+                return {
+                    ...sp,
+                    latestLog: { ...newLog, updatedAt: new Date(newLog.updatedAt) },
+                    isOverdue: false, 
+                };
+            }
+            return sp;
+        })
+    );
+
+    if (selectedSubProject?.id === subProjectId) {
+        setTimelineLogs(prevLogs => [newLog, ...prevLogs]);
+    }
   };
 
   const onProjectAdded = () => {

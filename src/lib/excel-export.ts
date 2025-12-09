@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { format, differenceInDays } from 'date-fns';
-import { SubProjectWithLatestLog, Project, ProgressLog } from '@/types';
+import { SubProjectWithLatestLog, Project, ProgressLog, User } from '@/types';
 
 // Common styles
 const headerStyle = {
@@ -66,7 +66,7 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
 };
 
 // 1. 全專案最新進度總表
-export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[]) => {
+export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[], users: User[]) => {
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
   const headers = ['案號', '專案名稱', '子專案', '負責人', '預計完成日', '延遲天數', '本週摘要', '下週計畫', '問題', '進度%'];
   
@@ -124,9 +124,10 @@ export const exportSingleProjectSummary = (project: Project, subProjects: SubPro
 };
 
 // 3. 單一子專案歷史週報表
-export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, logs: ProgressLog[]) => {
+export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, logs: ProgressLog[], users: User[]) => {
     const title = `${subProject.projectCaseNumber} ${subProject.projectName} - ${subProject.name} 歷史週報`;
     const headers = ['提報區間', '本週摘要', '下週計畫', '問題', '進度%', '更新時間', '填寫人'];
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
     const data = [
         [title],
@@ -143,7 +144,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
             log.roadblocks || '無',
             log.completionPercentage,
             format(log.updatedAt as Date, 'yyyy/MM/dd HH:mm'),
-            log.createdByName ?? ''
+            userMap.get(log.createdBy) ?? ''
         ]);
     });
 
