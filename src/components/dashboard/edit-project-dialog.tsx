@@ -23,10 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
 import { updateProject, getUsers } from '@/lib/actions';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { Calendar } from '../ui/calendar';
-import { format } from 'date-fns';
-
+import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const subProjectSchema = z.object({
   id: z.string().optional(),
@@ -54,6 +51,8 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
+  const [openCalendarIndex, setOpenCalendarIndex] = useState<number | null>(null);
+
 
   useEffect(() => {
     async function fetchUsers() {
@@ -92,6 +91,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   
   const originalSubProjectIds = project.subProjects.map(sp => sp.id);
 
+  const formatDate = (date?: Date) => {
+    if (!date) return '選擇日期';
+    return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+  };
 
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
@@ -177,37 +180,59 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                     </div>
 
                     {/* 預計完成日 */}
-                    <div className="col-span-6 sm:col-span-4">
+                     <div className="col-span-6 sm:col-span-4">
                       <Label>預計完成日</Label>
                       <Controller
                         name={`subProjects.${index}.expectedCompletionDate`}
                         control={control}
                         render={({ field }) => (
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                    variant={"outline"}
-                                    className={cn(
-                                        "w-full justify-start text-left font-normal",
-                                        !field.value && "text-muted-foreground"
-                                    )}
-                                    >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {field.value ? format(field.value, "yyyy/MM/dd") : <span>選擇日期</span>}
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                    <Calendar
-                                    mode="single"
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setOpenCalendarIndex(openCalendarIndex === index ? null : index);
+                              }}
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formatDate(field.value)}
+                            </Button>
+
+                            {/* 自製日曆彈出層 */}
+                            {openCalendarIndex === index && (
+                              <>
+                                {/* 背景遮罩 */}
+                                <div
+                                  className="fixed inset-0 z-[100]"
+                                  onClick={() => setOpenCalendarIndex(null)}
+                                />
+                                
+                                {/* 日曆面板 */}
+                                <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                                  <CustomCalendar
                                     selected={field.value}
-                                    onSelect={field.onChange}
-                                    initialFocus
-                                    />
-                                </PopoverContent>
-                            </Popover>
+                                    onSelect={(date) => {
+                                      field.onChange(date);
+                                      setOpenCalendarIndex(null);
+                                    }}
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       />
+                      {errors.subProjects?.[index]?.expectedCompletionDate && (
+                        <p className="text-sm text-destructive">
+                          {errors.subProjects?.[index]?.expectedCompletionDate?.message}
+                        </p>
+                      )}
                     </div>
+
 
                     {/* 刪除按鈕 */}
                     <Button
