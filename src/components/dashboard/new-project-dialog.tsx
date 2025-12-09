@@ -87,7 +87,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[700px]" modal={false}>
+      <DialogContent className="sm:max-w-[700px]">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle className="font-headline text-xl">新增專案</DialogTitle>
