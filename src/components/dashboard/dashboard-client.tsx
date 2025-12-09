@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { ProjectCard } from './project-card';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -24,6 +25,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [timelineLogs, setTimelineLogs] = useState<ProgressLog[]>([]);
   const [isTimelineLoading, setIsTimelineLoading] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const router = useRouter();
 
 
   const filteredSubProjects = useMemo(() => {
@@ -74,14 +76,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     // In a real app, you would refetch or update the state more robustly.
     // For this simulation, we just close the dialog.
     console.log('Log added for', subProjectId, newLog);
-    // Here we would refetch `initialSubProjects`
+    router.refresh();
   };
 
   const onProjectAdded = () => {
-    // For this simulation, we just close the dialog and would refetch in a real app.
     setIsNewProjectOpen(false);
-    console.log('Project added');
-    // Here we would refetch `initialSubProjects` to show the new project
+    // Refreshes server-side props and re-renders Server Components.
+    router.refresh();
   }
 
 
