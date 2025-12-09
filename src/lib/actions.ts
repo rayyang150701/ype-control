@@ -27,9 +27,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     const { firestore } = await initializeFirebaseOnServer();
     const batch = writeBatch(firestore);
 
-    // This is a placeholder for the current user's ID.
-    // In a real application, you would get this from the authenticated user session.
-    const userId = 'user-3'; // Assuming Charlie (Admin) is creating the project
+    const userId = 'user-3';
 
     const newProjectRef = doc(collection(firestore, 'projects'));
     const newProjectData = {
@@ -41,7 +39,9 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     };
     batch.set(newProjectRef, newProjectData);
 
-    const subProjectPayloads = data.subProjects.map(subProject => {
+    const writes = [{ ref: newProjectRef, data: newProjectData }];
+
+    data.subProjects.forEach(subProject => {
         const newSubProjectRef = doc(collection(firestore, `projects/${newProjectRef.id}/sub_projects`));
         const newSubProjectData = {
             name: subProject.name,
@@ -51,20 +51,15 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
             createdAt: serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
-        return { ref: newSubProjectRef, data: newSubProjectData };
+        writes.push({ ref: newSubProjectRef, data: newSubProjectData });
     });
 
     try {
-        await commitBatchNonBlocking(batch, [
-            { ref: newProjectRef, data: newProjectData },
-            ...subProjectPayloads
-        ]);
+        await commitBatchNonBlocking(batch, writes);
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功建立！' };
     } catch (error) {
         console.error("Error creating project:", error);
-        // The non-blocking commit will handle emitting the detailed error.
-        // This catch block is for other potential errors during the process.
         return { success: false, message: '建立專案時發生錯誤。' };
     }
 }
@@ -75,27 +70,17 @@ export async function addProgressLog (
 ): Promise<ProgressLog> {
     const { firestore } = await initializeFirebaseOnServer();
 
-    // This is a placeholder for the current user's ID.
-    // In a real application, you would get this from the authenticated user session.
     const userId = 'user-1'; 
 
     const projectsSnapshot = await getDocs(collection(firestore, 'projects'));
     let projectId: string | null = null;
 
-    // This is inefficient, but necessary without changing the data model.
-    // A better model would have subprojects in a root collection with a projectId field.
     for (const projectDoc of projectsSnapshot.docs) {
-        const subProjectDocRef = doc(firestore, `projects/${projectDoc.id}/sub_projects/${subProjectId}`);
-        // We can't query for a document, so we have to try to get it. A full query would be better.
-        // This will error if the doc doesn't exist, which isn't ideal for a search.
-        // For this app's scale, iterating is acceptable.
-        if (projectDoc.id) { // A simplified check; in reality, you might need getDoc
-             const subProjectCol = collection(firestore, `projects/${projectDoc.id}/sub_projects`);
-             const subDocs = await getDocs(subProjectCol);
-             if(subDocs.docs.some(d => d.id === subProjectId)){
-                projectId = projectDoc.id;
-                break;
-             }
+        const subProjectCol = collection(firestore, `projects/${projectDoc.id}/sub_projects`);
+        const subDocs = await getDocs(subProjectCol);
+        if(subDocs.docs.some(d => d.id === subProjectId)){
+            projectId = projectDoc.id;
+            break;
         }
     }
 
@@ -168,10 +153,8 @@ export async function getAiSuggestions(
 }
 
 export async function deleteProject(projectId: string) {
-    // Here you would implement the logic to delete the project from Firestore
     console.log(`(Simulated) Deleting project with ID: ${projectId}`);
     
-    // After deletion, revalidate the path to update the UI
     revalidatePath('/dashboard');
     
     return { message: `Project ${projectId} deleted successfully.` };
@@ -215,7 +198,7 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
                     } as ProgressLog;
                 });
             }
-            break; // Found the logs for the subproject
+            break; 
         }
     }
     return logs;
