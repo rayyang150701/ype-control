@@ -1,8 +1,8 @@
+'use server';
 // IMPORTANT: This file should not have a 'use client' directive
 import { initializeApp, getApps, getApp, App as FirebaseAdminApp } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import { firebaseConfig } from 'firebase-functions/params';
 
 // Define the return type for our initialized services
 interface FirebaseServerServices {
@@ -28,9 +28,7 @@ export function initializeFirebaseOnServer(): FirebaseServerServices {
 
   // Initialize the Firebase Admin app. In a managed environment like App Hosting,
   // initializeApp() will automatically use the available service account credentials.
-  const firebaseApp = initializeApp({
-    projectId: firebaseConfig().projectId,
-  });
+  const firebaseApp = initializeApp();
 
   return {
     firebaseApp,
