@@ -11,11 +11,16 @@ if (!getApps().length) {
     const serviceAccount = {
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      // The private key from the .env file might be wrapped in quotes and have escaped newlines.
+      // 1. Remove quotes if they exist.
+      // 2. Replace the literal '\n' strings with actual newline characters.
+      privateKey: process.env.FIREBASE_PRIVATE_KEY
+        ? process.env.FIREBASE_PRIVATE_KEY.replace(/^"|"$/g, '').replace(/\\n/g, '\n')
+        : undefined,
     };
 
     if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
-        throw new Error('Firebase Admin SDK service account credentials are not defined in environment variables.');
+        throw new Error('Firebase Admin SDK service account credentials are not fully defined in environment variables.');
     }
 
     initializeApp({
