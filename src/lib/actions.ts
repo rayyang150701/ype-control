@@ -6,6 +6,7 @@ import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-perce
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import type { User, ProgressLog } from '@/types';
+import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
 
 
 const subProjectSchema = z.object({
@@ -23,30 +24,30 @@ const projectSchema = z.object({
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const { firestore } = await initializeFirebaseOnServer();
-    const batch = firestore.batch();
+    const batch = writeBatch(firestore);
 
     // This is a placeholder for the current user's ID.
     // In a real application, you would get this from the authenticated user session.
     const userId = 'user-3'; // Assuming Charlie (Admin) is creating the project
 
-    const newProjectRef = firestore.collection('projects').doc();
+    const newProjectRef = doc(collection(firestore, 'projects'));
     const newProjectData = {
         name: data.name,
         caseNumber: data.caseNumber,
         status: 'active',
         createdBy: userId,
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
     };
     batch.set(newProjectRef, newProjectData);
 
     data.subProjects.forEach(subProject => {
-        const newSubProjectRef = firestore.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
+        const newSubProjectRef = doc(collection(firestore, `projects/${newProjectRef.id}/sub_projects`));
         const newSubProjectData = {
             name: subProject.name,
             owner: subProject.owner,
             expectedCompletionDate: subProject.expectedCompletionDate,
             projectId: newProjectRef.id,
-            createdAt: firestore.FieldValue.serverTimestamp(),
+            createdAt: serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
     });
@@ -71,13 +72,23 @@ export async function addProgressLog (
     // In a real application, you would get this from the authenticated user session.
     const userId = 'user-1'; 
 
-    const projectsSnapshot = await firestore.collection('projects').get();
+    const projectsSnapshot = await getDocs(collection(firestore, 'projects'));
     let projectId: string | null = null;
+
+    // This is inefficient, but necessary without changing the data model.
+    // A better model would have subprojects in a root collection with a projectId field.
     for (const projectDoc of projectsSnapshot.docs) {
-        const subProjectDoc = await firestore.doc(`projects/${projectDoc.id}/sub_projects/${subProjectId}`).get();
-        if (subProjectDoc.exists) {
-            projectId = projectDoc.id;
-            break;
+        const subProjectDocRef = doc(firestore, `projects/${projectDoc.id}/sub_projects/${subProjectId}`);
+        // We can't query for a document, so we have to try to get it. A full query would be better.
+        // This will error if the doc doesn't exist, which isn't ideal for a search.
+        // For this app's scale, iterating is acceptable.
+        if (projectDoc.id) { // A simplified check; in reality, you might need getDoc
+             const subProjectCol = collection(firestore, `projects/${projectDoc.id}/sub_projects`);
+             const subDocs = await getDocs(subProjectCol);
+             if(subDocs.docs.some(d => d.id === subProjectId)){
+                projectId = projectDoc.id;
+                break;
+             }
         }
     }
 
@@ -85,16 +96,16 @@ export async function addProgressLog (
         throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
     }
     
-    const newLogRef = firestore.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
+    const newLogRef = doc(collection(firestore, `projects/${projectId}/sub_projects/${subProjectId}/progress_logs`));
     
     const newLogData = {
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: firestore.FieldValue.serverTimestamp() // Use server-side timestamp
+        updatedAt: serverTimestamp()
     };
     
-    await newLogRef.set(newLogData);
+    await writeBatch(firestore).set(newLogRef, newLogData).commit();
     
     revalidatePath('/dashboard');
 
@@ -159,37 +170,37 @@ export async function deleteProject(projectId: string) {
 
 export const getUsers = async (): Promise<User[]> => {
   const { firestore } = await initializeFirebaseOnServer();
-  const usersCol = firestore.collection('users');
-  const userSnapshot = await usersCol.get();
+  const usersCol = collection(firestore, 'users');
+  const userSnapshot = await getDocs(usersCol);
   const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
   return userList;
 }
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
     const { firestore } = await initializeFirebaseOnServer();
-    const projectsCol = firestore.collection('projects');
-    const projectSnapshot = await projectsCol.get();
-    const projects = projectSnapshot.docs.map(doc => ({...doc.data(), id: doc.id}));
-
+    const projectsCol = collection(firestore, 'projects');
+    const projectSnapshot = await getDocs(projectsCol);
+    
     let logs: ProgressLog[] = [];
 
-    for (const project of projects) {
-        const subProjectDoc = await firestore.doc(`projects/${project.id}/sub_projects/${subProjectId}`).get();
-
-        if (subProjectDoc.exists) {
-            const logsCol = firestore.collection(`projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
-            const q = logsCol.orderBy('updatedAt', 'desc');
-            const logsSnapshot = await q.get();
+    for (const projectDoc of projectSnapshot.docs) {
+        const subProjectCol = collection(firestore, `projects/${projectDoc.id}/sub_projects`);
+        const subProjectDocs = await getDocs(subProjectCol);
+        
+        if (subProjectDocs.docs.some(d => d.id === subProjectId)) {
+            const logsCol = collection(firestore, `projects/${projectDoc.id}/sub_projects/${subProjectId}/progress_logs`);
+            const q = query(logsCol, orderBy('updatedAt', 'desc'));
+            const logsSnapshot = await getDocs(q);
             
             if (!logsSnapshot.empty) {
                 const users = await getUsers();
                 const userMap = new Map(users.map(u => [u.uid, u.displayName]));
                 logs = logsSnapshot.docs.map(doc => {
-                    const data = doc.data() as any;
+                    const data = doc.data();
                     return {
                         ...data,
                         id: doc.id,
-                        updatedAt: data.updatedAt.toDate(),
+                        updatedAt: (data.updatedAt as Timestamp).toDate(),
                         createdByName: userMap.get(data.createdBy)
                     } as ProgressLog;
                 });
