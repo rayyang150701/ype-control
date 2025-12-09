@@ -8,7 +8,8 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
-import { getProgressLogsForSubProject, getUsers, getFullProjectById } from '@/lib/actions';
+import { getProgressLogsForSubProject, getUsers, updateProject } from '@/lib/actions';
+import { getFullProjectById } from '@/lib/data';
 import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
 
