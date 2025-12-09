@@ -3,7 +3,7 @@
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Search } from 'lucide-react';
+import { Download, Plus, Search } from 'lucide-react';
 
 type FilterControlsProps = {
   searchQuery: string;
@@ -11,6 +11,7 @@ type FilterControlsProps = {
   filter: string;
   setFilter: (filter: string) => void;
   onExportAll: () => void;
+  onAddNewProject: () => void;
 };
 
 export function FilterControls({
@@ -19,6 +20,7 @@ export function FilterControls({
   filter,
   setFilter,
   onExportAll,
+  onAddNewProject,
 }: FilterControlsProps) {
   return (
     <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -42,6 +44,10 @@ export function FilterControls({
             <SelectItem value="completed">已完成</SelectItem>
           </SelectContent>
         </Select>
+        <Button onClick={onAddNewProject} variant="outline">
+          <Plus className="mr-2 h-4 w-4" />
+          新增專案
+        </Button>
         <Button onClick={onExportAll}>
           <Download className="mr-2 h-4 w-4" />
           匯出總表

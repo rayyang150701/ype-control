@@ -8,6 +8,7 @@ import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
 import { getProgressLogsForSubProject } from '@/lib/data';
+import { NewProjectDialog } from './new-project-dialog';
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
@@ -22,6 +23,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [timelineLogs, setTimelineLogs] = useState<ProgressLog[]>([]);
   const [isTimelineLoading, setIsTimelineLoading] = useState(false);
+  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+
 
   const filteredSubProjects = useMemo(() => {
     return subProjects
@@ -74,6 +77,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     // Here we would refetch `initialSubProjects`
   };
 
+  const onProjectAdded = () => {
+    // For this simulation, we just close the dialog and would refetch in a real app.
+    setIsNewProjectOpen(false);
+    console.log('Project added');
+    // Here we would refetch `initialSubProjects` to show the new project
+  }
+
 
   return (
     <>
@@ -83,6 +93,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         filter={filter}
         setFilter={setFilter}
         onExportAll={handleExportAll}
+        onAddNewProject={() => setIsNewProjectOpen(true)}
       />
 
       {filteredSubProjects.length > 0 ? (
@@ -108,6 +119,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           onExport={handleExportHistory}
         />
       )}
+
+      <NewProjectDialog 
+        isOpen={isNewProjectOpen}
+        setIsOpen={setIsNewProjectOpen}
+        onProjectAdded={onProjectAdded}
+        users={[]} // In a real app, you'd pass the actual user list here
+      />
     </>
   );
 }
