@@ -7,9 +7,6 @@ import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-for
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import type { User, ProgressLog } from '@/types';
 
-// IMPORTANT: Import from 'firebase-admin' not 'firebase-admin/firestore'
-// to avoid module resolution conflicts with client-side 'firebase/firestore'
-import { getFirestore } from 'firebase-admin/firestore';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -38,7 +35,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         caseNumber: data.caseNumber,
         status: 'active',
         createdBy: userId,
-        createdAt: getFirestore().FieldValue.serverTimestamp(),
+        createdAt: firestore.FieldValue.serverTimestamp(),
     };
     batch.set(newProjectRef, newProjectData);
 
@@ -49,7 +46,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
             owner: subProject.owner,
             expectedCompletionDate: subProject.expectedCompletionDate,
             projectId: newProjectRef.id,
-            createdAt: getFirestore().FieldValue.serverTimestamp(),
+            createdAt: firestore.FieldValue.serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
     });
@@ -94,7 +91,7 @@ export async function addProgressLog (
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: getFirestore().FieldValue.serverTimestamp() // Use server-side timestamp
+        updatedAt: firestore.FieldValue.serverTimestamp() // Use server-side timestamp
     };
     
     await newLogRef.set(newLogData);

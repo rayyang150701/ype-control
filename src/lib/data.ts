@@ -1,9 +1,7 @@
 import { subDays } from 'date-fns';
 import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } from '@/types';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
-// IMPORTANT: Import from 'firebase-admin' not 'firebase-admin/firestore'
-// to avoid module resolution conflicts with client-side 'firebase/firestore'
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import type { Timestamp } from 'firebase-admin/firestore';
 
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
