@@ -109,8 +109,8 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
             <div>
               <Label className="text-base font-medium">子專案列表</Label>
               <div className="mt-2 space-y-4">
-                {fields.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative">
+                {fields.map((field, index) => (
+                  <div key={field.id} className="grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative">
                     <div className="col-span-12 sm:col-span-4">
                       <Label>子專案名稱</Label>
                       <Input {...register(`subProjects.${index}.name`)} />
