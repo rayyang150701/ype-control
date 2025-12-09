@@ -20,7 +20,7 @@ if (!getApps().length) {
     }
     
     initializeApp({
-      credential: cert(serviceAccount),
+      credential: cert(serviceAccount as any),
     });
 
   } catch (error) {
