@@ -39,6 +39,7 @@ export interface SubProject {
 
 export interface ProgressLog {
   id: string;
+  subProjectId: string;
   reportingPeriod: string; // "2025/12/08-12/14"
   executionSummary: string;
   nextWeekPlan: string;

@@ -3,6 +3,8 @@ import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 import './globals.css';
 import { Header } from '@/components/header';
+import { SidebarProvider, Sidebar, SidebarInset } from '@/components/ui/sidebar';
+import { AppSidebar } from '@/components/layout/sidebar';
 
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
@@ -23,12 +25,19 @@ export default function RootLayout({
       </head>
       <body
         className={cn(
-          'min-h-screen bg-background font-body antialiased flex flex-col'
+          'min-h-screen bg-background font-body antialiased'
         )}
       >
-        <Header />
-        <main className="flex-1">{children}</main>
-        <Toaster />
+        <SidebarProvider>
+          <Header />
+          <div className="flex">
+            <AppSidebar />
+            <SidebarInset className="flex-1 container mx-auto p-4 sm:p-6 lg:p-8">
+              {children}
+            </SidebarInset>
+          </div>
+          <Toaster />
+        </SidebarProvider>
       </body>
     </html>
   );

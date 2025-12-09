@@ -9,10 +9,8 @@ export default async function DashboardPage() {
   const subProjects = await getSubProjectsWithLatestLogs();
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <Suspense fallback={<DashboardLoading />}>
-        <DashboardClient initialSubProjects={subProjects} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<DashboardLoading />}>
+      <DashboardClient initialSubProjects={subProjects} />
+    </Suspense>
   );
 }

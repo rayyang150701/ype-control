@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
-import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog } from '@/types';
+import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
@@ -37,11 +37,66 @@ const editProjectSchema = z.object({
     subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
 });
 
+const userSchema = z.object({
+  displayName: z.string().min(1, '姓名為必填'),
+  email: z.string().email('請輸入有效的 Email'),
+  role: z.enum(['admin', 'editor', 'viewer']),
+  status: z.enum(['active', 'pending']),
+});
+
+
 // Server Actions
+
+// User Management Actions
+export async function createUser(data: z.infer<typeof userSchema>) {
+  try {
+    const newUserRef = db.collection('users').doc();
+    await newUserRef.set({
+      ...data,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    revalidatePath('/users');
+    return { success: true, message: '成員已成功建立！' };
+  } catch (error) {
+    console.error("Error creating user:", error);
+    return { success: false, message: '建立成員時發生錯誤。' };
+  }
+}
+
+export async function updateUser(uid: string, data: z.infer<typeof userSchema>) {
+  try {
+    const userRef = db.collection('users').doc(uid);
+    await userRef.update({
+      ...data,
+    });
+    revalidatePath('/users');
+    return { success: true, message: '成員已成功更新！' };
+  } catch (error) {
+    console.error("Error updating user:", error);
+    return { success: false, message: '更新成員時發生錯誤。' };
+  }
+}
+
+export async function deleteUser(uid: string) {
+    try {
+        // Here you might want to add logic to check if the user is an owner of any sub-projects
+        // before allowing deletion. For now, we'll proceed with deletion.
+        const userRef = db.collection('users').doc(uid);
+        await userRef.delete();
+        revalidatePath('/users');
+        return { success: true, message: '成員已成功刪除！' };
+    } catch (error) {
+        console.error("Error deleting user:", error);
+        return { success: false, message: '刪除成員時發生錯誤。' };
+    }
+}
+
+
+// Project and Progress Log Actions
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const batch = db.batch();
-    const userId = 'user-3';
+    const userId = 'user-3'; // Placeholder for actual logged-in user
 
     const newProjectRef = db.collection('projects').doc();
     const newProjectData = {
@@ -49,7 +104,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         caseNumber: data.caseNumber,
         status: 'active',
         createdBy: userId,
-        createdAt: new Date(),
+        createdAt: FieldValue.serverTimestamp(),
     };
     batch.set(newProjectRef, newProjectData);
 
@@ -60,7 +115,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
             owner: subProject.owner,
             expectedCompletionDate: subProject.expectedCompletionDate ? subProject.expectedCompletionDate : null,
             projectId: newProjectRef.id,
-            createdAt: new Date(),
+            createdAt: FieldValue.serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
     });
@@ -110,13 +165,14 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                         owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
                         projectId: projectId,
-                        createdAt: new Date(),
+                        createdAt: FieldValue.serverTimestamp(),
                     });
                 }
             }
         });
         
         revalidatePath('/dashboard');
+        revalidatePath('/projects'); // Assuming a project detail page might exist
         return { success: true, message: '專案已成功更新！' };
     } catch (error) {
         console.error("Error updating project:", error);
@@ -125,15 +181,15 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
 }
 
 
-async function findProjectIdForSubProject(subProjectId: string): Promise<string> {
+async function findProjectIdForSubProject(subProjectId: string): Promise<string | null> {
     const projectsSnapshot = await db.collection('projects').get();
     for (const projectDoc of projectsSnapshot.docs) {
-      const subProjectDoc = await db.doc(`projects/${projectDoc.id}/sub_projects/${subProjectId}`).get();
-      if (subProjectDoc.exists) {
+      const subProjectSnapshot = await projectDoc.ref.collection('sub_projects').where(FieldPath.documentId(), '==', subProjectId).limit(1).get();
+      if (!subProjectSnapshot.empty) {
         return projectDoc.id;
       }
     }
-    throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+    return null;
 }
 
 export async function updateProgressLog(
@@ -142,12 +198,16 @@ export async function updateProgressLog(
     logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName' | 'reportingPeriod'>
   ): Promise<ProgressLog> {
     const projectId = await findProjectIdForSubProject(subProjectId);
+    
+    if (!projectId) {
+        throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+    }
   
     const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
   
     const updateData = {
       ...logData,
-      updatedAt: new Date(),
+      updatedAt: FieldValue.serverTimestamp(),
     };
   
     await logRef.update(updateData);
@@ -155,15 +215,17 @@ export async function updateProgressLog(
     revalidatePath('/dashboard');
   
     const updatedLogDoc = await logRef.get();
-    const updatedLog = updatedLogDoc.data() as ProgressLog;
+    const updatedLog = updatedLogDoc.data()!;
   
     const users = await getUsers();
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
   
+    const updatedAt = (updatedLog.updatedAt as FirebaseFirestore.Timestamp);
+
     return {
       id: logRef.id,
       ...updatedLog,
-      updatedAt: (updatedLog.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+      updatedAt: updatedAt.toDate().toISOString(),
       createdByName: userMap.get(updatedLog.createdBy),
     } as ProgressLog;
 }
@@ -172,7 +234,7 @@ export async function addProgressLog (
     subProjectId: string, 
     logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName'>
 ): Promise<ProgressLog> {
-    const userId = 'user-1'; 
+    const userId = 'user-1'; // Placeholder
     const projectId = await findProjectIdForSubProject(subProjectId);
 
     if (!projectId) {
@@ -185,7 +247,7 @@ export async function addProgressLog (
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: new Date()
+        updatedAt: FieldValue.serverTimestamp(),
     };
     
     await newLogRef.set(newLogData);
@@ -194,12 +256,13 @@ export async function addProgressLog (
 
     const users = await getUsers();
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+    const now = new Date().toISOString();
 
     return {
         id: newLogRef.id,
         ...logData,
         createdBy: userId,
-        updatedAt: new Date().toISOString(), 
+        updatedAt: now, 
         createdByName: userMap.get(userId)
     } as ProgressLog;
 };
@@ -258,8 +321,11 @@ export const getUsers = async (): Promise<User[]> => {
       const data = doc.data();
       const createdAt = data.createdAt as FirebaseFirestore.Timestamp;
       return {
-        ...data,
-        uid: doc.id, // Use the document ID as the uid
+        uid: doc.id,
+        displayName: data.displayName || '',
+        email: data.email || '',
+        role: data.role || 'viewer',
+        status: data.status || 'pending',
         createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
       } as User;
     });
@@ -323,7 +389,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
         const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
         const logsSnapshot = await logsQuery.get();
-        let latestLog = null;
+        let latestLog: ProgressLog | null = null;
         if (logsSnapshot.docs.length > 0) {
             const logData = logsSnapshot.docs[0].data();
             const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
@@ -357,10 +423,12 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         } as SubProjectWithLatestLog);
     }
   
-    return {
+    const fullProject: FullProject = {
       ...project,
       subProjects: subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()),
-    } as FullProject;
+    };
+
+    return JSON.parse(JSON.stringify(fullProject));
 };
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
@@ -393,7 +461,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
 
             const logsSnapshot = await logsQuery.get();
-            let latestLog = null;
+            let latestLog: ProgressLog | null = null;
             if (logsSnapshot.docs.length > 0) {
                  const logData = logsSnapshot.docs[0].data();
                  const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
