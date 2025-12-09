@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
@@ -32,7 +31,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         caseNumber: data.caseNumber,
         status: 'active',
         createdBy: userId,
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: new Date(),
     };
     batch.set(newProjectRef, newProjectData);
 
@@ -41,9 +40,9 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         const newSubProjectData = {
             name: subProject.name,
             owner: subProject.owner,
-            expectedCompletionDate: subProject.expectedCompletionDate ? Timestamp.fromDate(subProject.expectedCompletionDate) : null,
+            expectedCompletionDate: subProject.expectedCompletionDate ? subProject.expectedCompletionDate : null,
             projectId: newProjectRef.id,
-            createdAt: FieldValue.serverTimestamp(),
+            createdAt: new Date(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
     });
@@ -85,7 +84,7 @@ export async function addProgressLog (
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: FieldValue.serverTimestamp()
+        updatedAt: new Date()
     };
     
     await newLogRef.set(newLogData);
@@ -176,7 +175,7 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
                 const userMap = new Map(users.map(u => [u.uid, u.displayName]));
                 logs = logsSnapshot.docs.map(doc => {
                     const data = doc.data();
-                    const updatedAt = data.updatedAt as Timestamp;
+                    const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp;
                     return {
                         ...data,
                         id: doc.id,

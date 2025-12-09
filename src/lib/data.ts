@@ -1,7 +1,6 @@
 import { subDays } from 'date-fns';
 import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } from '@/types';
 import { db } from '@/lib/firebase-admin';
-import type { Timestamp } from 'firebase-admin/firestore';
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     // Fetch projects
@@ -33,7 +32,8 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             const latestLog = logsSnapshot.docs.length > 0 ? { ...logsSnapshot.docs[0].data(), id: logsSnapshot.docs[0].id } as ProgressLog : null;
             
             if (latestLog && latestLog.updatedAt) {
-                 latestLog.updatedAt = (latestLog.updatedAt as Timestamp).toDate();
+                 const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
+                 latestLog.updatedAt = updatedAtTimestamp.toDate();
                  latestLog.createdByName = userMap.get(latestLog.createdBy);
             }
 
@@ -42,10 +42,13 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ? (latestLog.updatedAt as Date) < sevenDaysAgo
                 : true;
 
+            const expectedCompletionDateTimestamp = subProject.expectedCompletionDate as FirebaseFirestore.Timestamp;
+            const createdAtTimestamp = subProject.createdAt as FirebaseFirestore.Timestamp;
+
             allSubProjects.push({
                 ...subProject,
-                expectedCompletionDate: (subProject.expectedCompletionDate as Timestamp).toDate(),
-                createdAt: (subProject.createdAt as Timestamp).toDate(),
+                expectedCompletionDate: expectedCompletionDateTimestamp.toDate(),
+                createdAt: createdAtTimestamp.toDate(),
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
                 ownerName: userMap.get(subProject.owner),
