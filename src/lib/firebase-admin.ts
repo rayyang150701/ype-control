@@ -2,30 +2,27 @@
 
 import * as admin from 'firebase-admin';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import serviceAccount from '../../docs/service-account.json';
 
 if (!getApps().length) {
   try {
-    const serviceAccount = {
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // The private key from the .env file might be wrapped in quotes and have escaped newlines.
-      // 1. Remove quotes if they exist.
-      // 2. Replace the literal '\n' strings with actual newline characters.
-      privateKey: process.env.FIREBASE_PRIVATE_KEY
-        ? process.env.FIREBASE_PRIVATE_KEY.replace(/^"|"$/g, '').replace(/\\n/g, '\n')
-        : undefined,
-    };
-
-    if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
-        throw new Error('Firebase Admin SDK service account credentials are not fully defined in environment variables.');
+    // Ensure the service account has the correct properties.
+    // The 'as any' is used here because the imported JSON might not perfectly match the type signature,
+    // but cert() can handle it.
+    if (
+      !serviceAccount.project_id ||
+      !serviceAccount.client_email ||
+      !serviceAccount.private_key
+    ) {
+      throw new Error(
+        'The service account JSON file is missing required properties (project_id, client_email, private_key).'
+      );
     }
-
+    
     initializeApp({
-      credential: cert(serviceAccount as any),
+      credential: cert(serviceAccount),
     });
+
   } catch (error) {
     console.error('Firebase Admin initialization error', error);
     // Re-throw the error to halt execution if initialization fails.
