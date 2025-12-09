@@ -88,29 +88,3 @@ export function deleteDocumentNonBlocking(docRef: DocumentReference) {
       )
     });
 }
-
-/**
- * Initiates a batch commit operation.
- * Does NOT await the write operation internally.
- * Emits a detailed permission error if the commit fails.
- */
-export function commitBatchNonBlocking(
-  batch: WriteBatch,
-  writes: { ref: DocumentReference; data: any }[]
-) {
-  batch.commit().catch(error => {
-    // For batch writes, we can't pinpoint the exact failing write,
-    // so we'll report the first one as a representative example.
-    if (writes.length > 0) {
-      const firstWrite = writes[0];
-      errorEmitter.emit(
-        'permission-error',
-        new FirestorePermissionError({
-          path: firstWrite.ref.path,
-          operation: 'write', // Batch can contain mixed operations
-          requestResourceData: firstWrite.data,
-        })
-      );
-    }
-  });
-}
