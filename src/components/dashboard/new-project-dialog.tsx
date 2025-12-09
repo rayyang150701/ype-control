@@ -31,8 +31,7 @@ const subProjectSchema = z.object({
   owner: z.string().min(1, '子專案負責人為必填'),
   expectedCompletionDate: z.date({
     required_error: "預計完成日為必填",
-    invalid_type_error: "這不是一個有效的日期",
-  }).nullable(),
+  }),
 });
 
 const projectSchema = z.object({
@@ -180,11 +179,11 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                 {field.value ? format(field.value, "yyyy/MM/dd") : <span>選擇日期</span>}
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
+                            <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 mode="single"
-                                selected={field.value ?? undefined}
-                                onSelect={(date) => field.onChange(date ?? null)}
+                                selected={field.value}
+                                onSelect={field.onChange}
                                 initialFocus
                               />
                             </PopoverContent>
