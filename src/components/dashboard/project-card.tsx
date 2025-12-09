@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { NewLogDialog } from './new-log-dialog';
 import { useState } from 'react';
+import { formatInTimeZone } from 'date-fns-tz';
+
 
 type ProjectCardProps = {
   subProject: SubProjectWithLatestLog;
@@ -62,7 +64,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           <InfoRow label="負責人" value={subProject.ownerName ?? 'N/A'} />
           <InfoRow 
             label="預計完成日" 
-            value={format(expectedDate, 'yyyy/MM/dd')}
+            value={formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd')}
             isDelayed={delayDays > 0 && completionPercentage < 100}
             delayText={`延遲 ${delayDays} 天`}
           />

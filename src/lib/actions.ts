@@ -8,6 +8,8 @@ import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
+
 
 // Schema definitions
 
