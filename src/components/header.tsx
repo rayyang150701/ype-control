@@ -42,9 +42,11 @@ export function Header() {
         </div>
 
         <div className="flex-1 flex justify-center">
-          <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap">
-            燁輝智慧製造執行方案進度管制表
-          </h1>
+          <Link href="/dashboard">
+            <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap">
+              燁輝智慧製造執行方案進度管制表
+            </h1>
+          </Link>
         </div>
 
         <div className="flex items-center justify-end space-x-4">
