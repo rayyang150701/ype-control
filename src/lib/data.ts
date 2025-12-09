@@ -4,20 +4,15 @@ import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } 
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import { getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 
-export const getProjects = async (): Promise<Project[]> => {
-  const { firestore } = await initializeFirebaseOnServer();
-  const projectsCol = collection(firestore, 'projects');
-  const projectSnapshot = await getDocs(projectsCol);
-  const projectList = projectSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Project));
-  return projectList;
-};
-
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const { firestore } = await initializeFirebaseOnServer();
+    
+    // Fetch projects
     const projectsCol = collection(firestore, 'projects');
     const projectsSnapshot = await getDocs(projectsCol);
     const projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
+    // Fetch users
     const usersCol = collection(firestore, 'users');
     const userSnapshot = await getDocs(usersCol);
     const users = userSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
