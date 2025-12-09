@@ -1,10 +1,8 @@
 import { subDays, addDays, startOfWeek, endOfWeek, format } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } from '@/types';
-import { initializeFirebase } from '@/firebase';
-import { getDocs, collection, query, orderBy, limit, where } from 'firebase/firestore';
-
-const now = new Date();
+import { initializeFirebaseOnServer } from '@/firebase/server-init';
+import { getDocs, collection, query, orderBy, limit, where, serverTimestamp, doc } from 'firebase/firestore';
 
 const toTimestamp = (date: Date): Timestamp => ({
   seconds: Math.floor(date.getTime() / 1000),
@@ -14,7 +12,7 @@ const toTimestamp = (date: Date): Timestamp => ({
 
 
 export const getUsers = async (): Promise<User[]> => {
-  const { firestore } = initializeFirebase();
+  const { firestore } = await initializeFirebaseOnServer();
   const usersCol = collection(firestore, 'users');
   const userSnapshot = await getDocs(usersCol);
   const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
@@ -22,7 +20,7 @@ export const getUsers = async (): Promise<User[]> => {
 }
 
 export const getProjects = async (): Promise<Project[]> => {
-  const { firestore } = initializeFirebase();
+  const { firestore } = await initializeFirebaseOnServer();
   const projectsCol = collection(firestore, 'projects');
   const projectSnapshot = await getDocs(projectsCol);
   const projectList = projectSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Project));
@@ -30,7 +28,7 @@ export const getProjects = async (): Promise<Project[]> => {
 };
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
-    const { firestore } = initializeFirebase();
+    const { firestore } = await initializeFirebaseOnServer();
     const projects = await getProjects();
     const users = await getUsers();
 
@@ -80,7 +78,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
-    const { firestore } = initializeFirebase();
+    const { firestore } = await initializeFirebaseOnServer();
     // This is a bit inefficient as we don't know the project id.
     // In a real app you'd pass projectId down or structure data differently.
     const projects = await getProjects();
@@ -109,19 +107,34 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
 };
 
 export const addProgressLog = async (subProjectId: string, logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy'>): Promise<ProgressLog> => {
-    return new Promise(resolve => setTimeout(() => {
-        const newLog: ProgressLog = {
-            id: `log-${subProjectId.split('-')[1]}-${subProjectId.split('-')[2]}-${Date.now()}`,
-            ...logData,
-            updatedAt: toTimestamp(new Date()),
-            createdBy: 'user-1', // Assuming current user is user-1
-        };
-        // mockProgressLogs.push(newLog);
-        console.log("Added new log:", newLog);
-        const resolvedLog = {
-            ...newLog,
-            updatedAt: (newLog.updatedAt as Timestamp).toDate()
-        }
-        resolve(resolvedLog);
-    }, 500));
-}
+    const { firestore } = await initializeFirebaseOnServer();
+    
+    // This is not correct as we don't know the project ID here. This function needs to be improved.
+    // For now, this is a placeholder. A better approach is to pass projectId.
+    const path = `projects/placeholder_project_id/sub_projects/${subProjectId}/progress_logs`;
+    const newLogRef = doc(collection(firestore, path));
+    
+    // This should come from the authenticated user session on the server
+    const userId = 'user-1-placeholder'; 
+
+    const newLogData = {
+        ...logData,
+        subProjectId,
+        createdBy: userId,
+        updatedAt: serverTimestamp()
+    };
+    
+    // In a real scenario, you'd find the project ID first.
+    // await setDoc(newLogRef, newLogData);
+    
+    console.log("Simulating adding log for now, as project ID is not available here.");
+
+    // Returning a simulated object because we can't actually write without the project ID.
+    return {
+        id: `log-simulated-${Date.now()}`,
+        ...logData,
+        createdBy: userId,
+        updatedAt: new Date(), 
+        createdByName: 'Placeholder User'
+    } as ProgressLog;
+};

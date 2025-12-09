@@ -4,8 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
-import { getFirestore, collection, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
-import { initializeFirebase } from '@/firebase';
+import { collection, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
+import { initializeFirebaseOnServer } from '@/firebase/server-init';
 
 const logSchema = z.object({
   executionSummary: z.string().min(1, '本週摘要為必填'),
@@ -37,7 +37,7 @@ const projectSchema = z.object({
 
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
-    const { firestore } = initializeFirebase();
+    const { firestore } = await initializeFirebaseOnServer();
     const batch = writeBatch(firestore);
 
     // This is a placeholder for the current user's ID.
