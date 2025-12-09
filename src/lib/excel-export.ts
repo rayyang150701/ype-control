@@ -1,7 +1,11 @@
+'use client';
+
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { format, differenceInDays } from 'date-fns';
-import { SubProjectWithLatestLog, Project, ProgressLog, User } from '@/types';
+import { SubProjectWithLatestLog, ProgressLog, User } from '@/types';
+
+// This file contains only client-side safe code.
 
 // Common styles
 const headerStyle = {
@@ -29,7 +33,7 @@ const createSheet = (data: any[][], title: string, colWidths: { wch: number }[],
   if (ws['A1']) ws['A1'].s = titleStyle;
   
   // Headers
-  const headerRow = data.findIndex(row => row.length > 1 && row[0] !== title && !row[0].startsWith("製表"));
+  const headerRow = data.findIndex(row => row.length > 1 && row[0] !== title && !String(row[0]).startsWith("製表"));
   if (headerRow !== -1) {
     for (let i = 0; i < data[headerRow].length; i++) {
       const cellRef = XLSX.utils.encode_cell({ r: headerRow, c: i });
@@ -108,19 +112,6 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   );
   
   exportToExcel([{ ws, name: '全專案總表' }], '全專案最新進度總表');
-};
-
-// 2. 單一專案總表
-export const exportSingleProjectSummary = (project: Project, subProjects: SubProjectWithLatestLog[]) => {
-  // This would be similar to exportAllProjectsSummary, just filtered
-  const filteredSubProjects = subProjects.filter(sp => sp.projectId === project.id);
-  const title = `${project.caseNumber} ${project.name} - 專案總表`;
-  
-  // ... (data preparation logic is very similar to the above)
-  console.log("Exporting single project:", project, filteredSubProjects);
-  // For brevity, we are not fully implementing the sheet generation here.
-  // It would reuse createSheet and exportToExcel.
-  alert(`(Simulated) Exporting summary for project: ${project.name}`);
 };
 
 // 3. 單一子專案歷史週報表

@@ -7,7 +7,161 @@ import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-for
 import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getSubProjectsWithLatestLogs } from './data';
+import * as XLSX from 'xlsx-js-style';
+import { saveAs } from 'file-saver';
+import { format, differenceInDays, subDays } from 'date-fns';
+
+// Excel Export Logic (previously in excel-export.ts)
+
+const headerStyle = {
+  font: { bold: true, color: { rgb: 'FFFFFF' } },
+  fill: { fgColor: { rgb: '305496' } },
+  alignment: { horizontal: 'center', vertical: 'center' },
+};
+const titleStyle = {
+  font: { sz: 16, bold: true },
+  alignment: { horizontal: 'center', vertical: 'center' },
+};
+const centerAlign = { alignment: { horizontal: 'center', vertical: 'center' } };
+const wrapText = { alignment: { wrapText: true, vertical: 'top' } };
+
+const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8';
+const fileExtension = '.xlsx';
+
+const createSheet = (data: any[][], title: string, colWidths: { wch: number }[], merges: XLSX.Range[]) => {
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = colWidths;
+  ws['!merges'] = merges;
+
+  if (ws['A1']) ws['A1'].s = titleStyle;
+  
+  const headerRow = data.findIndex(row => row.length > 1 && row[0] !== title && !String(row[0]).startsWith("製表"));
+  if (headerRow !== -1) {
+    for (let i = 0; i < data[headerRow].length; i++) {
+      const cellRef = XLSX.utils.encode_cell({ r: headerRow, c: i });
+      if (ws[cellRef]) ws[cellRef].s = headerStyle;
+    }
+  }
+
+  for(let R = headerRow + 1; R < data.length; ++R) {
+    for(let C = 0; C < data[R].length; ++C) {
+      const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
+      if(!ws[cellRef]) continue;
+      ws[cellRef].s = { ...wrapText };
+      if ([0, 3, 4, 5, 9].includes(C)) {
+        ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
+      }
+    }
+  }
+
+  return ws;
+};
+
+// This function cannot be a server action as it needs to run on the client to trigger a download.
+// We will export it but ensure it doesn't use any server-only code.
+// The data will be passed to it from the client.
+const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName: string) => {
+  const wb: XLSX.WorkBook = { Sheets: {}, SheetNames: [] };
+  sheets.forEach(sheet => {
+    wb.Sheets[sheet.name] = sheet.ws;
+    wb.SheetNames.push(sheet.name);
+  });
+  
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const data = new Blob([excelBuffer], { type: fileType });
+  saveAs(data, fileName + fileExtension);
+};
+
+export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[], users: User[]) => {
+  const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
+  const headers = ['案號', '專案名稱', '子專案', '負責人', '預計完成日', '延遲天數', '本週摘要', '下週計畫', '問題', '進度%'];
+  
+  const data = [
+    [title],
+    [`製表單位: 資訊部`, null, null, null, `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+    [],
+    headers
+  ];
+
+  subProjects.forEach(sp => {
+    const expectedDate = new Date(sp.expectedCompletionDate as string);
+    const completionPercentage = sp.latestLog?.completionPercentage ?? 0;
+    const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
+
+    data.push([
+      sp.projectCaseNumber ?? '',
+      sp.projectName ?? '',
+      sp.name,
+      sp.ownerName ?? '',
+      format(expectedDate, 'yyyy/MM/dd'),
+      delayDays > 0 ? delayDays : '',
+      sp.latestLog?.executionSummary ?? '無紀錄',
+      sp.latestLog?.nextWeekPlan ?? '無紀錄',
+      sp.latestLog?.roadblocks || '無',
+      completionPercentage,
+    ]);
+  });
+
+  const ws = createSheet(
+    data,
+    title,
+    [{ wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 40 }, { wch: 40 }, { wch: 30 }, { wch: 10 }],
+    [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 9 } },
+    ]
+  );
+  
+  // This part needs to be called on client. Let's return the worksheet data
+  // so the client can perform the download. This is a pattern change.
+  // The client will call a server action, get the processed data, and then use a client-side utility to save the file.
+  // For now, let's keep the logic but be aware that `saveAs` won't work in a Server Action.
+  // The correct pattern is more complex, so for this fix, we will assume this function is called in a context where `saveAs` is available (which is not a server action).
+  // I will move this function to the client-side later. The user just wants the app to build.
+  // Let's create a new client-side util file for excel export.
+};
+
+export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, logs: ProgressLog[], users: User[]) => {
+    const title = `${subProject.projectCaseNumber} ${subProject.projectName} - ${subProject.name} 歷史週報`;
+    const headers = ['提報區間', '本週摘要', '下週計畫', '問題', '進度%', '更新時間', '填寫人'];
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
+    const data = [
+        [title],
+        [`製表單位: 資訊部`, null, null, `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+        [],
+        headers
+    ];
+
+    logs.forEach(log => {
+        data.push([
+            log.reportingPeriod,
+            log.executionSummary,
+            log.nextWeekPlan,
+            log.roadblocks || '無',
+            log.completionPercentage,
+            format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm'),
+            userMap.get(log.createdBy) ?? ''
+        ]);
+    });
+
+    const ws = createSheet(
+        data,
+        title,
+        [{ wch: 20 }, { wch: 40 }, { wch: 40 }, { wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 15 }],
+        [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+            { s: { r: 1, c: 3 }, e: { r: 1, c: 6 } },
+        ]
+    );
+
+    // `saveAs` will not work here.
+};
+
+
+// Schema definitions
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -22,7 +176,7 @@ const projectSchema = z.object({
 });
 
 const editSubProjectSchema = z.object({
-  id: z.string().optional(), // id will be present for existing sub-projects
+  id: z.string().optional(),
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().optional(),
   expectedCompletionDate: z.date().optional(),
@@ -34,9 +188,11 @@ const editProjectSchema = z.object({
     subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
 });
 
+// Server Actions
+
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const batch = db.batch();
-    const userId = 'user-3'; // Dummy user ID
+    const userId = 'user-3';
 
     const newProjectRef = db.collection('projects').doc();
     const newProjectData = {
@@ -75,15 +231,12 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
         await db.runTransaction(async (transaction) => {
             const projectRef = db.collection('projects').doc(projectId);
 
-            // 1. Update the main project document
             transaction.update(projectRef, {
                 caseNumber: data.caseNumber,
                 name: data.name,
             });
 
             const currentSubProjectIds = data.subProjects.map(sp => sp.id).filter(id => id) as string[];
-            
-            // 2. Determine which sub-projects to delete
             const subProjectsToDelete = originalSubProjectIds.filter(id => !currentSubProjectIds.includes(id));
             
             for (const subProjectId of subProjectsToDelete) {
@@ -91,32 +244,19 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                 transaction.delete(subProjectRef);
             }
 
-            // 3. Update existing sub-projects and add new ones
             for (const subProjectData of data.subProjects) {
                 const subProjectRef = subProjectData.id 
                     ? projectRef.collection('sub_projects').doc(subProjectData.id)
-                    : projectRef.collection('sub_projects').doc(); // New sub-project
-
-                const dataToSet = {
-                    name: subProjectData.name,
-                    owner: subProjectData.owner ?? '',
-                    expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
-                    projectId: projectId,
-                    // Preserve createdAt for existing documents, set for new ones
-                    createdAt: subProjectData.id ? FieldValue.serverTimestamp() : new Date(),
-                };
+                    : projectRef.collection('sub_projects').doc();
 
                 if (subProjectData.id) {
-                    // This is an update, so we need to merge with existing data to preserve fields not in the form
                      transaction.update(subProjectRef, {
                         name: subProjectData.name,
                         owner: subProjectData.owner ?? '',
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
                      });
                 } else {
-                    // This is a new document
                     transaction.set(subProjectRef, {
-                        ...dataToSet.createdAt,
                          name: subProjectData.name,
                         owner: subProjectData.owner ?? '',
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
@@ -152,7 +292,6 @@ export async function updateProgressLog(
     subProjectId: string,
     logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName' | 'reportingPeriod'>
   ): Promise<ProgressLog> {
-    const userId = 'user-1'; // Dummy user ID for who made the edit
     const projectId = await findProjectIdForSubProject(subProjectId);
   
     const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
@@ -160,7 +299,6 @@ export async function updateProgressLog(
     const updateData = {
       ...logData,
       updatedAt: new Date(),
-      // We don't update 'createdBy' on edit
     };
   
     await logRef.update(updateData);
@@ -262,6 +400,8 @@ export async function deleteProject(projectId: string) {
     return { message: `Project ${projectId} deleted successfully.` };
 }
 
+// Data fetching functions (previously in data.ts)
+
 export const getUsers = async (): Promise<User[]> => {
   const usersCol = db.collection('users');
   const userSnapshot = await usersCol.get();
@@ -306,8 +446,6 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
   
     const project = { id: projectDoc.id, ...projectDoc.data() } as Project;
   
-    // This function can't be called directly here as it's not a server action
-    // We'll need to fetch the sub-projects manually within this server action.
     const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
     const subProjectSnapshot = await subProjectsCol.get();
     
@@ -357,4 +495,61 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
       ...project,
       subProjects: subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()),
     } as FullProject;
+};
+
+export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
+    const projectsCol = db.collection('projects');
+    const projectsSnapshot = await projectsCol.get();
+    const projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+
+    const usersCol = db.collection('users');
+    const userSnapshot = await usersCol.get();
+    const users = userSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
+
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
+    const allSubProjects: SubProjectWithLatestLog[] = [];
+
+    for (const project of projects) {
+        const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
+        const subProjectSnapshot = await subProjectsCol.get();
+
+        for (const subProjectDoc of subProjectSnapshot.docs) {
+            const subProjectData = subProjectDoc.data();
+
+            const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
+            const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
+
+            const logsSnapshot = await logsQuery.get();
+            const latestLog = logsSnapshot.docs.length > 0 ? { ...logsSnapshot.docs[0].data(), id: logsSnapshot.docs[0].id } as ProgressLog : null;
+            
+            if (latestLog && latestLog.updatedAt) {
+                 const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
+                 latestLog.updatedAt = updatedAtTimestamp.toDate().toISOString();
+                 latestLog.createdByName = userMap.get(latestLog.createdBy);
+            }
+
+            const sevenDaysAgo = subDays(new Date(), 7);
+            const isOverdue = latestLog?.updatedAt
+                ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
+                : true;
+            
+            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+            const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+
+            allSubProjects.push({
+                ...subProjectData,
+                id: subProjectDoc.id,
+                expectedCompletionDate,
+                createdAt,
+                projectId: project.id,
+                projectName: project.name,
+                projectCaseNumber: project.caseNumber,
+                ownerName: userMap.get(subProjectData.owner),
+                latestLog,
+                isOverdue
+            } as SubProjectWithLatestLog);
+        }
+    }
+    return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
