@@ -2,6 +2,7 @@
 import { initializeApp, getApps, getApp, App as FirebaseAdminApp } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
+import { firebaseConfig } from 'firebase-functions/params';
 
 // Define the return type for our initialized services
 interface FirebaseServerServices {
@@ -14,7 +15,7 @@ interface FirebaseServerServices {
  * Initializes and returns Firebase Admin services for server-side use.
  * This function ensures that initialization happens only once.
  */
-export async function initializeFirebaseOnServer(): Promise<FirebaseServerServices> {
+export function initializeFirebaseOnServer(): FirebaseServerServices {
   // Check if the default app is already initialized
   if (getApps().length) {
     const firebaseApp = getApp();
@@ -27,7 +28,9 @@ export async function initializeFirebaseOnServer(): Promise<FirebaseServerServic
 
   // Initialize the Firebase Admin app. In a managed environment like App Hosting,
   // initializeApp() will automatically use the available service account credentials.
-  const firebaseApp = initializeApp();
+  const firebaseApp = initializeApp({
+    projectId: firebaseConfig().projectId,
+  });
 
   return {
     firebaseApp,
