@@ -37,7 +37,7 @@ export function Header() {
               className="hidden sm:block object-contain"
             />
           )}
-          <h1 className="font-headline text-xl md:text-2xl lg:text-3xl font-bold text-primary whitespace-nowrap">
+          <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap">
             燁輝智慧製造執行方案進度管制表
           </h1>
         </div>
