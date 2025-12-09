@@ -6,24 +6,10 @@ import serviceAccount from '../../docs/service-account.json';
 
 if (!getApps().length) {
   try {
-    // Ensure the service account has the correct properties.
-    if (
-      !serviceAccount.project_id ||
-      !serviceAccount.client_email ||
-      !serviceAccount.private_key
-    ) {
-      throw new Error(
-        'The service account JSON file is missing required properties (project_id, client_email, private_key).'
-      );
-    }
-    
+    // The most robust way is to pass the entire service account object
+    // directly to cert(), letting the SDK handle the parsing.
     initializeApp({
-      credential: cert({
-        projectId: serviceAccount.project_id,
-        clientEmail: serviceAccount.client_email,
-        // The key is to replace the literal `\n` strings with actual newline characters.
-        privateKey: serviceAccount.private_key.replace(/\\n/g, '\n'),
-      }),
+      credential: cert(serviceAccount),
     });
 
   } catch (error) {
