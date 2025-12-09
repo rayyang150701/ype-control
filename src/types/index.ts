@@ -52,3 +52,7 @@ export interface ProgressLog {
 export interface SubProjectWithLatestLog extends SubProject {
   isOverdue: boolean;
 }
+
+export interface FullProject extends Project {
+    subProjects: SubProjectWithLatestLog[];
+}

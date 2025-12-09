@@ -25,9 +25,10 @@ type TimelineModalProps = {
   isLoading: boolean;
   onExport: () => void;
   onLogUpdated: (updatedLog: ProgressLog, subProjectId: string) => void;
+  onEditProject: (projectId: string) => void;
 };
 
-export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport, onLogUpdated }: TimelineModalProps) {
+export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport, onLogUpdated, onEditProject }: TimelineModalProps) {
   const [editingLog, setEditingLog] = useState<ProgressLog | null>(null);
 
   const handleEditClick = (log: ProgressLog) => {
@@ -42,11 +43,17 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
     <>
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="font-headline text-2xl">{subProject.name} - 歷史週報</DialogTitle>
-            <DialogDescription>
-              {subProject.projectCaseNumber} {subProject.projectName}
-            </DialogDescription>
+          <DialogHeader className='flex-row items-center justify-between pr-6'>
+            <div>
+              <DialogTitle className="font-headline text-2xl">{subProject.name} - 歷史週報</DialogTitle>
+              <DialogDescription>
+                {subProject.projectCaseNumber} {subProject.projectName}
+              </DialogDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => onEditProject(subProject.projectId)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                編輯專案
+            </Button>
           </DialogHeader>
           <div className="flex-grow min-h-0">
               <ScrollArea className="h-full pr-6">

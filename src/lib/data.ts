@@ -1,5 +1,5 @@
 import { subDays } from 'date-fns';
-import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } from '@/types';
+import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog, FullProject } from '@/types';
 import { db } from '@/lib/firebase-admin';
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
@@ -49,6 +49,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ...subProject,
                 expectedCompletionDate: expectedCompletionDateTimestamp.toDate().toISOString(),
                 createdAt: createdAtTimestamp.toDate().toISOString(),
+                projectId: project.id,
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
                 ownerName: userMap.get(subProject.owner),
@@ -58,4 +59,21 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
         }
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+};
+
+export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists) {
+      return null;
+    }
+  
+    const project = { id: projectDoc.id, ...projectDoc.data() } as Project;
+  
+    const subProjects = await getSubProjectsWithLatestLogs();
+    const filteredSubProjects = subProjects.filter(sp => sp.projectId === projectId);
+  
+    return {
+      ...project,
+      subProjects: filteredSubProjects,
+    } as FullProject;
 };

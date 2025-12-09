@@ -6,7 +6,7 @@ import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-perce
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog } from '@/types';
-
+import { FieldValue } from 'firebase-admin/firestore';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -20,6 +20,18 @@ const projectSchema = z.object({
     subProjects: z.array(subProjectSchema).min(1, '至少需要一個子專案'),
 });
 
+const editSubProjectSchema = z.object({
+    id: z.string().optional(), // id will be present for existing sub-projects
+    name: z.string().min(1, '子專案名稱為必填'),
+    owner: z.string().optional(),
+    expectedCompletionDate: z.date().optional(),
+});
+
+const editProjectSchema = z.object({
+    caseNumber: z.string().min(1, '主專案案號為必填'),
+    name: z.string().min(1, '主專案名稱為必填'),
+    subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
+});
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const batch = db.batch();
@@ -56,6 +68,72 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         return { success: false, message: '建立專案時發生錯誤。' };
     }
 }
+
+export async function updateProject(projectId: string, data: z.infer<typeof editProjectSchema>, originalSubProjectIds: string[]) {
+    try {
+        await db.runTransaction(async (transaction) => {
+            const projectRef = db.collection('projects').doc(projectId);
+
+            // 1. Update the main project document
+            transaction.update(projectRef, {
+                caseNumber: data.caseNumber,
+                name: data.name,
+            });
+
+            const currentSubProjectIds = data.subProjects.map(sp => sp.id).filter(id => id) as string[];
+            
+            // 2. Determine which sub-projects to delete
+            const subProjectsToDelete = originalSubProjectIds.filter(id => !currentSubProjectIds.includes(id));
+            
+            for (const subProjectId of subProjectsToDelete) {
+                const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
+                transaction.delete(subProjectRef);
+            }
+
+            // 3. Update existing sub-projects and add new ones
+            for (const subProjectData of data.subProjects) {
+                const subProjectRef = subProjectData.id 
+                    ? projectRef.collection('sub_projects').doc(subProjectData.id)
+                    : projectRef.collection('sub_projects').doc(); // New sub-project
+
+                const dataToSet = {
+                    name: subProjectData.name,
+                    owner: subProjectData.owner ?? '',
+                    expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
+                    projectId: projectId,
+                    // Preserve createdAt for existing documents, set for new ones
+                    createdAt: subProjectData.id ? FieldValue.serverTimestamp() : new Date(),
+                };
+
+                if (subProjectData.id) {
+                    // This is an update, so we need to merge with existing data to preserve fields not in the form
+                     transaction.update(subProjectRef, {
+                        name: subProjectData.name,
+                        owner: subProjectData.owner ?? '',
+                        expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
+                     });
+                } else {
+                    // This is a new document
+                    transaction.set(subProjectRef, {
+                        ...dataToSet.createdAt,
+                         name: subProjectData.name,
+                        owner: subProjectData.owner ?? '',
+                        expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
+                        projectId: projectId,
+                        createdAt: new Date(),
+                    });
+                }
+            }
+        });
+        
+        revalidatePath('/dashboard');
+        return { success: true, message: '專案已成功更新！' };
+    } catch (error) {
+        console.error("Error updating project:", error);
+        return { success: false, message: '更新專案時發生錯誤。' };
+    }
+}
+
 
 async function findProjectIdForSubProject(subProjectId: string): Promise<string> {
     const projectsSnapshot = await db.collection('projects').get();

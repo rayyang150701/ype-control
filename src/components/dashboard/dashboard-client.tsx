@@ -2,14 +2,16 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog, FullProject } from '@/types';
 import { ProjectCard } from './project-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
-import { getProgressLogsForSubProject, getUsers } from '@/lib/actions';
+import { getProgressLogsForSubProject, getUsers, getFullProjectById } from '@/lib/actions';
 import { NewProjectDialog } from './new-project-dialog';
+import { EditProjectDialog } from './edit-project-dialog';
+
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
@@ -21,10 +23,15 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [filter, setFilter] = useState('all');
   
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
+  const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
+
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [timelineLogs, setTimelineLogs] = useState<ProgressLog[]>([]);
   const [isTimelineLoading, setIsTimelineLoading] = useState(false);
+
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  
   const router = useRouter();
 
 
@@ -59,6 +66,17 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       setTimelineLogs([]);
     } finally {
       setIsTimelineLoading(false);
+    }
+  };
+
+  const handleEditProjectClick = async (projectId: string) => {
+    const fullProject = await getFullProjectById(projectId);
+    if(fullProject){
+      setSelectedFullProject(fullProject);
+      setIsTimelineOpen(false); // Close timeline modal if open
+      setIsEditProjectOpen(true);
+    } else {
+        // handle error, maybe show a toast
     }
   };
 
@@ -127,6 +145,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     router.refresh();
   }
 
+  const onProjectUpdated = () => {
+    setIsEditProjectOpen(false);
+    router.refresh();
+  }
+
 
   return (
     <>
@@ -161,6 +184,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           isLoading={isTimelineLoading}
           onExport={handleExportHistory}
           onLogUpdated={onLogUpdated}
+          onEditProject={handleEditProjectClick}
         />
       )}
 
@@ -169,6 +193,15 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setIsOpen={setIsNewProjectOpen}
         onProjectAdded={onProjectAdded}
       />
+      
+      {selectedFullProject && (
+        <EditProjectDialog
+          isOpen={isEditProjectOpen}
+          setIsOpen={setIsEditProjectOpen}
+          project={selectedFullProject}
+          onProjectUpdated={onProjectUpdated}
+        />
+      )}
     </>
   );
 }
