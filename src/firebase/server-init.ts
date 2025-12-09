@@ -15,7 +15,7 @@ interface FirebaseServerServices {
  * Initializes and returns Firebase Admin services for server-side use.
  * This function ensures that initialization happens only once.
  */
-export function initializeFirebaseOnServer(): FirebaseServerServices {
+export async function initializeFirebaseOnServer(): Promise<FirebaseServerServices> {
   // Check if the default app is already initialized
   if (getApps().length) {
     const firebaseApp = getApp();
