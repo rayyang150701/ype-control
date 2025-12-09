@@ -4,12 +4,6 @@ import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } 
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import { getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 
-const toTimestamp = (date: Date): Timestamp => ({
-  seconds: Math.floor(date.getTime() / 1000),
-  nanoseconds: 0,
-  toDate: () => date,
-});
-
 export const getProjects = async (): Promise<Project[]> => {
   const { firestore } = await initializeFirebaseOnServer();
   const projectsCol = collection(firestore, 'projects');
@@ -70,37 +64,4 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
         }
     }
     return allSubProjects.sort((a,b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime());
-};
-
-export const addProgressLog = async (subProjectId: string, logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy'>): Promise<ProgressLog> => {
-    const { firestore } = await initializeFirebaseOnServer();
-    
-    // This is not correct as we don't know the project ID here. This function needs to be improved.
-    // For now, this is a placeholder. A better approach is to pass projectId.
-    const path = `projects/placeholder_project_id/sub_projects/${subProjectId}/progress_logs`;
-    const newLogRef = collection(firestore, path);
-    
-    // This should come from the authenticated user session on the server
-    const userId = 'user-1-placeholder'; 
-
-    const newLogData = {
-        ...logData,
-        subProjectId,
-        createdBy: userId,
-        updatedAt: new Date()
-    };
-    
-    // In a real scenario, you'd find the project ID first.
-    // await addDoc(newLogRef, newLogData);
-    
-    console.log("Simulating adding log for now, as project ID is not available here.");
-
-    // Returning a simulated object because we can't actually write without the project ID.
-    return {
-        id: `log-simulated-${Date.now()}`,
-        ...logData,
-        createdBy: userId,
-        updatedAt: new Date(), 
-        createdByName: 'Placeholder User'
-    } as ProgressLog;
 };

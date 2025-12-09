@@ -5,9 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
-import { add, sub } from 'date-fns/locale/add';
-import { addProgressLog as serverAddProgressLog, getAiSuggestions } from '@/lib/actions';
-import { addProgressLog as clientAddProgressLog } from '@/lib/data';
+import { addProgressLog, getAiSuggestions } from '@/lib/actions';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -100,18 +98,24 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
 
   const onSubmit = (data: LogFormData) => {
     startTransition(async () => {
-      const newLogData = {
-        ...data,
-        roadblocks: data.roadblocks ?? '',
-        reportingPeriod,
-      };
+      try {
+        const newLogData = {
+          ...data,
+          roadblocks: data.roadblocks ?? '',
+          reportingPeriod,
+        };
+  
+        const newLog = await addProgressLog(subProject.id, newLogData);
+        
+        onLogAdded(newLog, subProject.id);
+  
+        toast({ title: '週報新增成功' });
+        setIsOpen(false);
+      } catch (e) {
+        console.error(e);
+        toast({ title: '錯誤', description: '新增週報失敗', variant: 'destructive' });
+      }
 
-      const newLog = await clientAddProgressLog(subProject.id, newLogData);
-      
-      onLogAdded(newLog, subProject.id);
-
-      toast({ title: '週報新增成功' });
-      setIsOpen(false);
     });
   };
 

@@ -4,26 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
-import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy, getDoc } from 'firebase/firestore';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import type { User, ProgressLog } from '@/types';
-
-
-const logSchema = z.object({
-  executionSummary: z.string().min(1, '本週摘要為必填'),
-  nextWeekPlan: z.string().min(1, '下週計畫為必填'),
-  roadblocks: z.string().optional(),
-  completionPercentage: z.coerce.number().min(0).max(100),
-  reportingPeriod: z.string(),
-  subProjectId: z.string(),
-});
-
-type State = {
-  errors?: {
-    [key: string]: string[] | undefined;
-  };
-  message?: string | null;
-};
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -78,34 +61,57 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     }
 }
 
+export async function addProgressLog (
+    subProjectId: string, 
+    logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName'>
+): Promise<ProgressLog> {
+    const { firestore } = await initializeFirebaseOnServer();
 
-export async function addProgressLog(
-  prevState: State,
-  formData: FormData
-): Promise<State> {
-  const validatedFields = logSchema.safeParse({
-    executionSummary: formData.get('executionSummary'),
-    nextWeekPlan: formData.get('nextWeekPlan'),
-    roadblocks: formData.get('roadblocks'),
-    completionPercentage: formData.get('completionPercentage'),
-    reportingPeriod: formData.get('reportingPeriod'),
-    subProjectId: formData.get('subProjectId'),
-  });
+    // This is a placeholder for the current user's ID.
+    // In a real application, you would get this from the authenticated user session.
+    const userId = 'user-1'; 
 
-  if (!validatedFields.success) {
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: 'Missing Fields. Failed to Add Log.',
+    // To add a progress log, we need the project ID. We can find it by querying projects.
+    // This is not efficient, a better data model would have projectId on the subproject card.
+    const projectsSnapshot = await getDocs(collection(firestore, 'projects'));
+    let projectId: string | null = null;
+    for (const projectDoc of projectsSnapshot.docs) {
+        const subProjectDoc = await getDoc(doc(firestore, `projects/${projectDoc.id}/sub_projects`, subProjectId));
+        if (subProjectDoc.exists()) {
+            projectId = projectDoc.id;
+            break;
+        }
+    }
+
+    if (!projectId) {
+        throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+    }
+    
+    const newLogRef = doc(collection(firestore, `projects/${projectId}/sub_projects/${subProjectId}/progress_logs`));
+    
+    const newLogData = {
+        ...logData,
+        subProjectId,
+        createdBy: userId,
+        updatedAt: serverTimestamp() // Use server-side timestamp
     };
-  }
-  
-  // Here you would call your database function, e.g.:
-  // await db.collection(...).add({ ...validatedFields.data });
-  console.log('Adding log (simulated):', validatedFields.data);
+    
+    await setDoc(newLogRef, newLogData);
+    
+    revalidatePath('/dashboard');
 
-  revalidatePath('/dashboard');
-  return { message: 'Progress log added successfully.' };
-}
+    const users = await getUsers();
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
+    return {
+        id: newLogRef.id,
+        ...logData,
+        createdBy: userId,
+        updatedAt: new Date(), 
+        createdByName: userMap.get(userId)
+    } as ProgressLog;
+};
+
 
 export async function getAiSuggestions(
   previousLog: {
@@ -170,21 +176,25 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
     let logs: ProgressLog[] = [];
 
     for (const project of projects) {
-        const logsCol = collection(firestore, `projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
-        const q = query(logsCol, orderBy('updatedAt', 'desc'));
-        const logsSnapshot = await getDocs(q);
-        if (!logsSnapshot.empty) {
-            const users = await getUsers();
-            const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-            logs = logsSnapshot.docs.map(doc => {
-                const data = doc.data() as any;
-                return {
-                    ...data,
-                    id: doc.id,
-                    updatedAt: data.updatedAt.toDate(),
-                    createdByName: userMap.get(data.createdBy)
-                } as ProgressLog;
-            });
+        const subProjectDoc = await getDoc(doc(firestore, `projects/${project.id}/sub_projects`, subProjectId));
+        if (subProjectDoc.exists()) {
+            const logsCol = collection(firestore, `projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
+            const q = query(logsCol, orderBy('updatedAt', 'desc'));
+            const logsSnapshot = await getDocs(q);
+            
+            if (!logsSnapshot.empty) {
+                const users = await getUsers();
+                const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+                logs = logsSnapshot.docs.map(doc => {
+                    const data = doc.data() as any;
+                    return {
+                        ...data,
+                        id: doc.id,
+                        updatedAt: data.updatedAt.toDate(),
+                        createdByName: userMap.get(data.createdBy)
+                    } as ProgressLog;
+                });
+            }
             break; // Found the logs for the subproject
         }
     }
