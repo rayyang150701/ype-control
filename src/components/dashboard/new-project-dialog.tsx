@@ -16,6 +16,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { User } from '@/types';
@@ -30,11 +31,17 @@ const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().min(1, '必須選擇一位負責人'),
   expectedCompletionDate: z.date().optional(),
+  actualCompletionDate: z.date().optional(),
 });
 
 const projectSchema = z.object({
   caseNumber: z.string().min(1, '主專案案號為必填'),
   name: z.string().min(1, '主專案名稱為必填'),
+  projectPurpose: z.string().optional(),
+  currentStatusAndIssues: z.string().optional(),
+  yiehPhuiProjectManager: z.string().optional(),
+  tpmOfficeContact: z.string().optional(),
+  egigaContact: z.string().optional(),
   subProjects: z.array(subProjectSchema).min(1, '至少需要一個子專案'),
 });
 
@@ -49,7 +56,7 @@ type NewProjectDialogProps = {
 export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProjectDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
-  const [openCalendarIndex, setOpenCalendarIndex] = useState<number | null>(null);
+  const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
@@ -73,8 +80,13 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
     defaultValues: {
       caseNumber: '',
       name: '',
+      projectPurpose: '',
+      currentStatusAndIssues: '',
+      yiehPhuiProjectManager: '',
+      tpmOfficeContact: '',
+      egigaContact: '',
       subProjects: [
-        { name: '', owner: '', expectedCompletionDate: undefined },
+        { name: '', owner: '', expectedCompletionDate: undefined, actualCompletionDate: undefined },
       ],
     },
   });
@@ -102,10 +114,18 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
       }
     });
   };
+  
+  const handleCalendarOpen = (type: 'expected' | 'actual', index: number) => {
+    if(openCalendar?.type === type && openCalendar?.index === index) {
+      setOpenCalendar(null);
+    } else {
+      setOpenCalendar({ type, index });
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[700px]">
+      <DialogContent className="sm:max-w-4xl">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle className="font-headline text-xl">新增專案</DialogTitle>
@@ -114,7 +134,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
 
           <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4">
             {/* 主專案資訊 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="caseNumber">主專案案號</Label>
                 <Input id="caseNumber" {...register('caseNumber')} />
@@ -125,6 +145,31 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                 <Label htmlFor="name">主專案名稱</Label>
                 <Input id="name" {...register('name')} />
                 {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+              </div>
+
+               <div className="grid gap-2 col-span-1 md:col-span-2">
+                <Label htmlFor="projectPurpose">專案目的</Label>
+                <Textarea id="projectPurpose" {...register('projectPurpose')} />
+              </div>
+
+              <div className="grid gap-2 col-span-1 md:col-span-2">
+                <Label htmlFor="currentStatusAndIssues">現況/問題點</Label>
+                <Textarea id="currentStatusAndIssues" {...register('currentStatusAndIssues')} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="yiehPhuiProjectManager">燁輝專案負責主管與分機</Label>
+                <Input id="yiehPhuiProjectManager" {...register('yiehPhuiProjectManager')} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="tpmOfficeContact">TPM管理室窗口</Label>
+                <Input id="tpmOfficeContact" {...register('tpmOfficeContact')} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="egigaContact">億威電子</Label>
+                <Input id="egigaContact" {...register('egigaContact')} />
               </div>
             </div>
 
@@ -140,7 +185,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     className="grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative"
                   >
                     {/* 子專案名稱 */}
-                    <div className="col-span-12 sm:col-span-4">
+                    <div className="col-span-12 sm:col-span-3">
                       <Label>子專案名稱</Label>
                       <Input {...register(`subProjects.${index}.name`)} />
                       {errors.subProjects?.[index]?.name && (
@@ -151,7 +196,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     </div>
 
                     {/* 負責人 */}
-                    <div className="col-span-6 sm:col-span-4">
+                    <div className="col-span-12 sm:col-span-3">
                       <Label>負責人</Label>
                       <Controller
                         name={`subProjects.${index}.owner`}
@@ -179,7 +224,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     </div>
 
                     {/* 預計完成日 */}
-                    <div className="col-span-6 sm:col-span-4">
+                    <div className="col-span-6 sm:col-span-3">
                       <Label>預計完成日</Label>
                       <Controller
                         name={`subProjects.${index}.expectedCompletionDate`}
@@ -189,9 +234,46 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={() => {
-                                setOpenCalendarIndex(openCalendarIndex === index ? null : index);
-                              }}
+                              onClick={() => handleCalendarOpen('expected', index)}
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formatDate(field.value)}
+                            </Button>
+                            {openCalendar?.type === 'expected' && openCalendar?.index === index && (
+                              <>
+                                <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
+                                <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                                  <CustomCalendar
+                                    selected={field.value}
+                                    onSelect={(date) => {
+                                      field.onChange(date);
+                                      setOpenCalendar(null);
+                                    }}
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      />
+                    </div>
+
+                    {/* 實際完成日 */}
+                    <div className="col-span-6 sm:col-span-3">
+                      <Label>實際完成日</Label>
+                       <Controller
+                        name={`subProjects.${index}.actualCompletionDate`}
+                        control={control}
+                        render={({ field }) => (
+                           <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => handleCalendarOpen('actual', index)}
                               className={cn(
                                 "w-full justify-start text-left font-normal",
                                 !field.value && "text-muted-foreground"
@@ -201,22 +283,15 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                               {formatDate(field.value)}
                             </Button>
 
-                            {/* 自製日曆彈出層 */}
-                            {openCalendarIndex === index && (
+                            {openCalendar?.type === 'actual' && openCalendar?.index === index && (
                               <>
-                                {/* 背景遮罩 */}
-                                <div
-                                  className="fixed inset-0 z-[100]"
-                                  onClick={() => setOpenCalendarIndex(null)}
-                                />
-                                
-                                {/* 日曆面板 */}
+                                <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
                                 <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
                                   <CustomCalendar
                                     selected={field.value}
                                     onSelect={(date) => {
                                       field.onChange(date);
-                                      setOpenCalendarIndex(null);
+                                      setOpenCalendar(null);
                                     }}
                                   />
                                 </div>
@@ -225,12 +300,8 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                           </div>
                         )}
                       />
-                      {errors.subProjects?.[index]?.expectedCompletionDate && (
-                        <p className="text-sm text-destructive">
-                          {errors.subProjects?.[index]?.expectedCompletionDate?.message}
-                        </p>
-                      )}
                     </div>
+
 
                     {/* 刪除按鈕 */}
                     {fields.length > 1 && (
@@ -257,6 +328,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                       name: '',
                       owner: '',
                       expectedCompletionDate: undefined,
+                      actualCompletionDate: undefined,
                     })
                   }
                 >
@@ -286,3 +358,5 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
     </Dialog>
   );
 }
+
+    

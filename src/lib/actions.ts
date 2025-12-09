@@ -16,12 +16,18 @@ const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
     owner: z.string().min(1, '必須選擇一位負責人'),
     expectedCompletionDate: z.date().optional(),
+    actualCompletionDate: z.date().optional(),
 });
 
 const projectSchema = z.object({
-    caseNumber: z.string().min(1, '主專案案號為必填'),
-    name: z.string().min(1, '主專案名稱為必填'),
-    subProjects: z.array(subProjectSchema).min(1, '至少需要一個子專案'),
+  caseNumber: z.string().min(1, '主專案案號為必填'),
+  name: z.string().min(1, '主專案名稱為必填'),
+  projectPurpose: z.string().optional(),
+  currentStatusAndIssues: z.string().optional(),
+  yiehPhuiProjectManager: z.string().optional(),
+  tpmOfficeContact: z.string().optional(),
+  egigaContact: z.string().optional(),
+  subProjects: z.array(subProjectSchema).min(1, '至少需要一個子專案'),
 });
 
 const editSubProjectSchema = z.object({
@@ -29,12 +35,18 @@ const editSubProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().min(1, '必須選擇一位負責人'),
   expectedCompletionDate: z.date().optional(),
+  actualCompletionDate: z.date().optional(),
 });
 
 const editProjectSchema = z.object({
-    caseNumber: z.string().min(1, '主專案案號為必填'),
-    name: z.string().min(1, '主專案名稱為必填'),
-    subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
+  caseNumber: z.string().min(1, '主專案案號為必填'),
+  name: z.string().min(1, '主專案名稱為必填'),
+  projectPurpose: z.string().optional(),
+  currentStatusAndIssues: z.string().optional(),
+  yiehPhuiProjectManager: z.string().optional(),
+  tpmOfficeContact: z.string().optional(),
+  egigaContact: z.string().optional(),
+  subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
 });
 
 const userSchema = z.object({
@@ -53,6 +65,7 @@ export async function createUser(data: z.infer<typeof userSchema>) {
     const newUserRef = db.collection('users').doc();
     await newUserRef.set({
       ...data,
+      uid: newUserRef.id,
       createdAt: FieldValue.serverTimestamp(),
     });
     revalidatePath('/users');
@@ -105,6 +118,11 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         status: 'active',
         createdBy: userId,
         createdAt: FieldValue.serverTimestamp(),
+        projectPurpose: data.projectPurpose ?? '',
+        currentStatusAndIssues: data.currentStatusAndIssues ?? '',
+        yiehPhuiProjectManager: data.yiehPhuiProjectManager ?? '',
+        tpmOfficeContact: data.tpmOfficeContact ?? '',
+        egigaContact: data.egigaContact ?? '',
     };
     batch.set(newProjectRef, newProjectData);
 
@@ -113,7 +131,8 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         const newSubProjectData = {
             name: subProject.name,
             owner: subProject.owner,
-            expectedCompletionDate: subProject.expectedCompletionDate ? subProject.expectedCompletionDate : null,
+            expectedCompletionDate: subProject.expectedCompletionDate ?? null,
+            actualCompletionDate: subProject.actualCompletionDate ?? null,
             projectId: newProjectRef.id,
             createdAt: FieldValue.serverTimestamp(),
         };
@@ -138,6 +157,11 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
             transaction.update(projectRef, {
                 caseNumber: data.caseNumber,
                 name: data.name,
+                projectPurpose: data.projectPurpose ?? '',
+                currentStatusAndIssues: data.currentStatusAndIssues ?? '',
+                yiehPhuiProjectManager: data.yiehPhuiProjectManager ?? '',
+                tpmOfficeContact: data.tpmOfficeContact ?? '',
+                egigaContact: data.egigaContact ?? '',
             });
 
             const currentSubProjectIds = data.subProjects.map(sp => sp.id).filter(id => id) as string[];
@@ -158,12 +182,14 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                         name: subProjectData.name,
                         owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
+                        actualCompletionDate: subProjectData.actualCompletionDate ?? null,
                      });
                 } else {
                     transaction.set(subProjectRef, {
                          name: subProjectData.name,
                         owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
+                        actualCompletionDate: subProjectData.actualCompletionDate ?? null,
                         projectId: projectId,
                         createdAt: FieldValue.serverTimestamp(),
                     });
@@ -407,12 +433,14 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             : true;
 
         const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
+        const actualCompletionDateTimestamp = subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp;
         const subProjectCreatedAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
 
         subProjects.push({
             ...subProjectData,
             id: subProjectDoc.id,
-            expectedCompletionDate: expectedCompletionDateTimestamp ? expectedCompletionDateTimestamp.toDate().toISOString() : new Date().toISOString(),
+            expectedCompletionDate: expectedCompletionDateTimestamp ? expectedCompletionDateTimestamp.toDate().toISOString() : undefined,
+            actualCompletionDate: actualCompletionDateTimestamp ? actualCompletionDateTimestamp.toDate().toISOString() : undefined,
             createdAt: subProjectCreatedAtTimestamp ? subProjectCreatedAtTimestamp.toDate().toISOString() : new Date().toISOString(),
             projectId: project.id,
             projectName: project.name,
@@ -478,13 +506,15 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
                 : true;
             
-            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+            const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
 
             allSubProjects.push({
                 ...subProjectData,
                 id: subProjectDoc.id,
                 expectedCompletionDate,
+                actualCompletionDate,
                 createdAt,
                 projectId: project.id,
                 projectName: project.name,
@@ -497,3 +527,5 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
+
+    

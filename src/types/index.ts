@@ -21,6 +21,11 @@ export interface Project {
   status: ProjectStatus;
   createdAt: Timestamp | Date | string;
   createdBy: string;
+  projectPurpose?: string;
+  currentStatusAndIssues?: string;
+  yiehPhuiProjectManager?: string;
+  tpmOfficeContact?: string;
+  egigaContact?: string;
   subProjects?: SubProject[];
 }
 
@@ -31,6 +36,7 @@ export interface SubProject {
   owner: string;
   ownerName?: string;
   expectedCompletionDate: Timestamp | Date | string;
+  actualCompletionDate?: Timestamp | Date | string;
   createdAt: Timestamp | Date | string;
   latestLog?: ProgressLog | null;
   projectName?: string;
@@ -57,3 +63,5 @@ export interface SubProjectWithLatestLog extends SubProject {
 export interface FullProject extends Project {
     subProjects: SubProjectWithLatestLog[];
 }
+
+    
