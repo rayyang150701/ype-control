@@ -162,7 +162,12 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                 </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
-                                 <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+                                 <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    initialFocus
+                                  />
                                 </PopoverContent>
                             </Popover>
                         )}
