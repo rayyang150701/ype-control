@@ -255,9 +255,16 @@ export async function deleteProject(projectId: string) {
 export const getUsers = async (): Promise<User[]> => {
   const usersCol = db.collection('users');
   const userSnapshot = await usersCol.get();
-  const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
+  const userList = userSnapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      ...data,
+      uid: doc.id,
+      createdAt: (data.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+    } as User;
+  });
   return userList;
-}
+};
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
     const projectId = await findProjectIdForSubProject(subProjectId);
@@ -293,8 +300,13 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
     if (!projectDoc.exists) {
       return null;
     }
-  
-    const project = { id: projectDoc.id, ...projectDoc.data() } as Project;
+    
+    const projectData = projectDoc.data()!;
+    const project: Project = { 
+        id: projectDoc.id, 
+        ...projectData,
+        createdAt: (projectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString()
+    } as Project;
   
     const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
     const subProjectSnapshot = await subProjectsCol.get();
@@ -310,15 +322,18 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
         const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
         const logsSnapshot = await logsQuery.get();
-        const latestLog = logsSnapshot.docs.length > 0 ? { ...logsSnapshot.docs[0].data(), id: logsSnapshot.docs[0].id } as ProgressLog : null;
-            
-        if (latestLog && latestLog.updatedAt) {
-            const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
-            latestLog.updatedAt = updatedAtTimestamp.toDate().toISOString();
-            latestLog.createdByName = userMap.get(latestLog.createdBy);
+        let latestLog = null;
+        if (logsSnapshot.docs.length > 0) {
+            const logData = logsSnapshot.docs[0].data();
+            latestLog = {
+                ...logData,
+                id: logsSnapshot.docs[0].id,
+                updatedAt: (logData.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+                createdByName: userMap.get(logData.createdBy),
+            } as ProgressLog
         }
 
-        const sevenDaysAgo = new Date(new Date().setDate(new Date().getDate() - 7));
+        const sevenDaysAgo = subDays(new Date(), 7);
         const isOverdue = latestLog?.updatedAt
             ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
             : true;
@@ -326,12 +341,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
         const createdAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
 
-
         subProjects.push({
             ...subProjectData,
             id: subProjectDoc.id,
-            expectedCompletionDate: expectedCompletionDateTimestamp.toDate().toISOString(),
-            createdAt: createdAtTimestamp.toDate().toISOString(),
+            expectedCompletionDate: expectedCompletionDateTimestamp ? expectedCompletionDateTimestamp.toDate().toISOString() : new Date().toISOString(),
+            createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
             projectId: project.id,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
@@ -352,9 +366,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     const projectsSnapshot = await projectsCol.get();
     const projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
 
-    const usersCol = db.collection('users');
-    const userSnapshot = await usersCol.get();
-    const users = userSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
+    const users = await getUsers();
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
@@ -371,12 +383,15 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
 
             const logsSnapshot = await logsQuery.get();
-            const latestLog = logsSnapshot.docs.length > 0 ? { ...logsSnapshot.docs[0].data(), id: logsSnapshot.docs[0].id } as ProgressLog : null;
-            
-            if (latestLog && latestLog.updatedAt) {
-                 const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
-                 latestLog.updatedAt = updatedAtTimestamp.toDate().toISOString();
-                 latestLog.createdByName = userMap.get(latestLog.createdBy);
+            let latestLog = null;
+            if (logsSnapshot.docs.length > 0) {
+                 const logData = logsSnapshot.docs[0].data();
+                 latestLog = {
+                    ...logData,
+                    id: logsSnapshot.docs[0].id,
+                    updatedAt: (logData.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+                    createdByName: userMap.get(logData.createdBy),
+                 } as ProgressLog;
             }
 
             const sevenDaysAgo = subDays(new Date(), 7);
