@@ -1,6 +1,10 @@
+'use server';
+
 import * as admin from 'firebase-admin';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 if (!getApps().length) {
   try {
@@ -15,10 +19,13 @@ if (!getApps().length) {
     }
 
     initializeApp({
-      credential: cert(serviceAccount),
+      credential: cert(serviceAccount as any),
     });
   } catch (error) {
     console.error('Firebase Admin initialization error', error);
+    // Re-throw the error to halt execution if initialization fails.
+    // This prevents the "default app does not exist" error downstream.
+    throw error;
   }
 }
 
