@@ -6,10 +6,15 @@ import serviceAccount from '../../docs/service-account.json';
 
 if (!getApps().length) {
   try {
+    const privateKey = serviceAccount.private_key.replace(/\\n/g, '\n');
+    
     initializeApp({
-      // The cert function can take the full service account object directly.
-      // This avoids all issues with environment variable parsing and private key formatting.
-      credential: cert(serviceAccount),
+      // The cert function can take the full service account object directly,
+      // but we must manually handle the private key's newline characters.
+      credential: cert({
+        ...serviceAccount,
+        private_key: privateKey,
+      }),
     });
   } catch (error) {
     console.error('Firebase admin init error:', error);
