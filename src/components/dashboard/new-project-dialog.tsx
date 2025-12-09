@@ -1,11 +1,10 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useTransition, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CalendarIcon, PlusCircle, Trash2 } from 'lucide-react';
-import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,17 +20,14 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { User } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { Calendar } from '../ui/calendar';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
+import { mockUsers } from '@/lib/data'; // Import mockUsers for the dropdown
 
 const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().min(1, '子專案負責人為必填'),
-  expectedCompletionDate: z.date({
-    required_error: "預計完成日為必填",
-  }),
+  expectedCompletionDate: z.date({ required_error: '預計完成日為必填' }).optional(),
 });
 
 const projectSchema = z.object({
@@ -49,9 +45,152 @@ type NewProjectDialogProps = {
   users: User[];
 };
 
+// 自製日曆組件
+function CustomCalendar({ 
+  selected, 
+  onSelect 
+}: { 
+  selected?: Date; 
+  onSelect: (date: Date) => void;
+}) {
+  const today = new Date();
+  const [currentYear, setCurrentYear] = useState(selected?.getFullYear() || today.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(selected?.getMonth() || today.getMonth());
+
+  const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+  
+  const generateCalendar = () => {
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDay = firstDay.getDay();
+    
+    const weeks = [];
+    let days = [];
+    
+    for (let i = 0; i < startDay; i++) {
+      days.push(null);
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(day);
+      if (days.length === 7) {
+        weeks.push(days);
+        days = [];
+      }
+    }
+    
+    if (days.length > 0) {
+      while (days.length < 7) {
+        days.push(null);
+      }
+      weeks.push(days);
+    }
+    
+    return weeks;
+  };
+
+  const weeks = generateCalendar();
+
+  const goToPreviousMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(currentYear - 1);
+    } else {
+      setCurrentMonth(currentMonth - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(currentYear + 1);
+    } else {
+      setCurrentMonth(currentMonth + 1);
+    }
+  };
+
+  return (
+    <div className="p-3 bg-white">
+      {/* 月份導航 */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={goToPreviousMonth}
+          className="p-1 hover:bg-gray-100 rounded"
+        >
+          ←
+        </button>
+        <div className="text-sm font-semibold">
+          {currentYear} 年 {monthNames[currentMonth]}
+        </div>
+        <button
+          type="button"
+          onClick={goToNextMonth}
+          className="p-1 hover:bg-gray-100 rounded"
+        >
+          →
+        </button>
+      </div>
+
+      {/* 星期標題 */}
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {['日', '一', '二', '三', '四', '五', '六'].map(day => (
+          <div key={day} className="text-center text-xs font-medium text-muted-foreground py-1">
+            {day}
+          </div>
+        ))}
+      </div>
+
+      {/* 日期網格 */}
+      <div className="space-y-1">
+        {weeks.map((week, weekIndex) => (
+          <div key={weekIndex} className="grid grid-cols-7 gap-1">
+            {week.map((day, dayIndex) => {
+              const isSelected = selected && 
+                day !== null &&
+                selected.getDate() === day && 
+                selected.getMonth() === currentMonth && 
+                selected.getFullYear() === currentYear;
+              
+              const isToday = day !== null &&
+                day === today.getDate() && 
+                currentMonth === today.getMonth() && 
+                currentYear === today.getFullYear();
+
+              return (
+                <button
+                  key={dayIndex}
+                  type="button"
+                  onClick={() => {
+                    if (day) {
+                      onSelect(new Date(currentYear, currentMonth, day));
+                    }
+                  }}
+                  disabled={!day}
+                  className={cn(
+                    "p-2 text-sm rounded-md transition-colors",
+                    !day && "invisible",
+                    day && !isSelected && "hover:bg-accent",
+                    isSelected && "bg-primary text-primary-foreground font-semibold",
+                    isToday && !isSelected && "border border-primary"
+                  )}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: NewProjectDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const [openCalendarIndex, setOpenCalendarIndex] = useState<number | null>(null);
 
   const {
     register,
@@ -74,6 +213,11 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
     control,
     name: 'subProjects',
   });
+
+  const formatDate = (date?: Date) => {
+    if (!date) return '選擇日期';
+    return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+  };
 
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
@@ -144,10 +288,11 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                               <SelectValue placeholder="選擇負責人" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="user-1">Alice</SelectItem>
-                              <SelectItem value="user-2">Bob</SelectItem>
-                              <SelectItem value="user-3">Charlie</SelectItem>
-                              <SelectItem value="user-4">David</SelectItem>
+                              {mockUsers.map(user => (
+                                <SelectItem key={user.uid} value={user.uid}>
+                                  {user.displayName}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         )}
@@ -162,46 +307,56 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                     {/* 預計完成日 */}
                     <div className="col-span-6 sm:col-span-4">
                       <Label>預計完成日</Label>
-                       <Controller
-                        control={control}
+                      <Controller
                         name={`subProjects.${index}.expectedCompletionDate`}
+                        control={control}
                         render={({ field }) => (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button
-                                variant={"outline"}
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? (
-                                  format(field.value, "yyyy/MM/dd")
-                                ) : (
-                                  <span>選擇日期</span>
-                                )}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0 z-[9999]" align="start">
-                              <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                                required
-                              />
-                            </PopoverContent>
-                          </Popover>
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setOpenCalendarIndex(openCalendarIndex === index ? null : index);
+                              }}
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {formatDate(field.value)}
+                            </Button>
+
+                            {/* 自製日曆彈出層 */}
+                            {openCalendarIndex === index && (
+                              <>
+                                {/* 背景遮罩 */}
+                                <div
+                                  className="fixed inset-0 z-[100]"
+                                  onClick={() => setOpenCalendarIndex(null)}
+                                />
+                                
+                                {/* 日曆面板 */}
+                                <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                                  <CustomCalendar
+                                    selected={field.value}
+                                    onSelect={(date) => {
+                                      field.onChange(date);
+                                      setOpenCalendarIndex(null);
+                                    }}
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       />
                       {errors.subProjects?.[index]?.expectedCompletionDate && (
                         <p className="text-sm text-destructive">
-                          {errors.subProjects[index]?.expectedCompletionDate?.message}
+                          {errors.subProjects?.[index]?.expectedCompletionDate?.message}
                         </p>
                       )}
                     </div>
-
 
                     {/* 刪除按鈕 */}
                     {fields.length > 1 && (
