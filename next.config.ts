@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    // This is to allow cross-origin requests in the development environment.
+    // It is necessary for cloud-based development environments like Firebase Studio.
+    allowedDevOrigins: [
+      '6000-firebase-studio-1765245103978.cluster-sumfw3zmzzhzkx4mpvz3ogth4y.cloudworkstations.dev'
+    ],
+  },
   images: {
     remotePatterns: [
       {
