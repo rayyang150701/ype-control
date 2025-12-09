@@ -59,6 +59,51 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
+  
+  const {
+    register,
+    control,
+    handleSubmit,
+    formState: { errors },
+    reset,
+  } = useForm<ProjectFormData>({
+    resolver: zodResolver(projectSchema),
+    // Default values are set once. We need to use reset() in useEffect to update the form.
+    defaultValues: {
+      caseNumber: '',
+      name: '',
+      projectPurpose: '',
+      currentStatusAndIssues: '',
+      yiehPhuiProjectManager: '',
+      tpmOfficeContact: '',
+      egigaContact: '',
+      subProjects: [],
+    }
+  });
+
+  // This effect will run whenever the dialog is opened or the project data changes.
+  // It resets the form with the new project data.
+  useEffect(() => {
+    if (isOpen && project) {
+      reset({
+        caseNumber: project.caseNumber,
+        name: project.name,
+        projectPurpose: project.projectPurpose ?? '',
+        currentStatusAndIssues: project.currentStatusAndIssues ?? '',
+        yiehPhuiProjectManager: project.yiehPhuiProjectManager ?? '',
+        tpmOfficeContact: project.tpmOfficeContact ?? '',
+        egigaContact: project.egigaContact ?? '',
+        subProjects: project.subProjects.map(sp => ({
+          id: sp.id,
+          name: sp.name,
+          owner: sp.owner,
+          expectedCompletionDate: sp.expectedCompletionDate ? new Date(sp.expectedCompletionDate as string) : undefined,
+          actualCompletionDate: sp.actualCompletionDate ? new Date(sp.actualCompletionDate as string) : undefined,
+        })),
+      });
+    }
+  }, [project, isOpen, reset]);
+
 
   useEffect(() => {
     async function fetchUsers() {
@@ -70,30 +115,6 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     }
   }, [isOpen]);
 
-  const {
-    register,
-    control,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<ProjectFormData>({
-    resolver: zodResolver(projectSchema),
-    defaultValues: {
-      caseNumber: project.caseNumber,
-      name: project.name,
-      projectPurpose: project.projectPurpose ?? '',
-      currentStatusAndIssues: project.currentStatusAndIssues ?? '',
-      yiehPhuiProjectManager: project.yiehPhuiProjectManager ?? '',
-      tpmOfficeContact: project.tpmOfficeContact ?? '',
-      egigaContact: project.egigaContact ?? '',
-      subProjects: project.subProjects.map(sp => ({
-        id: sp.id,
-        name: sp.name,
-        owner: sp.owner,
-        expectedCompletionDate: sp.expectedCompletionDate ? new Date(sp.expectedCompletionDate as string) : undefined,
-        actualCompletionDate: sp.actualCompletionDate ? new Date(sp.actualCompletionDate as string) : undefined,
-      })),
-    },
-  });
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -360,5 +381,3 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     </Dialog>
   );
 }
-
-    
