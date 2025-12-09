@@ -25,7 +25,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center">
+      <div className="container flex h-16 items-center justify-between">
         <div className="flex items-center gap-4">
           {logo && (
             <Image
@@ -39,7 +39,7 @@ export function Header() {
           )}
         </div>
 
-        <div className="flex-1 text-center">
+        <div className="flex-1 flex justify-center">
           <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap">
             燁輝智慧製造執行方案進度管制表
           </h1>
