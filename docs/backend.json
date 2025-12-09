@@ -1,0 +1,272 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user in the system.",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique identifier for the user. (Primary Key)"
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User's display name."
+        },
+        "role": {
+          "type": "string",
+          "description": "User's role ('admin', 'editor', 'viewer')."
+        },
+        "status": {
+          "type": "string",
+          "description": "User's status ('pending', 'active')."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the user was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "role",
+        "status",
+        "createdAt"
+      ]
+    },
+    "Project": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Project",
+      "type": "object",
+      "description": "Represents a project.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the project. (Primary Key)"
+        },
+        "caseNumber": {
+          "type": "string",
+          "description": "Project case number (e.g., AY2501)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Project name."
+        },
+        "status": {
+          "type": "string",
+          "description": "Project status ('active', 'completed', 'on-hold')."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the project was created.",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Project) ID of the user who created the project."
+        }
+      },
+      "required": [
+        "id",
+        "caseNumber",
+        "name",
+        "status",
+        "createdAt",
+        "createdBy"
+      ]
+    },
+    "SubProject": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SubProject",
+      "type": "object",
+      "description": "Represents a sub-project within a project.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the sub-project. (Primary Key)"
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Reference to Project. (Relationship: Project 1:N SubProject) ID of the project this sub-project belongs to."
+        },
+        "name": {
+          "type": "string",
+          "description": "Sub-project name."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N SubProject) ID of the user who owns the sub-project."
+        },
+        "expectedCompletionDate": {
+          "type": "string",
+          "description": "Expected completion date of the sub-project.",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the sub-project was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "owner",
+        "expectedCompletionDate",
+        "createdAt"
+      ]
+    },
+    "ProgressLog": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProgressLog",
+      "type": "object",
+      "description": "Represents a progress log for a sub-project.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the progress log. (Primary Key)"
+        },
+        "subProjectId": {
+          "type": "string",
+          "description": "Reference to SubProject. (Relationship: SubProject 1:N ProgressLog) ID of the sub-project this log belongs to."
+        },
+        "reportingPeriod": {
+          "type": "string",
+          "description": "Reporting period (e.g., 2025/12/08-12/14)."
+        },
+        "executionSummary": {
+          "type": "string",
+          "description": "Summary of execution for the week."
+        },
+        "nextWeekPlan": {
+          "type": "string",
+          "description": "Plan for the next week."
+        },
+        "roadblocks": {
+          "type": "string",
+          "description": "Roadblocks encountered."
+        },
+        "completionPercentage": {
+          "type": "number",
+          "description": "Completion percentage (0-100)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the log was last updated.",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N ProgressLog) ID of the user who created the log."
+        }
+      },
+      "required": [
+        "id",
+        "subProjectId",
+        "reportingPeriod",
+        "executionSummary",
+        "nextWeekPlan",
+        "roadblocks",
+        "completionPercentage",
+        "updatedAt",
+        "createdBy"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles. Uses path-based ownership for private user data.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/projects/{projectId}",
+        "definition": {
+          "entityName": "Project",
+          "schema": {
+            "$ref": "#/backend/entities/Project"
+          },
+          "description": "Stores project details. Includes denormalized 'createdBy' (userId) for authorization independence. ",
+          "params": [
+            {
+              "name": "projectId",
+              "description": "The unique identifier of the project."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/projects/{projectId}/sub_projects/{subProjectId}",
+        "definition": {
+          "entityName": "SubProject",
+          "schema": {
+            "$ref": "#/backend/entities/SubProject"
+          },
+          "description": "Stores sub-project details within a specific project. Includes denormalized 'owner' (userId) for authorization independence.",
+          "params": [
+            {
+              "name": "projectId",
+              "description": "The unique identifier of the project."
+            },
+            {
+              "name": "subProjectId",
+              "description": "The unique identifier of the sub-project."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/projects/{projectId}/sub_projects/{subProjectId}/progress_logs/{progressLogId}",
+        "definition": {
+          "entityName": "ProgressLog",
+          "schema": {
+            "$ref": "#/backend/entities/ProgressLog"
+          },
+          "description": "Stores progress logs for a specific sub-project. Includes denormalized 'createdBy' (userId) for authorization independence, also references 'owner' (userId) from the SubProject to allow sub_project owner to delete logs.",
+          "params": [
+            {
+              "name": "projectId",
+              "description": "The unique identifier of the project."
+            },
+            {
+              "name": "subProjectId",
+              "description": "The unique identifier of the sub-project."
+            },
+            {
+              "name": "progressLogId",
+              "description": "The unique identifier of the progress log."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to ensure security, scalability, and ease of debugging, in accordance with the defined principles.  Authorization Independence is achieved by denormalizing the `createdBy` (userId) and `owner` (userId) fields from the `User` entity into the `Project`, `SubProject`, and `ProgressLog` documents respectively. This eliminates the need for `get()` calls in security rules to validate ownership, allowing for atomic operations. Further, the `owner` field in `SubProject` is also referenced by the `createdBy` field in `ProgressLog`, creating additional Authorization Independence for deleting progress logs. Structural Segregation is implemented by using separate collections for `projects` and subcollections for `sub_projects` and `progress_logs`. This allows for homogeneous security rules within each collection. Access Modeling is standardized using path-based ownership for private data (projects created by users and their nested sub-projects and progress logs). This structure supports the QAPs requirement as the rules can easily filter list operations based on the user's ID or role, without relying on filtering data after retrieval.\n\nThe design also incorporates explicit state modeling using the `status` field in `User` and `Project` entities, promoting data clarity.  Radical consistency is maintained through semantic naming conventions for collections and fields. This structure facilitates the implementation of Firestore Security Rules, allowing for fine-grained access control based on user roles and resource ownership."
+  }
+}
