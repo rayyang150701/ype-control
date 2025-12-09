@@ -7,6 +7,7 @@ import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-for
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
 import type { User, ProgressLog } from '@/types';
 import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
+import { commitBatchNonBlocking } from '@/firebase/non-blocking-updates';
 
 
 const subProjectSchema = z.object({
@@ -40,7 +41,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     };
     batch.set(newProjectRef, newProjectData);
 
-    data.subProjects.forEach(subProject => {
+    const subProjectPayloads = data.subProjects.map(subProject => {
         const newSubProjectRef = doc(collection(firestore, `projects/${newProjectRef.id}/sub_projects`));
         const newSubProjectData = {
             name: subProject.name,
@@ -50,14 +51,20 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
             createdAt: serverTimestamp(),
         };
         batch.set(newSubProjectRef, newSubProjectData);
+        return { ref: newSubProjectRef, data: newSubProjectData };
     });
 
     try {
-        await batch.commit();
+        await commitBatchNonBlocking(batch, [
+            { ref: newProjectRef, data: newProjectData },
+            ...subProjectPayloads
+        ]);
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功建立！' };
     } catch (error) {
         console.error("Error creating project:", error);
+        // The non-blocking commit will handle emitting the detailed error.
+        // This catch block is for other potential errors during the process.
         return { success: false, message: '建立專案時發生錯誤。' };
     }
 }
@@ -105,7 +112,9 @@ export async function addProgressLog (
         updatedAt: serverTimestamp()
     };
     
-    await writeBatch(firestore).set(newLogRef, newLogData).commit();
+    const batch = writeBatch(firestore);
+    batch.set(newLogRef, newLogData);
+    await commitBatchNonBlocking(batch, [{ ref: newLogRef, data: newLogData }]);
     
     revalidatePath('/dashboard');
 
@@ -197,10 +206,11 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
                 const userMap = new Map(users.map(u => [u.uid, u.displayName]));
                 logs = logsSnapshot.docs.map(doc => {
                     const data = doc.data();
+                    const updatedAt = data.updatedAt as Timestamp;
                     return {
                         ...data,
                         id: doc.id,
-                        updatedAt: (data.updatedAt as Timestamp).toDate(),
+                        updatedAt: updatedAt.toDate(),
                         createdByName: userMap.get(data.createdBy)
                     } as ProgressLog;
                 });
