@@ -57,22 +57,57 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     }
 }
 
+async function findProjectIdForSubProject(subProjectId: string): Promise<string> {
+    const projectsSnapshot = await db.collection('projects').get();
+    for (const projectDoc of projectsSnapshot.docs) {
+      const subProjectDoc = await db.doc(`projects/${projectDoc.id}/sub_projects/${subProjectId}`).get();
+      if (subProjectDoc.exists) {
+        return projectDoc.id;
+      }
+    }
+    throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+}
+
+export async function updateProgressLog(
+    logId: string,
+    subProjectId: string,
+    logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName' | 'reportingPeriod'>
+  ): Promise<ProgressLog> {
+    const userId = 'user-1'; // Dummy user ID for who made the edit
+    const projectId = await findProjectIdForSubProject(subProjectId);
+  
+    const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
+  
+    const updateData = {
+      ...logData,
+      updatedAt: new Date(),
+      // We don't update 'createdBy' on edit
+    };
+  
+    await logRef.update(updateData);
+  
+    revalidatePath('/dashboard');
+  
+    const updatedLogDoc = await logRef.get();
+    const updatedLog = updatedLogDoc.data() as ProgressLog;
+  
+    const users = await getUsers();
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+  
+    return {
+      id: logRef.id,
+      ...updatedLog,
+      updatedAt: (updatedLog.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+      createdByName: userMap.get(updatedLog.createdBy),
+    } as ProgressLog;
+}
+
 export async function addProgressLog (
     subProjectId: string, 
     logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName'>
 ): Promise<ProgressLog> {
     const userId = 'user-1'; 
-    const projectsSnapshot = await db.collection('projects').get();
-    let projectId: string | null = null;
-
-    for (const projectDoc of projectsSnapshot.docs) {
-        const subProjectCol = db.collection(`projects/${projectDoc.id}/sub_projects`);
-        const subDocs = await subProjectCol.where('__name__', '==', subProjectId).limit(1).get();
-        if(!subDocs.empty){
-            projectId = projectDoc.id;
-            break;
-        }
-    }
+    const projectId = await findProjectIdForSubProject(subProjectId);
 
     if (!projectId) {
         throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
@@ -156,35 +191,28 @@ export const getUsers = async (): Promise<User[]> => {
 }
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
-    const projectsCol = db.collection('projects');
-    const projectSnapshot = await projectsCol.get();
+    const projectId = await findProjectIdForSubProject(subProjectId);
     
     let logs: ProgressLog[] = [];
 
-    for (const projectDoc of projectSnapshot.docs) {
-        const subProjectCol = db.collection(`projects/${projectDoc.id}/sub_projects`);
-        const subProjectDocs = await subProjectCol.where('__name__', '==', subProjectId).limit(1).get();
+    if (projectId) {
+        const logsCol = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`);
+        const q = logsCol.orderBy('updatedAt', 'desc');
+        const logsSnapshot = await q.get();
         
-        if (!subProjectDocs.empty) {
-            const logsCol = db.collection(`projects/${projectDoc.id}/sub_projects/${subProjectId}/progress_logs`);
-            const q = logsCol.orderBy('updatedAt', 'desc');
-            const logsSnapshot = await q.get();
-            
-            if (!logsSnapshot.empty) {
-                const users = await getUsers();
-                const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-                logs = logsSnapshot.docs.map(doc => {
-                    const data = doc.data();
-                    const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp;
-                    return {
-                        ...data,
-                        id: doc.id,
-                        updatedAt: updatedAt.toDate().toISOString(),
-                        createdByName: userMap.get(data.createdBy)
-                    } as ProgressLog;
-                });
-            }
-            break; 
+        if (!logsSnapshot.empty) {
+            const users = await getUsers();
+            const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+            logs = logsSnapshot.docs.map(doc => {
+                const data = doc.data();
+                const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp;
+                return {
+                    ...data,
+                    id: doc.id,
+                    updatedAt: updatedAt.toDate().toISOString(),
+                    createdByName: userMap.get(data.createdBy)
+                } as ProgressLog;
+            });
         }
     }
     return logs;

@@ -1,5 +1,5 @@
 'use client';
-
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { format } from 'date-fns';
-import { Download } from 'lucide-react';
+import { Download, Pencil } from 'lucide-react';
 import { Separator } from '../ui/separator';
+import { EditLogDialog } from './edit-log-dialog';
 
 type TimelineModalProps = {
   isOpen: boolean;
@@ -23,48 +24,74 @@ type TimelineModalProps = {
   logs: ProgressLog[];
   isLoading: boolean;
   onExport: () => void;
+  onLogUpdated: (updatedLog: ProgressLog, subProjectId: string) => void;
 };
 
-export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport }: TimelineModalProps) {
+export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport, onLogUpdated }: TimelineModalProps) {
+  const [editingLog, setEditingLog] = useState<ProgressLog | null>(null);
+
+  const handleEditClick = (log: ProgressLog) => {
+    setEditingLog(log);
+  };
+
+  const handleLogUpdated = (updatedLog: ProgressLog) => {
+    onLogUpdated(updatedLog, subProject.id);
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="font-headline text-2xl">{subProject.name} - 歷史週報</DialogTitle>
-          <DialogDescription>
-            {subProject.projectCaseNumber} {subProject.projectName}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex-grow min-h-0">
-            <ScrollArea className="h-full pr-6">
-            {isLoading ? (
-                <TimelineSkeleton />
-            ) : (
-                <div className="relative pl-6">
-                {/* Vertical line */}
-                <div className="absolute left-8 top-0 h-full w-0.5 bg-border" />
-                <div className="space-y-8">
-                    {logs.map((log, index) => (
-                    <TimelineItem key={log.id} log={log} isLast={index === logs.length - 1} />
-                    ))}
-                </div>
-                </div>
-            )}
-            </ScrollArea>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onExport} disabled={isLoading || logs.length === 0}>
-            <Download className="mr-2 h-4 w-4" />
-            匯出歷史紀錄
-          </Button>
-          <Button onClick={() => setIsOpen(false)}>關閉</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="font-headline text-2xl">{subProject.name} - 歷史週報</DialogTitle>
+            <DialogDescription>
+              {subProject.projectCaseNumber} {subProject.projectName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-grow min-h-0">
+              <ScrollArea className="h-full pr-6">
+              {isLoading ? (
+                  <TimelineSkeleton />
+              ) : (
+                  <div className="relative pl-6">
+                  {/* Vertical line */}
+                  <div className="absolute left-8 top-0 h-full w-0.5 bg-border" />
+                  <div className="space-y-8">
+                      {logs.map((log) => (
+                      <TimelineItem 
+                        key={log.id} 
+                        log={log} 
+                        onEditClick={handleEditClick}
+                      />
+                      ))}
+                  </div>
+                  </div>
+              )}
+              </ScrollArea>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={onExport} disabled={isLoading || logs.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              匯出歷史紀錄
+            </Button>
+            <Button onClick={() => setIsOpen(false)}>關閉</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {editingLog && subProject && (
+        <EditLogDialog
+          isOpen={!!editingLog}
+          setIsOpen={() => setEditingLog(null)}
+          subProjectId={subProject.id}
+          log={editingLog}
+          onLogUpdated={handleLogUpdated}
+        />
+      )}
+    </>
   );
 }
 
-const TimelineItem = ({ log, isLast }: { log: ProgressLog; isLast: boolean }) => (
+const TimelineItem = ({ log, onEditClick }: { log: ProgressLog; onEditClick: (log: ProgressLog) => void; }) => (
     <div className="relative flex items-start">
         <div className="absolute left-[-2px] top-[5px] flex h-5 w-5 items-center justify-center rounded-full bg-primary">
         <div className="h-2 w-2 rounded-full bg-primary-foreground" />
@@ -72,9 +99,14 @@ const TimelineItem = ({ log, isLast }: { log: ProgressLog; isLast: boolean }) =>
         <div className="ml-10 w-full">
             <div className="mb-2 flex items-center justify-between">
                 <p className="font-semibold text-primary">{log.reportingPeriod}</p>
-                <p className="text-xs text-muted-foreground">
-                {format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm')} by {log.createdByName}
-                </p>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span>
+                    {format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm')} by {log.createdByName}
+                  </span>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditClick(log)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
             </div>
             <div className="space-y-4 rounded-md border p-4">
                 <LogSection title="本週摘要" content={log.executionSummary} />

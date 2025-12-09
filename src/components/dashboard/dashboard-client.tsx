@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { SubProjectWithLatestLog, ProgressLog, User } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { ProjectCard } from './project-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
@@ -78,15 +78,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     setSubProjects(prevSubProjects =>
       prevSubProjects.map(sp => {
         if (sp.id === subProjectId) {
-          // Create a new log object ensuring updatedAt is in the correct format for the state
-          const updatedLog = {
-            ...newLog,
-            updatedAt: newLog.updatedAt, // Assuming newLog.updatedAt is already a string
-          };
+          // Check if this new log is later than the current latestLog
+          const isNewer = !sp.latestLog || new Date(newLog.updatedAt as string) > new Date(sp.latestLog.updatedAt as string);
+          
           return {
             ...sp,
-            latestLog: updatedLog,
-            isOverdue: false,
+            latestLog: isNewer ? newLog : sp.latestLog,
+            isOverdue: false, // Assume adding a log resolves overdue status
           };
         }
         return sp;
@@ -95,9 +93,33 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   
     // If the timeline for the updated project is open, add the new log
     if (selectedSubProject?.id === subProjectId) {
-      setTimelineLogs(prevLogs => [newLog, ...prevLogs]);
+      // Add to timeline and sort
+      setTimelineLogs(prevLogs => [newLog, ...prevLogs].sort((a, b) => new Date(b.updatedAt as string).getTime() - new Date(a.updatedAt as string).getTime()));
     }
   };
+
+  const onLogUpdated = (updatedLog: ProgressLog, subProjectId: string) => {
+    // Update the log in the timeline view
+    if (selectedSubProject?.id === subProjectId) {
+      setTimelineLogs(prevLogs =>
+        prevLogs.map(log => (log.id === updatedLog.id ? updatedLog : log))
+      );
+    }
+  
+    // Update the latestLog on the card if the updated log is the latest one
+    setSubProjects(prevSubProjects =>
+      prevSubProjects.map(sp => {
+        if (sp.id === subProjectId) {
+          const isUpdatedLogLatest = sp.latestLog?.id === updatedLog.id;
+          if (isUpdatedLogLatest) {
+            return { ...sp, latestLog: updatedLog };
+          }
+        }
+        return sp;
+      })
+    );
+  };
+  
 
   const onProjectAdded = () => {
     setIsNewProjectOpen(false);
@@ -138,6 +160,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           logs={timelineLogs}
           isLoading={isTimelineLoading}
           onExport={handleExportHistory}
+          onLogUpdated={onLogUpdated}
         />
       )}
 
