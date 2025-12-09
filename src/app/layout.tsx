@@ -5,6 +5,7 @@ import './globals.css';
 import { Header } from '@/components/header';
 import { SidebarProvider, Sidebar, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/sidebar';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
@@ -28,16 +29,11 @@ export default function RootLayout({
           'min-h-screen bg-background font-body antialiased'
         )}
       >
-        <SidebarProvider>
-          <Header />
-          <div className="flex">
-            <AppSidebar />
-            <SidebarInset className="flex-1 container mx-auto p-4 sm:p-6 lg:p-8">
-              {children}
-            </SidebarInset>
-          </div>
-          <Toaster />
-        </SidebarProvider>
+        <Header />
+        <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+            {children}
+        </div>
+        <Toaster />
       </body>
     </html>
   );

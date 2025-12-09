@@ -1,6 +1,6 @@
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Sheet, Download, FileText, FolderKanban } from 'lucide-react';
+import { LogOut, User, Sheet, Download, FileText, FolderKanban, Users } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +13,8 @@ import {
   DropdownMenuGroup
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import Link from 'next/link';
+
 
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
@@ -95,6 +97,12 @@ export function Header() {
                     <User className="mr-2 h-4 w-4" />
                     <span>個人資料</span>
                   </DropdownMenuItem>
+                  <Link href="/users" passHref>
+                    <DropdownMenuItem>
+                      <Users className="mr-2 h-4 w-4" />
+                      <span>成員管理</span>
+                    </DropdownMenuItem>
+                  </Link>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
