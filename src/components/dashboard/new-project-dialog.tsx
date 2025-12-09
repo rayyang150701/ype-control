@@ -158,17 +158,14 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded, users }: N
                                     )}
                                 >
                                     <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {String(field.value ?? "選擇日期")}
+                                    {field.value ? format(field.value, "yyyy/MM/dd") : <span>選擇日期</span>}
                                 </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0">
                                  <Calendar
                                     mode="single"
-                                    selected={field.value ?? undefined}
-                                    onSelect={(date) => {
-                                        console.log("onSelect date", index, date)
-                                        field.onChange(date)
-                                    }}
+                                    selected={field.value}
+                                    onSelect={field.onChange}
                                     initialFocus
                                   />
                                 </PopoverContent>
