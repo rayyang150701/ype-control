@@ -1,23 +1,14 @@
-import { subDays, addDays, startOfWeek, endOfWeek, format } from 'date-fns';
+import { subDays } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 import type { Project, SubProject, ProgressLog, User, SubProjectWithLatestLog } from '@/types';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
-import { getDocs, collection, query, orderBy, limit, where, serverTimestamp, doc } from 'firebase/firestore';
+import { getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 
 const toTimestamp = (date: Date): Timestamp => ({
   seconds: Math.floor(date.getTime() / 1000),
   nanoseconds: 0,
   toDate: () => date,
 });
-
-
-export const getUsers = async (): Promise<User[]> => {
-  const { firestore } = await initializeFirebaseOnServer();
-  const usersCol = collection(firestore, 'users');
-  const userSnapshot = await getDocs(usersCol);
-  const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
-  return userList;
-}
 
 export const getProjects = async (): Promise<Project[]> => {
   const { firestore } = await initializeFirebaseOnServer();
@@ -29,8 +20,13 @@ export const getProjects = async (): Promise<Project[]> => {
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const { firestore } = await initializeFirebaseOnServer();
-    const projects = await getProjects();
-    const users = await getUsers();
+    const projectsCol = collection(firestore, 'projects');
+    const projectsSnapshot = await getDocs(projectsCol);
+    const projects = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+
+    const usersCol = collection(firestore, 'users');
+    const userSnapshot = await getDocs(usersCol);
+    const users = userSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as User));
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
@@ -76,43 +72,13 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     return allSubProjects.sort((a,b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime());
 };
 
-
-export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
-    const { firestore } = await initializeFirebaseOnServer();
-    // This is a bit inefficient as we don't know the project id.
-    // In a real app you'd pass projectId down or structure data differently.
-    const projects = await getProjects();
-    let logs: ProgressLog[] = [];
-
-    for (const project of projects) {
-        const logsCol = collection(firestore, `projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
-        const q = query(logsCol, orderBy('updatedAt', 'desc'));
-        const logsSnapshot = await getDocs(q);
-        if (!logsSnapshot.empty) {
-            const users = await getUsers();
-            const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-            logs = logsSnapshot.docs.map(doc => {
-                const data = doc.data() as ProgressLog;
-                return {
-                    ...data,
-                    id: doc.id,
-                    updatedAt: (data.updatedAt as Timestamp).toDate(),
-                    createdByName: userMap.get(data.createdBy)
-                }
-            });
-            break; // Found the logs for the subproject
-        }
-    }
-    return logs;
-};
-
 export const addProgressLog = async (subProjectId: string, logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy'>): Promise<ProgressLog> => {
     const { firestore } = await initializeFirebaseOnServer();
     
     // This is not correct as we don't know the project ID here. This function needs to be improved.
     // For now, this is a placeholder. A better approach is to pass projectId.
     const path = `projects/placeholder_project_id/sub_projects/${subProjectId}/progress_logs`;
-    const newLogRef = doc(collection(firestore, path));
+    const newLogRef = collection(firestore, path);
     
     // This should come from the authenticated user session on the server
     const userId = 'user-1-placeholder'; 
@@ -121,11 +87,11 @@ export const addProgressLog = async (subProjectId: string, logData: Omit<Progres
         ...logData,
         subProjectId,
         createdBy: userId,
-        updatedAt: serverTimestamp()
+        updatedAt: new Date()
     };
     
     // In a real scenario, you'd find the project ID first.
-    // await setDoc(newLogRef, newLogData);
+    // await addDoc(newLogRef, newLogData);
     
     console.log("Simulating adding log for now, as project ID is not available here.");
 

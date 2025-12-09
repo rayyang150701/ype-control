@@ -4,8 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
-import { collection, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, writeBatch, doc, serverTimestamp, getDocs, query, orderBy } from 'firebase/firestore';
 import { initializeFirebaseOnServer } from '@/firebase/server-init';
+import type { User, ProgressLog } from '@/types';
+
 
 const logSchema = z.object({
   executionSummary: z.string().min(1, '本週摘要為必填'),
@@ -150,3 +152,41 @@ export async function deleteProject(projectId: string) {
     
     return { message: `Project ${projectId} deleted successfully.` };
 }
+
+export const getUsers = async (): Promise<User[]> => {
+  const { firestore } = await initializeFirebaseOnServer();
+  const usersCol = collection(firestore, 'users');
+  const userSnapshot = await getDocs(usersCol);
+  const userList = userSnapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id } as User));
+  return userList;
+}
+
+export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
+    const { firestore } = await initializeFirebaseOnServer();
+    const projectsCol = collection(firestore, 'projects');
+    const projectSnapshot = await getDocs(projectsCol);
+    const projects = projectSnapshot.docs.map(doc => ({...doc.data(), id: doc.id}));
+
+    let logs: ProgressLog[] = [];
+
+    for (const project of projects) {
+        const logsCol = collection(firestore, `projects/${project.id}/sub_projects/${subProjectId}/progress_logs`);
+        const q = query(logsCol, orderBy('updatedAt', 'desc'));
+        const logsSnapshot = await getDocs(q);
+        if (!logsSnapshot.empty) {
+            const users = await getUsers();
+            const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+            logs = logsSnapshot.docs.map(doc => {
+                const data = doc.data() as any;
+                return {
+                    ...data,
+                    id: doc.id,
+                    updatedAt: data.updatedAt.toDate(),
+                    createdByName: userMap.get(data.createdBy)
+                } as ProgressLog;
+            });
+            break; // Found the logs for the subproject
+        }
+    }
+    return logs;
+};
