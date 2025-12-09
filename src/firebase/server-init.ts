@@ -1,12 +1,11 @@
 // IMPORTANT: This file should not have a 'use client' directive
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/admin/app';
-import { getFirestore, Firestore } from 'firebase/admin/firestore';
-import { getAuth, Auth } from 'firebase/admin/auth';
-import { firebaseConfig } from './config';
+import { initializeApp, getApps, getApp, App as FirebaseAdminApp } from 'firebase-admin/app';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { getAuth, Auth } from 'firebase-admin/auth';
 
 // Define the return type for our initialized services
 interface FirebaseServerServices {
-  firebaseApp: FirebaseApp;
+  firebaseApp: FirebaseAdminApp;
   firestore: Firestore;
   auth: Auth;
 }
@@ -17,7 +16,7 @@ interface FirebaseServerServices {
  */
 export async function initializeFirebaseOnServer(): Promise<FirebaseServerServices> {
   // Check if the default app is already initialized
-  if (getApps().find(app => app.name === '[DEFAULT]')) {
+  if (getApps().length) {
     const firebaseApp = getApp();
     return {
       firebaseApp,
@@ -26,13 +25,9 @@ export async function initializeFirebaseOnServer(): Promise<FirebaseServerServic
     };
   }
 
-  // Initialize the Firebase Admin app
-  const firebaseApp = initializeApp({
-    // In a real server environment, you would use service account credentials
-    // For this context, we will re-use the client-side config, but this is not standard practice for Admin SDK
-    credential: undefined, // Let App Hosting or environment variables provide credentials
-    projectId: firebaseConfig.projectId,
-  });
+  // Initialize the Firebase Admin app. In a managed environment like App Hosting,
+  // initializeApp() will automatically use the available service account credentials.
+  const firebaseApp = initializeApp();
 
   return {
     firebaseApp,
