@@ -5,8 +5,9 @@ import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
-import type { User, ProgressLog } from '@/types';
+import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
+import { getSubProjectsWithLatestLogs } from './data';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
@@ -21,10 +22,10 @@ const projectSchema = z.object({
 });
 
 const editSubProjectSchema = z.object({
-    id: z.string().optional(), // id will be present for existing sub-projects
-    name: z.string().min(1, '子專案名稱為必填'),
-    owner: z.string().optional(),
-    expectedCompletionDate: z.date().optional(),
+  id: z.string().optional(), // id will be present for existing sub-projects
+  name: z.string().min(1, '子專案名稱為必填'),
+  owner: z.string().optional(),
+  expectedCompletionDate: z.date().optional(),
 });
 
 const editProjectSchema = z.object({
@@ -294,4 +295,66 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
         }
     }
     return logs;
+};
+
+
+export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists) {
+      return null;
+    }
+  
+    const project = { id: projectDoc.id, ...projectDoc.data() } as Project;
+  
+    // This function can't be called directly here as it's not a server action
+    // We'll need to fetch the sub-projects manually within this server action.
+    const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
+    const subProjectSnapshot = await subProjectsCol.get();
+    
+    const users = await getUsers();
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
+    const subProjects: SubProjectWithLatestLog[] = [];
+
+    for (const subProjectDoc of subProjectSnapshot.docs) {
+        const subProjectData = subProjectDoc.data();
+        
+        const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
+        const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
+        const logsSnapshot = await logsQuery.get();
+        const latestLog = logsSnapshot.docs.length > 0 ? { ...logsSnapshot.docs[0].data(), id: logsSnapshot.docs[0].id } as ProgressLog : null;
+            
+        if (latestLog && latestLog.updatedAt) {
+            const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
+            latestLog.updatedAt = updatedAtTimestamp.toDate().toISOString();
+            latestLog.createdByName = userMap.get(latestLog.createdBy);
+        }
+
+        const sevenDaysAgo = new Date(new Date().setDate(new Date().getDate() - 7));
+        const isOverdue = latestLog?.updatedAt
+            ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
+            : true;
+
+        const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
+        const createdAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
+
+
+        subProjects.push({
+            ...subProjectData,
+            id: subProjectDoc.id,
+            expectedCompletionDate: expectedCompletionDateTimestamp.toDate().toISOString(),
+            createdAt: createdAtTimestamp.toDate().toISOString(),
+            projectId: project.id,
+            projectName: project.name,
+            projectCaseNumber: project.caseNumber,
+            ownerName: userMap.get(subProjectData.owner),
+            latestLog,
+            isOverdue,
+        } as SubProjectWithLatestLog);
+    }
+  
+    return {
+      ...project,
+      subProjects: subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()),
+    } as FullProject;
 };
