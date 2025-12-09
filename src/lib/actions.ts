@@ -15,7 +15,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
-    owner: z.string().optional(),
+    owner: z.string().min(1, '必須選擇一位負責人'),
     expectedCompletionDate: z.date().optional(),
 });
 
@@ -28,7 +28,7 @@ const projectSchema = z.object({
 const editSubProjectSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().optional(),
+  owner: z.string().min(1, '必須選擇一位負責人'),
   expectedCompletionDate: z.date().optional(),
 });
 
@@ -58,7 +58,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         const newSubProjectRef = db.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
         const newSubProjectData = {
             name: subProject.name,
-            owner: subProject.owner ?? '',
+            owner: subProject.owner,
             expectedCompletionDate: subProject.expectedCompletionDate ? subProject.expectedCompletionDate : null,
             projectId: newProjectRef.id,
             createdAt: new Date(),
@@ -102,13 +102,13 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                 if (subProjectData.id) {
                      transaction.update(subProjectRef, {
                         name: subProjectData.name,
-                        owner: subProjectData.owner ?? '',
+                        owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
                      });
                 } else {
                     transaction.set(subProjectRef, {
                          name: subProjectData.name,
-                        owner: subProjectData.owner ?? '',
+                        owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
                         projectId: projectId,
                         createdAt: new Date(),

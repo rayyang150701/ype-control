@@ -28,7 +28,7 @@ import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().optional(),
+  owner: z.string().min(1, '必須選擇一位負責人'),
   expectedCompletionDate: z.date().optional(),
 });
 
@@ -112,7 +112,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
             <DialogDescription>請填寫主專案及其下的子專案資訊。</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 py-4">
+          <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4">
             {/* 主專案資訊 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -263,13 +263,18 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                   <PlusCircle className="mr-2 h-4 w-4" />
                   新增子專案
                 </Button>
+                 {errors.subProjects?.root && (
+                    <p className="text-sm text-destructive">
+                        {errors.subProjects.root.message}
+                    </p>
+                )}
               </div>
             </div>
           </div>
 
           {/* Footer */}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
+          <DialogFooter className="pt-4">
+            <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); reset(); }}>
               取消
             </Button>
             <Button type="submit" disabled={isPending}>

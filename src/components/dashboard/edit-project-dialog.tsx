@@ -28,7 +28,7 @@ import { CustomCalendar } from '@/components/shared/custom-calendar';
 const subProjectSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().optional(),
+  owner: z.string().min(1, '必須選擇一位負責人'),
   expectedCompletionDate: z.date().optional(),
 });
 
@@ -177,6 +177,11 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                           </Select>
                         )}
                       />
+                      {errors.subProjects?.[index]?.owner && (
+                        <p className="text-sm text-destructive">
+                          {errors.subProjects?.[index]?.owner?.message}
+                        </p>
+                      )}
                     </div>
 
                     {/* 預計完成日 */}
@@ -263,6 +268,11 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                   <PlusCircle className="mr-2 h-4 w-4" />
                   新增子專案
                 </Button>
+                {errors.subProjects?.root && (
+                    <p className="text-sm text-destructive">
+                        {errors.subProjects.root.message}
+                    </p>
+                )}
               </div>
             </div>
           </div>
