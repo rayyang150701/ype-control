@@ -21,7 +21,7 @@ type ProjectCardProps = {
 export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCardProps) {
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
-  const expectedDate = subProject.expectedCompletionDate as Date;
+  const expectedDate = new Date(subProject.expectedCompletionDate as string);
   const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
 
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
@@ -86,7 +86,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
                 </TooltipTrigger>
                 <TooltipContent>
                     <p>進度: {completionPercentage}%</p>
-                    {latestLog && <p>上次更新: {format(latestLog.updatedAt as Date, 'yyyy/MM/dd')}</p>}
+                    {latestLog && <p>上次更新: {format(new Date(latestLog.updatedAt as string), 'yyyy/MM/dd')}</p>}
                 </TooltipContent>
                 </Tooltip>
             </TooltipProvider>

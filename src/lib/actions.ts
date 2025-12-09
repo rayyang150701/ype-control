@@ -98,7 +98,7 @@ export async function addProgressLog (
         id: newLogRef.id,
         ...logData,
         createdBy: userId,
-        updatedAt: new Date(), 
+        updatedAt: new Date().toISOString(), 
         createdByName: userMap.get(userId)
     } as ProgressLog;
 };
@@ -179,7 +179,7 @@ export const getProgressLogsForSubProject = async (subProjectId: string): Promis
                     return {
                         ...data,
                         id: doc.id,
-                        updatedAt: updatedAt.toDate(),
+                        updatedAt: updatedAt.toDate().toISOString(),
                         createdByName: userMap.get(data.createdBy)
                     } as ProgressLog;
                 });

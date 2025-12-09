@@ -9,7 +9,7 @@ export interface User {
   displayName: string;
   role: UserRole;
   status: UserStatus;
-  createdAt: Timestamp | Date;
+  createdAt: Timestamp | Date | string;
 }
 
 export type ProjectStatus = 'active' | 'completed' | 'on-hold';
@@ -19,7 +19,7 @@ export interface Project {
   caseNumber: string;
   name: string;
   status: ProjectStatus;
-  createdAt: Timestamp | Date;
+  createdAt: Timestamp | Date | string;
   createdBy: string;
   subProjects?: SubProject[];
 }
@@ -30,8 +30,8 @@ export interface SubProject {
   name: string;
   owner: string;
   ownerName?: string;
-  expectedCompletionDate: Timestamp | Date;
-  createdAt: Timestamp | Date;
+  expectedCompletionDate: Timestamp | Date | string;
+  createdAt: Timestamp | Date | string;
   latestLog?: ProgressLog | null;
   projectName?: string;
   projectCaseNumber?: string;
@@ -44,7 +44,7 @@ export interface ProgressLog {
   nextWeekPlan: string;
   roadblocks: string;
   completionPercentage: number;
-  updatedAt: Timestamp | Date;
+  updatedAt: Timestamp | Date | string;
   createdBy: string;
   createdByName?: string;
 }

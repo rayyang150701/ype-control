@@ -75,21 +75,27 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   }
 
   const onLogAdded = (newLog: ProgressLog, subProjectId: string) => {
-    setSubProjects(prevSubProjects => 
-        prevSubProjects.map(sp => {
-            if (sp.id === subProjectId) {
-                return {
-                    ...sp,
-                    latestLog: { ...newLog, updatedAt: new Date(newLog.updatedAt) },
-                    isOverdue: false, 
-                };
-            }
-            return sp;
-        })
+    setSubProjects(prevSubProjects =>
+      prevSubProjects.map(sp => {
+        if (sp.id === subProjectId) {
+          // Create a new log object ensuring updatedAt is in the correct format for the state
+          const updatedLog = {
+            ...newLog,
+            updatedAt: newLog.updatedAt, // Assuming newLog.updatedAt is already a string
+          };
+          return {
+            ...sp,
+            latestLog: updatedLog,
+            isOverdue: false,
+          };
+        }
+        return sp;
+      })
     );
-
+  
+    // If the timeline for the updated project is open, add the new log
     if (selectedSubProject?.id === subProjectId) {
-        setTimelineLogs(prevLogs => [newLog, ...prevLogs]);
+      setTimelineLogs(prevLogs => [newLog, ...prevLogs]);
     }
   };
 

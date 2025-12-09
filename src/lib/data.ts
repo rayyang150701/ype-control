@@ -33,13 +33,13 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             
             if (latestLog && latestLog.updatedAt) {
                  const updatedAtTimestamp = latestLog.updatedAt as FirebaseFirestore.Timestamp;
-                 latestLog.updatedAt = updatedAtTimestamp.toDate();
+                 latestLog.updatedAt = updatedAtTimestamp.toDate().toISOString();
                  latestLog.createdByName = userMap.get(latestLog.createdBy);
             }
 
             const sevenDaysAgo = subDays(new Date(), 7);
             const isOverdue = latestLog?.updatedAt
-                ? (latestLog.updatedAt as Date) < sevenDaysAgo
+                ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
                 : true;
 
             const expectedCompletionDateTimestamp = subProject.expectedCompletionDate as FirebaseFirestore.Timestamp;
@@ -47,8 +47,8 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
             allSubProjects.push({
                 ...subProject,
-                expectedCompletionDate: expectedCompletionDateTimestamp.toDate(),
-                createdAt: createdAtTimestamp.toDate(),
+                expectedCompletionDate: expectedCompletionDateTimestamp.toDate().toISOString(),
+                createdAt: createdAtTimestamp.toDate().toISOString(),
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
                 ownerName: userMap.get(subProject.owner),
@@ -57,5 +57,5 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             });
         }
     }
-    return allSubProjects.sort((a,b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime());
+    return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
