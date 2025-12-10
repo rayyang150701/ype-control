@@ -5,7 +5,7 @@ import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format }s from 'date-fns';
 
 type TableViewProps = {
   groupedProjects: FullProject[];
