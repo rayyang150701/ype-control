@@ -102,7 +102,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         })),
       });
     }
-  }, [project, isOpen]);
+  }, [project, isOpen, reset]);
 
 
   useEffect(() => {

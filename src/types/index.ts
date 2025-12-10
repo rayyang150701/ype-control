@@ -68,5 +68,3 @@ export interface SubProjectWithLatestLog extends SubProject {
 export interface FullProject extends Project {
     subProjects: SubProjectWithLatestLog[];
 }
-
-    

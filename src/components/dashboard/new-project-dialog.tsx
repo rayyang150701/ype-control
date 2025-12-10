@@ -358,5 +358,3 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
     </Dialog>
   );
 }
-
-    

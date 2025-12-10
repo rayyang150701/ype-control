@@ -112,7 +112,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     const userId = 'user-3'; // Placeholder for actual logged-in user
 
     const newProjectRef = db.collection('projects').doc();
-    const newProjectData = {
+    const newProjectData: Omit<Project, 'id' | 'createdAt'> & { createdAt: FieldValue } = {
         name: data.name,
         caseNumber: data.caseNumber,
         status: 'active',
@@ -394,13 +394,12 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
       return null;
     }
     
-    const projectData = projectDoc.data()!;
-    const createdAtTimestamp = projectData.createdAt as FirebaseFirestore.Timestamp;
+    const projectData = projectDoc.data()! as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp };
     const project: Project = { 
         id: projectDoc.id, 
         ...projectData,
-        createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
-    } as Project;
+        createdAt: projectData.createdAt ? projectData.createdAt.toDate().toISOString() : new Date().toISOString(),
+    };
   
     const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
     const subProjectSnapshot = await subProjectsCol.get();
@@ -446,7 +445,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             projectId: project.id,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
+            projectPurpose: project.projectPurpose,
+            currentStatusAndIssues: project.currentStatusAndIssues,
+            yiehPhuiProjectManager: project.yiehPhuiProjectManager,
             tpmOfficeContact: project.tpmOfficeContact,
+            egigaContact: project.egigaContact,
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
@@ -480,13 +483,12 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     const projectsCol = db.collection('projects');
     const projectsSnapshot = await projectsCol.get();
     const projects = projectsSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const createdAt = data.createdAt as FirebaseFirestore.Timestamp;
+        const data = doc.data() as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp };
         return { 
             id: doc.id, 
             ...data,
-            createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
-        } as Project
+            createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+        }
     });
 
     const users = await getUsers();
@@ -536,7 +538,11 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 projectId: project.id,
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
+                projectPurpose: project.projectPurpose,
+                currentStatusAndIssues: project.currentStatusAndIssues,
+                yiehPhuiProjectManager: project.yiehPhuiProjectManager,
                 tpmOfficeContact: project.tpmOfficeContact,
+                egigaContact: project.egigaContact,
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue
@@ -545,5 +551,3 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
-
-
