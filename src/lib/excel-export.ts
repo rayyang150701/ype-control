@@ -48,7 +48,7 @@ const createSheet = (data: any[][], title: string, colWidths: { wch: number }[],
       if(!ws[cellRef]) continue;
       ws[cellRef].s = { ...wrapText };
       // Center specific columns based on new layout
-      if ([0, 1, 2, 4, 11, 12, 13].includes(C)) {
+      if ([0, 1, 10, 11, 12].includes(C)) {
         ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
       }
     }
