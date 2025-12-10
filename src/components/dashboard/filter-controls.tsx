@@ -41,11 +41,12 @@ export function FilterControls({
       </div>
       <div className="flex items-center gap-2">
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="篩選狀態" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">所有專案</SelectItem>
+            <SelectItem value="in_progress">所有專案 (排除已完成)</SelectItem>
             <SelectItem value="overdue">逾期未報</SelectItem>
             <SelectItem value="completed">已完成</SelectItem>
           </SelectContent>

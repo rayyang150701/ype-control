@@ -53,6 +53,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       .filter(sp => {
         if (filter === 'overdue') return sp.isOverdue;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
+        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) !== 100;
         return true;
       })
       .filter(sp => {
@@ -60,8 +61,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         if (!query) return true;
         return (
           sp.name.toLowerCase().includes(query) ||
-          sp.projectName?.toLowerCase().includes(query) ||
           sp.projectCaseNumber?.toLowerCase().includes(query) ||
+          sp.projectName?.toLowerCase().includes(query) ||
           sp.tpmOfficeContact?.toLowerCase().includes(query)
         );
       });
@@ -78,6 +79,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           .filter(sp => {
             if (filter === 'overdue') return sp.isOverdue;
             if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
+            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) !== 100;
             return true;
           })
           .filter(sp => {
