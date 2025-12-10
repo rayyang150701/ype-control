@@ -79,7 +79,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
     return (
       <div className="space-y-1">
-        <p className={cn('whitespace-pre-wrap', !isExpanded && 'line-clamp-5')}>
+        <p className={cn('break-words', !isExpanded && 'line-clamp-5')}>
           {content}
         </p>
         {needsExpand && (
@@ -160,10 +160,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                     </button>
                   </td>
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{sp.ownerName}</td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words whitespace-pre-wrap align-top">
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
                       {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words whitespace-pre-wrap align-top">
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
                       {sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}
                   </td>
                   <td className="border-b px-3 py-2 text-sm break-words align-top">
