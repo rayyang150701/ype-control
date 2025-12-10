@@ -5,7 +5,7 @@ import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format }s from 'date-fns';
+import { format } from 'date-fns';
 
 type TableViewProps = {
   groupedProjects: FullProject[];
@@ -146,3 +146,5 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     </div>
   );
 }
+
+    
