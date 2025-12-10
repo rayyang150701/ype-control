@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SubProjectWithLatestLog, ProgressLog, FullProject } from '@/types';
 import { ProjectCard } from './project-card';
@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
-import { getProgressLogsForSubProject, getUsers, updateProject, getFullProjectById } from '@/lib/actions';
+import { getProgressLogsForSubProject, getUsers, updateProject, getFullProjectById, getSubProjectsWithLatestLogs, getFullProjects } from '@/lib/actions';
 import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
 import { TableView } from './table-view';
@@ -20,6 +20,7 @@ type DashboardClientProps = {
 
 export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [subProjects, setSubProjects] = useState<SubProjectWithLatestLog[]>(initialSubProjects);
+  const [fullProjects, setFullProjects] = useState<FullProject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
@@ -35,6 +36,16 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   
   const router = useRouter();
+
+  useEffect(() => {
+    async function fetchFullProjects() {
+      if (viewMode === 'table') {
+        const projects = await getFullProjects();
+        setFullProjects(projects);
+      }
+    }
+    fetchFullProjects();
+  }, [viewMode]);
 
 
   const filteredSubProjects = useMemo(() => {
@@ -55,6 +66,36 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         );
       });
   }, [subProjects, searchQuery, filter]);
+
+  const filteredFullProjects = useMemo(() => {
+    if (!searchQuery && filter === 'all') {
+      return fullProjects;
+    }
+  
+    return fullProjects
+      .map(project => {
+        const filteredSubProjects = project.subProjects
+          .filter(sp => {
+            if (filter === 'overdue') return sp.isOverdue;
+            if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
+            return true;
+          })
+          .filter(sp => {
+            const query = searchQuery.toLowerCase();
+            if (!query) return true;
+            return (
+              sp.name.toLowerCase().includes(query) ||
+              project.name.toLowerCase().includes(query) ||
+              project.caseNumber.toLowerCase().includes(query) ||
+              sp.ownerName?.toLowerCase().includes(query)
+            );
+          });
+  
+        return { ...project, subProjects: filteredSubProjects };
+      })
+      .filter(project => project.subProjects.length > 0);
+  }, [fullProjects, searchQuery, filter]);
+  
 
   const handleCardClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
@@ -140,29 +181,25 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     );
   };
   
+  const refreshData = async () => {
+    const updatedSubProjects = await getSubProjectsWithLatestLogs();
+    setSubProjects(updatedSubProjects);
+    if (viewMode === 'table') {
+      const updatedFullProjects = await getFullProjects();
+      setFullProjects(updatedFullProjects);
+    }
+  };
+
 
   const onProjectAdded = () => {
     setIsNewProjectOpen(false);
-    // Refreshes server-side props and re-renders Server Components.
-    router.refresh();
+    refreshData();
   }
 
   const onProjectUpdated = () => {
     setIsEditProjectOpen(false);
-    router.refresh();
+    refreshData();
   }
-
-  const groupedProjects = useMemo(() => {
-    const grouped: { [key: string]: SubProjectWithLatestLog[] } = {};
-    filteredSubProjects.forEach(sp => {
-      if (!grouped[sp.projectId]) {
-        grouped[sp.projectId] = [];
-      }
-      grouped[sp.projectId].push(sp);
-    });
-    return Object.values(grouped);
-  }, [filteredSubProjects]);
-
 
   return (
     <>
@@ -177,27 +214,37 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setViewMode={setViewMode}
       />
 
-      {filteredSubProjects.length > 0 ? (
+      {viewMode === 'grid' && (
         <>
-          {viewMode === 'grid' && (
+          {filteredSubProjects.length > 0 ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredSubProjects.map(sp => (
                 <ProjectCard key={sp.id} subProject={sp} onCardClick={handleCardClick} onLogAdded={onLogAdded}/>
               ))}
             </div>
-          )}
-          {viewMode === 'table' && (
-            <TableView 
-              groupedProjects={groupedProjects}
-              onEditProject={handleEditProjectClick}
+          ) : (
+            <EmptyState
+              title="無符合條件的專案"
+              description="請嘗試調整您的篩選條件或清除搜尋關鍵字。"
             />
           )}
         </>
-      ) : (
-        <EmptyState
-          title="無符合條件的專案"
-          description="請嘗試調整您的篩選條件或清除搜尋關鍵字。"
-        />
+      )}
+
+      {viewMode === 'table' && (
+        <>
+        {filteredFullProjects.length > 0 ? (
+            <TableView 
+              groupedProjects={filteredFullProjects}
+              onEditProject={handleEditProjectClick}
+            />
+        ) : (
+            <EmptyState
+              title="無符合條件的專案"
+              description="請嘗試調整您的篩選條件或清除搜尋關鍵字。"
+            />
+        )}
+        </>
       )}
 
       {selectedSubProject && (

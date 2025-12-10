@@ -1,20 +1,41 @@
 'use client';
 
-import { SubProjectWithLatestLog } from '@/types';
+import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
 
 type TableViewProps = {
-  groupedProjects: SubProjectWithLatestLog[][];
+  groupedProjects: FullProject[];
   onEditProject: (projectId: string) => void;
 };
 
 export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
+  const router = useRouter();
+  
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return <span className="text-gray-400">進行中</span>;
     return format(new Date(dateString), 'yyyy/MM/dd');
+  };
+
+  const getWeekRange = () => {
+    const today = new Date();
+    // Adjust to get Monday (if Sunday is 0, Monday is 1)
+    const dayOfWeek = today.getDay();
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // adjust when today is Sunday
+    const monday = new Date(today.setDate(diff));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const formatShort = (date: Date) => {
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${m}/${d}`;
+    };
+
+    return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
   };
 
   return (
@@ -24,11 +45,16 @@ export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
           <tr>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">主專案案號</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">主專案名稱</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">專案目的</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">現況/問題點</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">燁輝專案負責主管與分機</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM管理室窗口</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">億威電子</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">子專案名稱</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">負責人</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">預計完成日</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">實際完成日</th>
-            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週執行摘要</th>
+            <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週執行摘要 ({getWeekRange()})</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">下週工作計畫</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">遭遇問題及風險</th>
             <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">總體完成度</th>
@@ -36,8 +62,8 @@ export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
           </tr>
         </thead>
         <tbody>
-          {groupedProjects.flatMap((subProjects, projectIndex) =>
-            subProjects.map((sp, subProjectIndex) => (
+          {groupedProjects.map((project, projectIndex) =>
+            project.subProjects.map((sp, subProjectIndex) => (
               <tr
                 key={sp.id}
                 className={cn(
@@ -47,21 +73,27 @@ export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
               >
                 {subProjectIndex === 0 && (
                   <>
-                    <td
-                      rowSpan={subProjects.length}
-                      className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top"
-                    >
-                      {sp.projectCaseNumber}
-                    </td>
-                    <td
-                      rowSpan={subProjects.length}
-                      className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top"
-                    >
-                      {sp.projectName}
-                    </td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.caseNumber}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.name}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top whitespace-pre-wrap">{project.projectPurpose}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top whitespace-pre-wrap">{project.currentStatusAndIssues}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.yiehPhuiProjectManager}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.tpmOfficeContact}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.egigaContact}</td>
                   </>
                 )}
-                <td className="border-b px-3 py-2 text-sm text-gray-800">{sp.name}</td>
+                <td className="border-b px-3 py-2 text-sm text-gray-800">
+                   <a 
+                    href={`/project/${project.id}/sub/${sp.id}`}
+                    className="text-blue-600 underline hover:text-blue-800"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      router.push(`/project/${project.id}/sub/${sp.id}`);
+                    }}
+                  >
+                    {sp.name}
+                  </a>
+                </td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{sp.ownerName}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{formatDate(sp.expectedCompletionDate)}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{formatDate(sp.actualCompletionDate)}</td>

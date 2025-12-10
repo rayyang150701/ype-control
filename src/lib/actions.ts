@@ -6,7 +6,7 @@ import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-perce
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus } from '@/types';
-import { FieldValue, FieldPath } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
 
@@ -210,7 +210,7 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
 async function findProjectIdForSubProject(subProjectId: string): Promise<string | null> {
     const projectsSnapshot = await db.collection('projects').get();
     for (const projectDoc of projectsSnapshot.docs) {
-      const subProjectSnapshot = await projectDoc.ref.collection('sub_projects').where(FieldPath.documentId(), '==', subProjectId).limit(1).get();
+      const subProjectSnapshot = await projectDoc.ref.collection('sub_projects').where(db.app.firestore.FieldPath.documentId(), '==', subProjectId).limit(1).get();
       if (!subProjectSnapshot.empty) {
         return projectDoc.id;
       }
@@ -459,6 +459,21 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
     return JSON.parse(JSON.stringify(fullProject));
 };
 
+
+export const getFullProjects = async (): Promise<FullProject[]> => {
+    const projectsSnapshot = await db.collection('projects').get();
+    const fullProjects: FullProject[] = [];
+  
+    for (const projectDoc of projectsSnapshot.docs) {
+      const project = await getFullProjectById(projectDoc.id);
+      if (project) {
+        fullProjects.push(project);
+      }
+    }
+  
+    return fullProjects.sort((a, b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+};
+
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const projectsCol = db.collection('projects');
     const projectsSnapshot = await projectsCol.get();
@@ -527,5 +542,3 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
-
-    
