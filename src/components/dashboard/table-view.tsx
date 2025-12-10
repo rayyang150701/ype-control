@@ -21,10 +21,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
   // Debug: Check what data is available
   useEffect(() => {
     if (groupedProjects && groupedProjects.length > 0) {
-      console.log('=== PROJECT DATA DEBUG ===');
-      console.log('First project:', groupedProjects[0]);
-      console.log('Available fields:', Object.keys(groupedProjects[0]));
-      console.log('========================');
+      const project = groupedProjects[0];
+      console.log('=== FULL PROJECT OBJECT ===');
+      console.log(JSON.stringify(project, null, 2));
+      console.log('=========================');
     }
   }, [groupedProjects]);
 
