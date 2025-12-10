@@ -14,7 +14,15 @@ type TableViewProps = {
 };
 
 export function TableView({ groupedProjects, onEditProject, onSubProjectClick }: TableViewProps) {
-  
+  const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
+
+  const toggleExpand = (key: string) => {
+    setExpandedCells(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return <span className="text-gray-400">進行中</span>;
     return format(new Date(dateString), 'yyyy/MM/dd');
@@ -22,9 +30,8 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
   const getWeekRange = () => {
     const today = new Date();
-    // Adjust to get Monday (if Sunday is 0, Monday is 1)
     const dayOfWeek = today.getDay();
-    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // adjust when today is Sunday
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
     const monday = new Date(today.setDate(diff));
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
@@ -37,15 +44,39 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
     return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
   };
+  
+  const renderCollapsibleCell = (project: FullProject, field: 'projectPurpose' | 'currentStatusAndIssues') => {
+    const content = project[field] || '';
+    const key = `${project.id}-${field}`;
+    const isExpanded = expandedCells[key];
+    // Threshold based on average characters per line
+    const needsExpand = content.length > 200; 
+
+    return (
+      <div className="space-y-1">
+        <p className={cn('whitespace-pre-wrap', !isExpanded && 'line-clamp-5')}>
+          {content}
+        </p>
+        {needsExpand && (
+          <button
+            onClick={() => toggleExpand(key)}
+            className="text-blue-600 text-xs hover:underline"
+          >
+            {isExpanded ? '收合 ▲' : '查看更多 ▼'}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="min-w-full border-collapse bg-white table-fixed w-full">
         <thead className="sticky top-0 z-10">
           <tr>
-            <th className="w-16 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">主專案案號</th>
-            <th className="w-40 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">主專案名稱</th>
-            <th className="w-48 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">專案目的</th>
+            <th className="w-16 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-20">主專案案號</th>
+            <th className="w-40 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-16 z-20">主專案名稱</th>
+            <th className="w-48 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-56 z-20">專案目的</th>
             <th className="w-48 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">現況/問題點</th>
             <th className="w-32 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">燁輝專案負責主管與分機</th>
             <th className="w-32 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM管理室窗口</th>
@@ -73,10 +104,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
               >
                 {subProjectIndex === 0 && (
                   <>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.caseNumber}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.name}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.projectPurpose}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.currentStatusAndIssues}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-1" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-16 z-1" style={{ backgroundColor: projectIndex_1 % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-56 z-1" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{renderCollapsibleCell(project, 'projectPurpose')}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{renderCollapsibleCell(project, 'currentStatusAndIssues')}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.yiehPhuiProjectManager}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.tpmOfficeContact}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.egigaContact}</td>
@@ -94,15 +125,15 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                 <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{sp.ownerName}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.expectedCompletionDate)}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.actualCompletionDate)}</td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">
+                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words whitespace-pre-wrap">
                     {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
                 </td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">
+                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words whitespace-pre-wrap">
                     {sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}
                 </td>
                 <td className="border-b px-3 py-2 text-sm break-words">
                   {sp.latestLog?.roadblocks ? (
-                    <span className="rounded bg-red-100 px-2 py-1 text-red-700">
+                    <span className="rounded bg-red-100 px-2 py-1 text-red-700 whitespace-pre-wrap">
                       {sp.latestLog.roadblocks}
                     </span>
                   ) : (
