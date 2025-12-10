@@ -2,7 +2,7 @@
 
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { SubProjectWithLatestLog, ProgressLog, User, FullProject } from '@/types';
 
 // This file contains only client-side safe code.
@@ -101,11 +101,13 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
+        // Find a representative sub-project to pull project-level details
         const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId);
         projectsMap.set(sp.projectId, {
             id: sp.projectId,
             caseNumber: sourceProjectData?.projectCaseNumber ?? '',
             name: sourceProjectData?.projectName ?? '',
+            // Use the found data to populate project-level fields
             projectPurpose: sourceProjectData?.projectPurpose ?? '',
             currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues ?? '',
             yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager ?? '',
