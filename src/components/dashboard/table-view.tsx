@@ -19,6 +19,17 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
 
+  // Debug: Check what data is available
+  useEffect(() => {
+    if (groupedProjects && groupedProjects.length > 0) {
+      console.log('=== PROJECT DATA DEBUG ===');
+      console.log('First project:', groupedProjects[0]);
+      console.log('Available fields:', Object.keys(groupedProjects[0]));
+      console.log('========================');
+    }
+  }, [groupedProjects]);
+
+
   const handleTopScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollLeft = e.currentTarget.scrollLeft;
