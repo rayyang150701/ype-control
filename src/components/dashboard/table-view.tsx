@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Pencil } from 'lucide-react';
@@ -13,6 +14,11 @@ type TableViewProps = {
 };
 
 export function TableView({ groupedProjects, onEditProject, onSubProjectClick }: TableViewProps) {
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  const toggleRowExpansion = (projectId: string) => {
+    setExpandedRows(prev => ({ ...prev, [projectId]: !prev[projectId] }));
+  };
   
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return <span className="text-gray-400">進行中</span>;
@@ -74,11 +80,25 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   <>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.caseNumber}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.name}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top whitespace-pre-wrap">{project.projectPurpose}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top whitespace-pre-wrap">{project.currentStatusAndIssues}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.yiehPhuiProjectManager}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.tpmOfficeContact}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top">{project.egigaContact}</td>
+                    <td rowSpan={project.subProjects.length} title={project.projectPurpose} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top max-w-xs truncate cursor-help">{project.projectPurpose}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top max-w-md">
+                        <div className="space-y-1">
+                            <p className={cn("text-sm", !expandedRows[project.id] && "line-clamp-2")}>
+                                {project.currentStatusAndIssues}
+                            </p>
+                            {(project.currentStatusAndIssues?.length ?? 0) > 100 && (
+                                <button
+                                    className="text-blue-600 text-xs hover:underline"
+                                    onClick={() => toggleRowExpansion(project.id)}
+                                >
+                                    {expandedRows[project.id] ? '收合' : '查看更多 →'}
+                                </button>
+                            )}
+                        </div>
+                    </td>
+                    <td rowSpan={project.subProjects.length} title={project.yiehPhuiProjectManager} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top max-w-xs truncate cursor-help">{project.yiehPhuiProjectManager}</td>
+                    <td rowSpan={project.subProjects.length} title={project.tpmOfficeContact} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top max-w-xs truncate cursor-help">{project.tpmOfficeContact}</td>
+                    <td rowSpan={project.subProjects.length} title={project.egigaContact} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top max-w-xs truncate cursor-help">{project.egigaContact}</td>
                   </>
                 )}
                 <td className="border-b px-3 py-2 text-sm text-gray-800">
@@ -93,8 +113,16 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{sp.ownerName}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{formatDate(sp.expectedCompletionDate)}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{formatDate(sp.actualCompletionDate)}</td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap">{sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}</td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap">{sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}</td>
+                <td className="border-b px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap max-w-sm">
+                    <p className="line-clamp-2 cursor-help" title={sp.latestLog?.executionSummary}>
+                        {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
+                    </p>
+                </td>
+                <td className="border-b px-3 py-2 text-sm text-gray-800 whitespace-pre-wrap max-w-sm">
+                    <p className="line-clamp-2 cursor-help" title={sp.latestLog?.nextWeekPlan}>
+                        {sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}
+                    </p>
+                </td>
                 <td className="border-b px-3 py-2 text-sm">
                   {sp.latestLog?.roadblocks ? (
                     <span className="rounded bg-red-100 px-2 py-1 text-red-700">
