@@ -42,7 +42,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
       return `${m}/${d}`;
     };
 
-    return `${m}/${d} ~ ${formatShort(sunday)}`;
+    return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
   };
   
   const renderCollapsibleCell = (project: FullProject, field: 'projectPurpose' | 'currentStatusAndIssues') => {
