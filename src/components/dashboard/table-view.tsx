@@ -108,7 +108,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
       <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border">
         <table className="min-w-full border-collapse bg-white table-auto">
-           <colgroup><col style={{ minWidth: '64px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '96px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '224px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '112px' }} /></colgroup>
+           <colgroup><col style={{ minWidth: '64px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '96px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '120px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '112px' }} /></colgroup>
           <thead className="sticky top-0 z-10">
             <tr>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-20">主專案案號</th>
@@ -168,7 +168,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   </td>
                   <td className="border-b px-3 py-2 text-sm break-words align-top">
                     {sp.latestLog?.roadblocks ? (
-                      <span className="rounded bg-red-100 px-2 py-1 text-red-700 whitespace-pre-wrap">
+                      <span className="rounded bg-red-100 px-2 py-1 text-red-700">
                         {sp.latestLog.roadblocks}
                       </span>
                     ) : (
