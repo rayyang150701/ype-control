@@ -18,7 +18,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  // Debug: Check what data is available
   useEffect(() => {
     if (groupedProjects && groupedProjects.length > 0) {
       const project = groupedProjects[0];
@@ -201,7 +200,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       <span className="text-gray-400">無</span>
                     )}
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-center text-gray-800 align-top">{sp.latestLog?.completionPercentage ?? 0}%</td>
+                  <td className="border-b px-3 py-2 text-sm text-left text-gray-800 align-top">{sp.latestLog?.completionPercentage ?? 0}%</td>
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{formatDate(sp.expectedCompletionDate)}</td>
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{formatDate(sp.actualCompletionDate)}</td>
                 </tr>

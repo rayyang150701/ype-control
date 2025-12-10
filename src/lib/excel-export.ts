@@ -18,6 +18,7 @@ const titleStyle = {
   alignment: { horizontal: 'center', vertical: 'center' },
 };
 const centerAlign = { alignment: { horizontal: 'center', vertical: 'center' } };
+const leftAlign = { alignment: { horizontal: 'left', vertical: 'center' } };
 const wrapText = { alignment: { wrapText: true, vertical: 'top' } };
 
 const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF--8';
@@ -48,8 +49,11 @@ const createSheet = (data: any[][], title: string, colWidths: { wch: number }[],
       if(!ws[cellRef]) continue;
       ws[cellRef].s = { ...wrapText };
       // Center specific columns based on new layout
-      if ([0, 1, 10, 11, 12].includes(C)) {
-        ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
+      if ([0, 1, 11, 12].includes(C)) {
+         ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
+      }
+      if (C === 10) { //總體完成度
+         ws[cellRef].s = { ...ws[cellRef].s, ...leftAlign };
       }
     }
   }
@@ -96,33 +100,30 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
     headers
   ];
 
-  // Create a map to group subprojects by project ID
   const projectsMap = new Map<string, FullProject & { subProjects: SubProjectWithLatestLog[] }>();
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
-        const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId && (p.projectPurpose || p.currentStatusAndIssues));
-        projectsMap.set(sp.projectId, {
-            id: sp.projectId,
-            caseNumber: sp.projectCaseNumber ?? '',
-            name: sp.projectName ?? '',
-            projectPurpose: sourceProjectData?.projectPurpose ?? '',
-            currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues ?? '',
-            yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager ?? '',
-            tpmOfficeContact: sourceProjectData?.tpmOfficeContact ?? '',
-            egigaContact: sourceProjectData?.egigaContact ?? '',
-            subProjects: []
-        } as FullProject & { subProjects: SubProjectWithLatestLog[] });
+      projectsMap.set(sp.projectId, {
+        id: sp.projectId,
+        caseNumber: sp.projectCaseNumber ?? '',
+        name: sp.projectName ?? '',
+        projectPurpose: sp.projectPurpose ?? '',
+        currentStatusAndIssues: sp.currentStatusAndIssues ?? '',
+        yiehPhuiProjectManager: sp.yiehPhuiProjectManager ?? '',
+        tpmOfficeContact: sp.tpmOfficeContact ?? '',
+        egigaContact: sp.egigaContact ?? '',
+        subProjects: [],
+      } as FullProject & { subProjects: SubProjectWithLatestLog[] });
     }
     projectsMap.get(sp.projectId)?.subProjects.push(sp);
   });
 
-
   projectsMap.forEach(project => {
-    project.subProjects.forEach((sp: SubProjectWithLatestLog, index: number) => {
+    project.subProjects.forEach((sp, index) => {
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
       const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
-      const completionPercentage = sp.latestLog?.completionPercentage ?? 0;
+      const completionPercentage = `${sp.latestLog?.completionPercentage ?? 0}%`;
       
       const row = index === 0 
         ? [
