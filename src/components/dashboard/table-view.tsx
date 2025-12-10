@@ -148,31 +148,31 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                 >
                   {subProjectIndex === 0 && (
                     <>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
                         <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[60px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[124px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[284px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[284px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
                         {project.projectPurpose ? renderCollapsibleCell(project, 'projectPurpose') : <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
                         {project.currentStatusAndIssues ? renderCollapsibleCell(project, 'currentStatusAndIssues') : <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
                         {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
                         {project.tpmOfficeContact || <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
                         {project.egigaContact || <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
                     </>
                   )}
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">
                     <button
                       type="button"
                       onClick={() => onSubProjectClick(sp)}
@@ -181,13 +181,13 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       {sp.name}
                     </button>
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">
                       {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">
                       {sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}
                   </td>
-                  <td className="border-b px-3 py-2 text-sm break-words align-top">
+                  <td className="border-b px-3 py-2 text-sm break-words align-middle">
                     {sp.latestLog?.roadblocks ? (
                       <span className="rounded bg-red-100 px-2 py-1 text-red-700">
                         {sp.latestLog.roadblocks}
@@ -196,9 +196,9 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       <span className="text-gray-400">無</span>
                     )}
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-left text-gray-800 align-top">{sp.latestLog?.completionPercentage ?? 0}%</td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{formatDate(sp.expectedCompletionDate)}</td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{formatDate(sp.actualCompletionDate)}</td>
+                  <td className="border-b px-3 py-2 text-sm text-left text-gray-800 align-middle">{sp.latestLog?.completionPercentage ?? 0}%</td>
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">{formatDate(sp.expectedCompletionDate)}</td>
+                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">{formatDate(sp.actualCompletionDate)}</td>
                 </tr>
               ))
             )}
@@ -208,5 +208,3 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     </div>
   );
 }
-
-    
