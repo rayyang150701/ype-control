@@ -85,14 +85,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     const isExpanded = expandedCells[key];
     const needsExpand = content.length > 200; 
 
-    if (!content) {
-      return <span className="text-gray-400 italic">尚未填寫</span>
-    }
-
     return (
       <div className="space-y-1">
         <p className={cn('break-words', !isExpanded && 'line-clamp-5')}>
-          {content}
+          {content || <span className="text-gray-400 italic">尚未填寫</span>}
         </p>
         {needsExpand && (
           <button
@@ -118,15 +114,15 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
         <div className="scrollbar-content" style={{ height: '1px' }} />
       </div>
 
-      <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border">
+      <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border" style={{maxHeight: 'calc(100vh - 250px)'}}>
         <table className="min-w-full border-collapse bg-white table-auto">
            <colgroup><col style={{minWidth: '60px'}} /><col style={{minWidth: '64px'}} /><col style={{minWidth: '160px'}} /><col style={{minWidth: '192px'}} /><col style={{minWidth: '192px'}} /><col style={{minWidth: '128px'}} /><col style={{minWidth: '128px'}} /><col style={{minWidth: '112px'}} /><col style={{minWidth: '160px'}} /><col style={{minWidth: '256px'}} /><col style={{minWidth: '256px'}} /><col style={{minWidth: '120px'}} /><col style={{minWidth: '80px'}} /><col style={{minWidth: '112px'}} /><col style={{minWidth: '112px'}} /></colgroup>
-          <thead className="sticky top-0 z-10">
+          <thead className="sticky top-0 z-30">
             <tr>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-20">操作</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[60px] z-20">主專案案號</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[124px] z-20">主專案名稱</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[284px] z-20">專案目的</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-40">操作</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[60px] z-40">主專案案號</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[124px] z-40">主專案名稱</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[284px] z-40">專案目的</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">現況/問題點</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">燁輝專案負責主管與分機</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM管理室窗口</th>
@@ -152,18 +148,18 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                 >
                   {subProjectIndex === 0 && (
                     <>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-10" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
                         <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[60px] z-10" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[124px] z-10" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
-                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[284px] z-10" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
-                        {project.projectPurpose || <span className="text-gray-400 italic">尚未填寫</span>}
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[60px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[124px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
+                      <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-[284px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
+                        {project.projectPurpose ? renderCollapsibleCell(project, 'projectPurpose') : <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
                       <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
-                        {renderCollapsibleCell(project, 'currentStatusAndIssues')}
+                        {project.currentStatusAndIssues ? renderCollapsibleCell(project, 'currentStatusAndIssues') : <span className="text-gray-400 italic">尚未填寫</span>}
                       </td>
                       <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">
                         {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
@@ -212,3 +208,5 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     </div>
   );
 }
+
+    
