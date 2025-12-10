@@ -42,7 +42,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
       return `${m}/${d}`;
     };
 
-    return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
+    return `${m}/${d} ~ ${formatShort(sunday)}`;
   };
   
   const renderCollapsibleCell = (project: FullProject, field: 'projectPurpose' | 'currentStatusAndIssues') => {
@@ -83,13 +83,13 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
             <th className="w-28 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">億威電子</th>
             <th className="w-40 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">子專案名稱</th>
             <th className="w-24 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">負責人</th>
-            <th className="w-28 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">預計完成日</th>
-            <th className="w-28 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">實際完成日</th>
             <th className="w-64 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週執行摘要 ({getWeekRange()})</th>
             <th className="w-64 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">下週工作計畫</th>
             <th className="w-56 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">遭遇問題及風險</th>
             <th className="w-20 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">總體完成度</th>
             <th className="w-20 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">操作</th>
+            <th className="w-28 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">預計完成日</th>
+            <th className="w-28 border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">實際完成日</th>
           </tr>
         </thead>
         <tbody>
@@ -123,8 +123,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   </button>
                 </td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{sp.ownerName}</td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.expectedCompletionDate)}</td>
-                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.actualCompletionDate)}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800 break-words whitespace-pre-wrap">
                     {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
                 </td>
@@ -146,6 +144,8 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </td>
+                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.expectedCompletionDate)}</td>
+                <td className="border-b px-3 py-2 text-sm text-gray-800 break-words">{formatDate(sp.actualCompletionDate)}</td>
               </tr>
             ))
           )}
