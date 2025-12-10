@@ -33,7 +33,7 @@ export function FilterControls({
       <div className="relative w-full sm:max-w-xs">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="搜尋案號、專案或負責人..."
+          placeholder="搜尋案號、專案名稱、TPM管理室窗口..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10"

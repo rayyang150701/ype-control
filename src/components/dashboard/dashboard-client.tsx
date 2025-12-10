@@ -62,7 +62,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           sp.name.toLowerCase().includes(query) ||
           sp.projectName?.toLowerCase().includes(query) ||
           sp.projectCaseNumber?.toLowerCase().includes(query) ||
-          sp.ownerName?.toLowerCase().includes(query)
+          sp.tpmOfficeContact?.toLowerCase().includes(query)
         );
       });
   }, [subProjects, searchQuery, filter]);
@@ -87,7 +87,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
               sp.name.toLowerCase().includes(query) ||
               project.name.toLowerCase().includes(query) ||
               project.caseNumber.toLowerCase().includes(query) ||
-              sp.ownerName?.toLowerCase().includes(query)
+              project.tpmOfficeContact?.toLowerCase().includes(query)
             );
           });
   
