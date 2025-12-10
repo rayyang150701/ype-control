@@ -20,7 +20,7 @@ const titleStyle = {
 const centerAlign = { alignment: { horizontal: 'center', vertical: 'center' } };
 const wrapText = { alignment: { wrapText: true, vertical: 'top' } };
 
-const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8';
+const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF--8';
 const fileExtension = '.xlsx';
 
 const createSheet = (data: any[][], title: string, colWidths: { wch: number }[], merges: XLSX.Range[]) => {
@@ -101,16 +101,17 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
-      projectsMap.set(sp.projectId, {
-        caseNumber: sp.projectCaseNumber,
-        projectName: sp.projectName,
-        projectPurpose: sp.projectPurpose,
-        currentStatusAndIssues: sp.currentStatusAndIssues,
-        yiehPhuiProjectManager: sp.yiehPhuiProjectManager,
-        tpmOfficeContact: sp.tpmOfficeContact,
-        egigaContact: sp.egigaContact,
-        subProjects: []
-      });
+        const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId);
+        projectsMap.set(sp.projectId, {
+            caseNumber: sourceProjectData?.projectCaseNumber,
+            projectName: sourceProjectData?.projectName,
+            projectPurpose: sourceProjectData?.projectPurpose,
+            currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues,
+            yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager,
+            tpmOfficeContact: sourceProjectData?.tpmOfficeContact,
+            egigaContact: sourceProjectData?.egigaContact,
+            subProjects: []
+        });
     }
     projectsMap.get(sp.projectId).subProjects.push(sp);
   });
