@@ -5,15 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { useRouter } from 'next/navigation';
 
 type TableViewProps = {
   groupedProjects: FullProject[];
   onEditProject: (projectId: string) => void;
+  onSubProjectClick: (subProject: SubProjectWithLatestLog) => void;
 };
 
-export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
-  const router = useRouter();
+export function TableView({ groupedProjects, onEditProject, onSubProjectClick }: TableViewProps) {
   
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return <span className="text-gray-400">進行中</span>;
@@ -83,16 +82,13 @@ export function TableView({ groupedProjects, onEditProject }: TableViewProps) {
                   </>
                 )}
                 <td className="border-b px-3 py-2 text-sm text-gray-800">
-                   <a 
-                    href={`/project/${project.id}/sub/${sp.id}`}
-                    className="text-blue-600 underline hover:text-blue-800"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      router.push(`/project/${project.id}/sub/${sp.id}`);
-                    }}
+                   <button
+                    type="button"
+                    onClick={() => onSubProjectClick(sp)}
+                    className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left"
                   >
                     {sp.name}
-                  </a>
+                  </button>
                 </td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{sp.ownerName}</td>
                 <td className="border-b px-3 py-2 text-sm text-gray-800">{formatDate(sp.expectedCompletionDate)}</td>

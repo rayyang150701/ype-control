@@ -97,7 +97,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   }, [fullProjects, searchQuery, filter]);
   
 
-  const handleCardClick = async (subProject: SubProjectWithLatestLog) => {
+  const handleSubProjectClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
     setIsTimelineOpen(true);
     setIsTimelineLoading(true);
@@ -219,7 +219,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           {filteredSubProjects.length > 0 ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredSubProjects.map(sp => (
-                <ProjectCard key={sp.id} subProject={sp} onCardClick={handleCardClick} onLogAdded={onLogAdded}/>
+                <ProjectCard key={sp.id} subProject={sp} onCardClick={handleSubProjectClick} onLogAdded={onLogAdded}/>
               ))}
             </div>
           ) : (
@@ -237,6 +237,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             <TableView 
               groupedProjects={filteredFullProjects}
               onEditProject={handleEditProjectClick}
+              onSubProjectClick={handleSubProjectClick}
             />
         ) : (
             <EmptyState
