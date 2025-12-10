@@ -108,24 +108,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
       <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border">
         <table className="min-w-full border-collapse bg-white table-auto">
-           <colgroup>
-              <col style={{ minWidth: '64px' }} />   {/* 主專案案號 */}
-              <col style={{ minWidth: '160px' }} />  {/* 主專案名稱 */}
-              <col style={{ minWidth: '192px' }} />  {/* 專案目的 */}
-              <col style={{ minWidth: '192px' }} />  {/* 現況/問題點 */}
-              <col style={{ minWidth: '128px' }} />  {/* 燁輝專案負責主管與分機 */}
-              <col style={{ minWidth: '128px' }} />  {/* TPM管理室窗口 */}
-              <col style={{ minWidth: '112px' }} />   {/* 億威電子 */}
-              <col style={{ minWidth: '160px' }} />  {/* 子專案名稱 */}
-              <col style={{ minWidth: '96px' }} />   {/* 負責人 */}
-              <col style={{ minWidth: '256px' }} />  {/* 本週執行摘要 */}
-              <col style={{ minWidth: '256px' }} />  {/* 下週工作計畫 */}
-              <col style={{ minWidth: '224px' }} />  {/* 遭遇問題及風險 */}
-              <col style={{ minWidth: '80px' }} />   {/* 總體完成度 */}
-              <col style={{ minWidth: '80px' }} />   {/* 操作 */}
-              <col style={{ minWidth: '112px' }} />  {/* 預計完成日 */}
-              <col style={{ minWidth: '112px' }} />  {/* 實際完成日 */}
-          </colgroup>
+           <colgroup><col style={{ minWidth: '64px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '96px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '224px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '112px' }} /></colgroup>
           <thead className="sticky top-0 z-10">
             <tr>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-20">主專案案號</th>
