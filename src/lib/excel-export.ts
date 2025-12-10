@@ -47,14 +47,15 @@ const createSheet = (data: any[][], title: string, colWidths: { wch: number }[],
     for(let C = 0; C < data[R].length; ++C) {
       const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
       if(!ws[cellRef]) continue;
-      ws[cellRef].s = { ...wrapText };
-      // Center specific columns based on new layout
-      if ([0, 1, 11, 12].includes(C)) {
-         ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
-      }
-      if (C === 10) { //總體完成度
-         ws[cellRef].s = { ...ws[cellRef].s, ...leftAlign };
-      }
+
+      // Apply a base style of left-aligned, vertically centered, and wrapped text to all data cells
+      ws[cellRef].s = { 
+        alignment: { 
+          wrapText: true, 
+          vertical: 'center', 
+          horizontal: 'left' 
+        } 
+      };
     }
   }
 
@@ -104,15 +105,18 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
-      projectsMap.set(sp.projectId, {
+        // Find a representative sub-project to pull shared project details from, just in case.
+        const representativeSubProject = subProjects.find(p => p.projectId === sp.projectId && (p.projectPurpose || p.currentStatusAndIssues));
+      
+        projectsMap.set(sp.projectId, {
         id: sp.projectId,
         caseNumber: sp.projectCaseNumber ?? '',
         name: sp.projectName ?? '',
-        projectPurpose: sp.projectPurpose ?? '',
-        currentStatusAndIssues: sp.currentStatusAndIssues ?? '',
-        yiehPhuiProjectManager: sp.yiehPhuiProjectManager ?? '',
-        tpmOfficeContact: sp.tpmOfficeContact ?? '',
-        egigaContact: sp.egigaContact ?? '',
+        projectPurpose: representativeSubProject?.projectPurpose ?? '',
+        currentStatusAndIssues: representativeSubProject?.currentStatusAndIssues ?? '',
+        yiehPhuiProjectManager: representativeSubProject?.yiehPhuiProjectManager ?? '',
+        tpmOfficeContact: representativeSubProject?.tpmOfficeContact ?? '',
+        egigaContact: representativeSubProject?.egigaContact ?? '',
         subProjects: [],
       } as FullProject & { subProjects: SubProjectWithLatestLog[] });
     }
