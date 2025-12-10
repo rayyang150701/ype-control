@@ -101,13 +101,11 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
-        // Find a representative sub-project to pull project-level details
-        const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId);
+        const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId && (p.projectPurpose || p.currentStatusAndIssues));
         projectsMap.set(sp.projectId, {
             id: sp.projectId,
-            caseNumber: sourceProjectData?.projectCaseNumber ?? '',
-            name: sourceProjectData?.projectName ?? '',
-            // Use the found data to populate project-level fields
+            caseNumber: sp.projectCaseNumber ?? '',
+            name: sp.projectName ?? '',
             projectPurpose: sourceProjectData?.projectPurpose ?? '',
             currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues ?? '',
             yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager ?? '',
@@ -130,11 +128,11 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
         ? [
             project.caseNumber,
             project.name,
-            project.projectPurpose,
-            project.currentStatusAndIssues,
-            project.yiehPhuiProjectManager,
-            project.tpmOfficeContact,
-            project.egigaContact,
+            project.projectPurpose || '尚未填寫',
+            project.currentStatusAndIssues || '尚未填寫',
+            project.yiehPhuiProjectManager || '尚未填寫',
+            project.tpmOfficeContact || '尚未填寫',
+            project.egigaContact || '尚未填寫',
             sp.name,
             sp.latestLog?.executionSummary ?? '無紀錄',
             sp.latestLog?.nextWeekPlan ?? '無紀錄',
