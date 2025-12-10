@@ -3,7 +3,7 @@
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { format, differenceInDays } from 'date-fns';
-import { SubProjectWithLatestLog, ProgressLog, User } from '@/types';
+import { SubProjectWithLatestLog, ProgressLog, User, FullProject } from '@/types';
 
 // This file contains only client-side safe code.
 
@@ -97,23 +97,24 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   ];
 
   // Create a map to group subprojects by project ID
-  const projectsMap = new Map<string, any>();
+  const projectsMap = new Map<string, FullProject & { subProjects: SubProjectWithLatestLog[] }>();
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
         const sourceProjectData = subProjects.find(p => p.projectId === sp.projectId);
         projectsMap.set(sp.projectId, {
-            caseNumber: sourceProjectData?.projectCaseNumber,
-            projectName: sourceProjectData?.projectName,
-            projectPurpose: sourceProjectData?.projectPurpose,
-            currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues,
-            yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager,
-            tpmOfficeContact: sourceProjectData?.tpmOfficeContact,
-            egigaContact: sourceProjectData?.egigaContact,
+            id: sp.projectId,
+            caseNumber: sourceProjectData?.projectCaseNumber ?? '',
+            name: sourceProjectData?.projectName ?? '',
+            projectPurpose: sourceProjectData?.projectPurpose ?? '',
+            currentStatusAndIssues: sourceProjectData?.currentStatusAndIssues ?? '',
+            yiehPhuiProjectManager: sourceProjectData?.yiehPhuiProjectManager ?? '',
+            tpmOfficeContact: sourceProjectData?.tpmOfficeContact ?? '',
+            egigaContact: sourceProjectData?.egigaContact ?? '',
             subProjects: []
-        });
+        } as FullProject & { subProjects: SubProjectWithLatestLog[] });
     }
-    projectsMap.get(sp.projectId).subProjects.push(sp);
+    projectsMap.get(sp.projectId)?.subProjects.push(sp);
   });
 
 
@@ -125,13 +126,13 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
       
       const row = index === 0 
         ? [
-            project.caseNumber ?? '',
-            project.projectName ?? '',
-            project.projectPurpose ?? '',
-            project.currentStatusAndIssues ?? '',
-            project.yiehPhuiProjectManager ?? '',
-            project.tpmOfficeContact ?? '',
-            project.egigaContact ?? '',
+            project.caseNumber,
+            project.name,
+            project.projectPurpose,
+            project.currentStatusAndIssues,
+            project.yiehPhuiProjectManager,
+            project.tpmOfficeContact,
+            project.egigaContact,
             sp.name,
             sp.latestLog?.executionSummary ?? '無紀錄',
             sp.latestLog?.nextWeekPlan ?? '無紀錄',

@@ -141,7 +141,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   {subProjectIndex === 0 && (
                     <>
                       <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-10" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
-                        <Button variant="ghost" size="icon" onClick={() => onEditProject(sp.projectId)}>
+                        <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </td>
