@@ -105,7 +105,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                 {subProjectIndex === 0 && (
                   <>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-0 z-1" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.caseNumber}</td>
-                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-16 z-1" style={{ backgroundColor: projectIndex_1 % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
+                    <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-16 z-1" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{project.name}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words sticky left-56 z-1" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>{renderCollapsibleCell(project, 'projectPurpose')}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{renderCollapsibleCell(project, 'currentStatusAndIssues')}</td>
                     <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-top break-words">{project.yiehPhuiProjectManager}</td>
