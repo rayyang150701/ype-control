@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
 import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
-import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus } from '@/types';
+import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus, SubProject } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
@@ -210,10 +210,10 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
 async function findProjectIdForSubProject(subProjectId: string): Promise<string | null> {
     const projectsSnapshot = await db.collection('projects').get();
     for (const projectDoc of projectsSnapshot.docs) {
-      const subProjectSnapshot = await projectDoc.ref.collection('sub_projects').where(db.app.firestore.FieldPath.documentId(), '==', subProjectId).limit(1).get();
-      if (!subProjectSnapshot.empty) {
-        return projectDoc.id;
-      }
+        const subProjectDoc = await projectDoc.ref.collection('sub_projects').doc(subProjectId).get();
+        if (subProjectDoc.exists) {
+            return projectDoc.id;
+        }
     }
     return null;
 }
@@ -258,7 +258,7 @@ export async function updateProgressLog(
 
 export async function addProgressLog (
     subProjectId: string, 
-    logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName'>
+    logData: Omit<ProgressLog, 'id' | 'subProjectId' | 'updatedAt' | 'createdBy' | 'createdByName'>
 ): Promise<ProgressLog> {
     const userId = 'user-1'; // Placeholder
     const projectId = await findProjectIdForSubProject(subProjectId);
@@ -287,6 +287,7 @@ export async function addProgressLog (
     return {
         id: newLogRef.id,
         ...logData,
+        subProjectId,
         createdBy: userId,
         updatedAt: now, 
         createdByName: userMap.get(userId)
@@ -542,3 +543,4 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
+
