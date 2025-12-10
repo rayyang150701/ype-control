@@ -61,7 +61,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           <CardDescription>{subProject.projectName}</CardDescription>
         </CardHeader>
         <CardContent className="flex-grow space-y-3 pt-2 text-sm">
-          <InfoRow label="負責人" value={subProject.ownerName ?? 'N/A'} />
+          <InfoRow label="TPM管理室窗口" value={subProject.tpmOfficeContact ?? 'N/A'} />
           <InfoRow 
             label="預計完成日" 
             value={formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd')}

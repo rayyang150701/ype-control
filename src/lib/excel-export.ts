@@ -47,8 +47,8 @@ const createSheet = (data: any[][], title: string, colWidths: { wch: number }[],
       const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
       if(!ws[cellRef]) continue;
       ws[cellRef].s = { ...wrapText };
-      // Center specific columns
-      if ([0, 3, 4, 5, 9].includes(C)) {
+      // Center specific columns based on new layout
+      if ([0, 1, 2, 4, 11, 12, 13].includes(C)) {
         ws[cellRef].s = { ...ws[cellRef].s, ...centerAlign };
       }
     }
@@ -72,43 +72,114 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
 // 1. 全專案最新進度總表
 export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[], users: User[]) => {
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
-  const headers = ['案號', '專案名稱', '子專案', '負責人', '預計完成日', '延遲天數', '本週摘要', '下週計畫', '問題', '進度%'];
+  const headers = [
+    '主專案案號', 
+    '主專案名稱', 
+    '專案目的', 
+    '現況/問題點', 
+    '燁輝專案負責主管與分機', 
+    'TPM管理室窗口', 
+    '億威電子', 
+    '子專案名稱', 
+    '本週執行摘要', 
+    '下週工作計畫', 
+    '遭遇問題及風險', 
+    '總體完成度', 
+    '預計完成日', 
+    '實際完成日'
+  ];
   
-  const data = [
+  const data: any[][] = [
     [title],
     [`製表單位: 資訊部`, null, null, null, `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
     [], // Spacer
     headers
   ];
 
-  subProjects.forEach(sp => {
-    const expectedDate = new Date(sp.expectedCompletionDate as string);
-    const completionPercentage = sp.latestLog?.completionPercentage ?? 0;
-    const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
+  // Create a map to group subprojects by project ID
+  const projectsMap = new Map<string, any>();
 
-    data.push([
-      sp.projectCaseNumber ?? '',
-      sp.projectName ?? '',
-      sp.name,
-      sp.ownerName ?? '',
-      format(expectedDate, 'yyyy/MM/dd'),
-      delayDays > 0 ? delayDays : '',
-      sp.latestLog?.executionSummary ?? '無紀錄',
-      sp.latestLog?.nextWeekPlan ?? '無紀錄',
-      sp.latestLog?.roadblocks || '無',
-      completionPercentage,
-    ]);
+  subProjects.forEach(sp => {
+    if (!projectsMap.has(sp.projectId)) {
+      projectsMap.set(sp.projectId, {
+        caseNumber: sp.projectCaseNumber,
+        projectName: sp.projectName,
+        projectPurpose: sp.projectPurpose,
+        currentStatusAndIssues: sp.currentStatusAndIssues,
+        yiehPhuiProjectManager: sp.yiehPhuiProjectManager,
+        tpmOfficeContact: sp.tpmOfficeContact,
+        egigaContact: sp.egigaContact,
+        subProjects: []
+      });
+    }
+    projectsMap.get(sp.projectId).subProjects.push(sp);
   });
+
+
+  projectsMap.forEach(project => {
+    project.subProjects.forEach((sp: SubProjectWithLatestLog, index: number) => {
+      const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
+      const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
+      const completionPercentage = sp.latestLog?.completionPercentage ?? 0;
+      
+      const row = index === 0 
+        ? [
+            project.caseNumber ?? '',
+            project.projectName ?? '',
+            project.projectPurpose ?? '',
+            project.currentStatusAndIssues ?? '',
+            project.yiehPhuiProjectManager ?? '',
+            project.tpmOfficeContact ?? '',
+            project.egigaContact ?? '',
+            sp.name,
+            sp.latestLog?.executionSummary ?? '無紀錄',
+            sp.latestLog?.nextWeekPlan ?? '無紀錄',
+            sp.latestLog?.roadblocks || '無',
+            completionPercentage,
+            expectedDate,
+            actualDate
+          ]
+        : [
+            '', '', '', '', '', '', '', // Empty cells for merged rows
+            sp.name,
+            sp.latestLog?.executionSummary ?? '無紀錄',
+            sp.latestLog?.nextWeekPlan ?? '無紀錄',
+            sp.latestLog?.roadblocks || '無',
+            completionPercentage,
+            expectedDate,
+            actualDate
+          ];
+      data.push(row);
+    })
+  });
+
+  const merges: XLSX.Range[] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length -1 } }, // Title
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }, // Dept
+    { s: { r: 1, c: 4 }, e: { r: 1, c: headers.length -1 } }, // Date
+  ];
+
+  let currentRow = 4; // Start after headers
+  projectsMap.forEach(project => {
+    const subProjectCount = project.subProjects.length;
+    if (subProjectCount > 1) {
+      for(let i=0; i < 7; i++){
+         merges.push({ s: { r: currentRow, c: i }, e: { r: currentRow + subProjectCount - 1, c: i } });
+      }
+    }
+    currentRow += subProjectCount;
+  });
+
 
   const ws = createSheet(
     data,
     title,
-    [{ wch: 10 }, { wch: 25 }, { wch: 25 }, { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 40 }, { wch: 40 }, { wch: 30 }, { wch: 10 }],
     [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-      { s: { r: 1, c: 4 }, e: { r: 1, c: 9 } },
-    ]
+      { wch: 10 }, { wch: 20 }, { wch: 30 }, { wch: 30 }, { wch: 20 }, 
+      { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 40 }, { wch: 40 }, 
+      { wch: 30 }, { wch: 10 }, { wch: 15 }, { wch: 15 }
+    ],
+    merges
   );
   
   exportToExcel([{ ws, name: '全專案總表' }], '全專案最新進度總表');

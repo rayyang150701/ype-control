@@ -446,6 +446,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             projectId: project.id,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
+            tpmOfficeContact: project.tpmOfficeContact,
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
@@ -535,6 +536,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 projectId: project.id,
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
+                tpmOfficeContact: project.tpmOfficeContact,
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue
@@ -543,4 +545,5 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
+
 

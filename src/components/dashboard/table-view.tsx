@@ -108,7 +108,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
       <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border">
         <table className="min-w-full border-collapse bg-white table-auto">
-           <colgroup><col style={{ minWidth: '60px' }} /><col style={{ minWidth: '64px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '192px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '128px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '160px' }} /><col style={{ minWidth: '96px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '256px' }} /><col style={{ minWidth: '120px' }} /><col style={{ minWidth: '80px' }} /><col style={{ minWidth: '112px' }} /><col style={{ minWidth: '112px' }} /></colgroup>
+           <colgroup><col style={{minWidth: '60px'}} /><col style={{minWidth: '64px'}} /><col style={{minWidth: '160px'}} /><col style={{minWidth: '192px'}} /><col style={{minWidth: '192px'}} /><col style={{minWidth: '128px'}} /><col style={{minWidth: '128px'}} /><col style={{minWidth: '112px'}} /><col style={{minWidth: '160px'}} /><col style={{minWidth: '256px'}} /><col style={{minWidth: '256px'}} /><col style={{minWidth: '120px'}} /><col style={{minWidth: '80px'}} /><col style={{minWidth: '112px'}} /><col style={{minWidth: '112px'}} /></colgroup>
           <thead className="sticky top-0 z-10">
             <tr>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-20">操作</th>
@@ -120,7 +120,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM管理室窗口</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">億威電子</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">子專案名稱</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">負責人</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週執行摘要 ({getWeekRange()})</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">下週工作計畫</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">遭遇問題及風險</th>
@@ -164,7 +163,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       {sp.name}
                     </button>
                   </td>
-                  <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">{sp.ownerName}</td>
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-top">
                       {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
                   </td>

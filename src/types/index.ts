@@ -41,6 +41,11 @@ export interface SubProject {
   latestLog?: ProgressLog | null;
   projectName?: string;
   projectCaseNumber?: string;
+  projectPurpose?: string;
+  currentStatusAndIssues?: string;
+  yiehPhuiProjectManager?: string;
+  tpmOfficeContact?: string;
+  egigaContact?: string;
 }
 
 export interface ProgressLog {
