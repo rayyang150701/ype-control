@@ -11,6 +11,7 @@ import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-e
 import { getProgressLogsForSubProject, getUsers, updateProject, getFullProjectById } from '@/lib/actions';
 import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
+import { TableView } from './table-view';
 
 
 type DashboardClientProps = {
@@ -151,6 +152,17 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     router.refresh();
   }
 
+  const groupedProjects = useMemo(() => {
+    const grouped: { [key: string]: SubProjectWithLatestLog[] } = {};
+    filteredSubProjects.forEach(sp => {
+      if (!grouped[sp.projectId]) {
+        grouped[sp.projectId] = [];
+      }
+      grouped[sp.projectId].push(sp);
+    });
+    return Object.values(grouped);
+  }, [filteredSubProjects]);
+
 
   return (
     <>
@@ -175,9 +187,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             </div>
           )}
           {viewMode === 'table' && (
-            <div className='border rounded-lg p-4'>
-              <p>Table View Placeholder</p>
-            </div>
+            <TableView 
+              groupedProjects={groupedProjects}
+              onEditProject={handleEditProjectClick}
+            />
           )}
         </>
       ) : (
