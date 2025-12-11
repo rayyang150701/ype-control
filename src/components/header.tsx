@@ -49,6 +49,15 @@ export function Header() {
     driverObj.drive();
   }
 
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = '/manual.pdf';
+    link.download = '操作手冊.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
@@ -84,11 +93,9 @@ export function Header() {
                   <Route className="mr-2 h-4 w-4" />
                   <span>功能導覽</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <a href="/manual.pdf" download rel="noopener noreferrer">
-                    <Book className="mr-2 h-4 w-4" />
-                    <span>下載操作手冊</span>
-                  </a>
+                <DropdownMenuItem onClick={handleDownload}>
+                  <Book className="mr-2 h-4 w-4" />
+                  <span>下載操作手冊</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
