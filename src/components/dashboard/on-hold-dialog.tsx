@@ -17,7 +17,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
@@ -57,6 +56,7 @@ export function OnHoldDialog({
   onSuccess,
 }: OnHoldDialogProps) {
   const [isPending, startTransition] = useTransition();
+  const [openCalendar, setOpenCalendar] = useState<'startDate' | 'endDate' | null>(null);
   const { toast } = useToast();
 
   const form = useForm<OnHoldFormData>({
@@ -124,6 +124,11 @@ export function OnHoldDialog({
     } else {
         form.setValue('subProjectIds', []);
     }
+  };
+  
+  const formatDate = (date?: Date) => {
+    if (!date) return '選擇日期';
+    return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   };
 
   return (
@@ -241,86 +246,85 @@ export function OnHoldDialog({
             />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="startDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>暫緩開始日期 *</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              'w-full justify-start text-left font-normal',
-                              !field.value && 'text-muted-foreground'
-                            )}
-                            disabled={isPending}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? (
-                              format(field.value, 'yyyy/MM/dd')
-                            ) : (
-                              <span>選擇日期</span>
-                            )}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <CustomCalendar
-                          selected={field.value}
-                          onSelect={(date) => date && field.onChange(date)}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>暫緩開始日期 *</FormLabel>
+                      <div className="relative">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setOpenCalendar(openCalendar === 'startDate' ? null : 'startDate')}
+                          className={cn(
+                            'w-full justify-start text-left font-normal',
+                            !field.value && 'text-muted-foreground'
+                          )}
+                          disabled={isPending}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formatDate(field.value)}
+                        </Button>
+                        {openCalendar === 'startDate' && (
+                          <>
+                            <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
+                            <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                              <CustomCalendar
+                                selected={field.value}
+                                onSelect={(date) => {
+                                  field.onChange(date);
+                                  setOpenCalendar(null);
+                                }}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="endDate"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>預計恢復日期</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              'w-full justify-start text-left font-normal',
-                              !field.value && 'text-muted-foreground'
-                            )}
-                            disabled={isPending}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? (
-                              format(field.value, 'yyyy/MM/dd')
-                            ) : (
-                              <span>選擇日期(可選)</span>
-                            )}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <CustomCalendar
-                          selected={field.value}
-                          onSelect={(date) => date && field.onChange(date)}
-                          disabled={(date) =>
-                            form.watch('startDate')
-                              ? date < form.watch('startDate')
-                              : false
-                          }
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>預計恢復日期</FormLabel>
+                       <div className="relative">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setOpenCalendar(openCalendar === 'endDate' ? null : 'endDate')}
+                          className={cn(
+                            'w-full justify-start text-left font-normal',
+                            !field.value && 'text-muted-foreground'
+                          )}
+                          disabled={isPending}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {field.value ? formatDate(field.value) : "選擇日期(可選)"}
+                        </Button>
+                        {openCalendar === 'endDate' && (
+                          <>
+                            <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
+                            <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                              <CustomCalendar
+                                selected={field.value}
+                                onSelect={(date) => {
+                                  field.onChange(date);
+                                  setOpenCalendar(null);
+                                }}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
             </div>
             
             <FormField
@@ -369,5 +373,3 @@ export function OnHoldDialog({
     </Dialog>
   );
 }
-
-    
