@@ -1,4 +1,5 @@
 
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
@@ -328,22 +329,24 @@ export async function getAiSuggestions(
   }
 }
 
-export async function deleteProject(projectId: string) {
-    if (!projectId) {
-        throw new Error('Project ID is required.');
+export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {
+    if (!projectId || !subProjectIds || subProjectIds.length === 0) {
+        throw new Error('Project ID and at least one Sub-project ID are required.');
     }
 
     const projectRef = db.collection('projects').doc(projectId);
 
     await db.runTransaction(async (transaction) => {
-        const subProjectsSnapshot = await projectRef.collection('sub_projects').get();
-
-        for (const subDoc of subProjectsSnapshot.docs) {
-            const progressLogsSnapshot = await subDoc.ref.collection('progress_logs').get();
+        for (const subProjectId of subProjectIds) {
+            const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
+            
+            // Delete all progress logs for the sub-project
+            const progressLogsSnapshot = await subProjectRef.collection('progress_logs').get();
             progressLogsSnapshot.docs.forEach(logDoc => transaction.delete(logDoc.ref));
-            transaction.delete(subDoc.ref);
+            
+            // Delete the sub-project itself
+            transaction.delete(subProjectRef);
         }
-        transaction.delete(projectRef);
     });
 
     revalidatePath('/dashboard');
