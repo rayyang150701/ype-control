@@ -9,6 +9,7 @@ import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, 
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
+
 // Schema definitions
 
 const subProjectSchema = z.object({
@@ -338,11 +339,11 @@ export async function deleteProject(projectId: string) {
 
     await db.runTransaction(async (transaction) => {
         const subProjectsRef = projectRef.collection('sub_projects');
-        const subProjectsSnapshot = await transaction.get(subProjectsRef);
+        const subProjectsSnapshot = await subProjectsRef.get();
 
         for (const subDoc of subProjectsSnapshot.docs) {
             const progressLogsRef = subDoc.ref.collection('progress_logs');
-            const progressLogsSnapshot = await transaction.get(progressLogsRef);
+            const progressLogsSnapshot = await progressLogsRef.get();
             progressLogsSnapshot.docs.forEach(logDoc => transaction.delete(logDoc.ref));
             transaction.delete(subDoc.ref);
         }
@@ -524,6 +525,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
+            isOnHold: project.isOnHold ?? false, // Propagate from parent project
         } as SubProjectWithLatestLog);
     }
   
@@ -537,7 +539,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
 
 
 export const getFullProjects = async (): Promise<FullProject[]> => {
-    const projectsSnapshot = await db.collection('projects').get();
+    const projectsSnapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
     const fullProjects: FullProject[] = [];
   
     for (const projectDoc of projectsSnapshot.docs) {
@@ -547,12 +549,12 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
       }
     }
   
-    return fullProjects.sort((a, b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+    return fullProjects;
 };
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const projectsCol = db.collection('projects');
-    const projectsSnapshot = await projectsCol.get();
+    const projectsSnapshot = await projectsCol.orderBy('createdAt', 'desc').get();
     const projects = projectsSnapshot.docs.map(doc => {
         const data = doc.data() as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp };
         return { 
@@ -570,7 +572,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
     for (const project of projects) {
         const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
-        const subProjectSnapshot = await subProjectsCol.get();
+        const subProjectSnapshot = await subProjectsCol.orderBy('createdAt', 'asc').get();
 
         for (const subProjectDoc of subProjectSnapshot.docs) {
             const subProjectData = subProjectDoc.data();
@@ -619,9 +621,10 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 egigaContact: project.egigaContact,
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
-                isOverdue
+                isOverdue,
+                isOnHold: project.isOnHold ?? false, // Propagate from parent project
             } as SubProjectWithLatestLog);
         }
     }
-    return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+    return allSubProjects;
 };

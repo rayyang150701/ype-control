@@ -84,7 +84,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       .filter(sp => {
         if (filter === 'overdue') return sp.isOverdue;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
+        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100 && !sp.isOnHold;
         if (filter === 'on-hold') return sp.isOnHold;
         return true;
       })
@@ -112,10 +112,38 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           .filter(sp => {
             if (filter === 'overdue') return sp.isOverdue;
             if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
-            if (filter === 'on-hold') return project.isOnHold || sp.isOnHold;
+            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100 && !project.isOnHold;
+            if (filter === 'on-hold') return project.isOnHold;
             return true;
           });
+
+        // If the main filter is "on-hold", we only care if the parent project matches.
+        // If it does, we return it with all its sub-projects.
+        if (filter === 'on-hold') {
+            if (project.isOnHold) {
+                // If there's a search query, we still need to filter by it.
+                if (searchQuery) {
+                     const projectMatchesQuery = (
+                        project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        project.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(searchQuery.toLowerCase()))
+                     );
+                     const subProjectsMatchQuery = project.subProjects.some(sp => sp.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+                     if (projectMatchesQuery) return project; // return all subprojects
+                     if (subProjectsMatchQuery) {
+                         return { 
+                             ...project, 
+                             subProjects: project.subProjects.filter(sp => sp.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                         };
+                     }
+                     return null;
+                }
+                return project; // No search query, return the whole on-hold project
+            }
+            return null; // Project is not on hold
+        }
+
 
         // Determine if the project itself matches the search query or if any of its filtered sub-projects match
         const projectMatchesQuery = (
@@ -137,7 +165,9 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
              const queryFilteredSubProjects = filteredSubProjectsList.filter(sp => 
                 sp.name.toLowerCase().includes(searchQuery.toLowerCase())
              );
-             return { ...project, subProjects: queryFilteredSubProjects };
+             if (queryFilteredSubProjects.length > 0) {
+                return { ...project, subProjects: queryFilteredSubProjects };
+             }
           }
           return null; // Neither project nor sub-projects match search query
         } else {
@@ -145,7 +175,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
            if (filteredSubProjectsList.length > 0) {
               return { ...project, subProjects: filteredSubProjectsList };
            }
-           return null;
+           // If the filter is 'completed' or 'overdue' and no sub-projects match, the whole project shouldn't be shown
+            if (filter === 'completed' || filter === 'overdue' || filter === 'in_progress') {
+                return null;
+            }
+           return project;
         }
       })
       .filter((project): project is FullProject => project !== null);
