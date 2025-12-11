@@ -105,22 +105,29 @@ export function ResumeProjectDialog({
   };
 
   const handleParentProjectToggle = (projectId: string, isChecked: boolean) => {
-    form.setValue(
-      'projects',
-      isChecked ? [...form.watch('projects'), projectId] : form.watch('projects').filter(id => id !== projectId)
-    );
+    const currentProjects = form.getValues('projects');
+    const newProjects = isChecked
+      ? [...currentProjects, projectId]
+      : currentProjects.filter(id => id !== projectId);
+    
+    form.setValue('projects', newProjects, { shouldValidate: true });
+
+    // If parent is checked, clear sub-project selections for that parent
+    if (isChecked) {
+      form.setValue(`subProjects.${projectId}`, [], { shouldValidate: true });
+    }
   };
   
   const handleSubProjectToggle = (projectId: string, subProjectId: string, isChecked: boolean) => {
-      const currentSubProjects = form.watch(`subProjects.${projectId}`) || [];
+      const currentSubProjects = form.getValues(`subProjects.${projectId}`) || [];
       const newSubProjects = isChecked 
           ? [...currentSubProjects, subProjectId]
           : currentSubProjects.filter(id => id !== subProjectId);
-      form.setValue(`subProjects.${projectId}`, newSubProjects);
+      form.setValue(`subProjects.${projectId}`, newSubProjects, { shouldValidate: true });
 
       // if a sub-project is checked, uncheck the parent
-      if (isChecked && form.watch('projects').includes(projectId)) {
-          form.setValue('projects', form.watch('projects').filter(id => id !== projectId));
+      if (isChecked && form.getValues('projects').includes(projectId)) {
+          form.setValue('projects', form.getValues('projects').filter(id => id !== projectId), { shouldValidate: true });
       }
   };
 
