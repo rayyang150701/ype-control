@@ -495,10 +495,12 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         const subProjectIsOnHold = subProjectData.isOnHold ?? false;
         const parentProjectIsOnHold = project.isOnHold ?? false;
-        const finalOnHoldStatus = subProjectIsOnHold || parentProjectIsOnHold;
+        // This is the combined status for UI purposes (like overdue calculation)
+        const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
+
 
         let isOverdue = false;
-        if (!finalOnHoldStatus) {
+        if (!isEffectivelyOnHold) {
             const sevenDaysAgo = subDays(new Date(), 7);
             isOverdue = latestLog?.updatedAt
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -526,7 +528,8 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
-            isOnHold: finalOnHoldStatus,
+            isOnHold: subProjectIsOnHold, // Use the sub-project's own status for direct state
+            isParentOnHold: parentProjectIsOnHold, // Pass parent status separately
         } as SubProjectWithLatestLog);
     }
   
@@ -574,10 +577,12 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
             }
 
             const subProjectIsOnHold = subProjectData.isOnHold ?? false;
-            const finalOnHoldStatus = subProjectIsOnHold || (project.isOnHold ?? false);
+            const parentProjectIsOnHold = project.isOnHold ?? false;
+            const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
+
 
             let isOverdue = false;
-            if (!finalOnHoldStatus) {
+            if (!isEffectivelyOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
             }
@@ -595,7 +600,8 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: finalOnHoldStatus,
+                isOnHold: subProjectIsOnHold,
+                isParentOnHold: parentProjectIsOnHold,
                 expectedCompletionDate,
                 actualCompletionDate,
                 createdAt
@@ -656,11 +662,12 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             }
             
             const subProjectIsOnHold = subProjectData.isOnHold ?? false;
-            const finalOnHoldStatus = subProjectIsOnHold || (project.isOnHold ?? false);
+            const parentProjectIsOnHold = project.isOnHold ?? false;
+            const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
 
 
             let isOverdue = false;
-            if (!finalOnHoldStatus) {
+            if (!isEffectivelyOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt
                     ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -688,7 +695,8 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: finalOnHoldStatus,
+                isOnHold: subProjectIsOnHold,
+                isParentOnHold: parentProjectIsOnHold,
             } as SubProjectWithLatestLog);
         }
     }

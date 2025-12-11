@@ -24,13 +24,14 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = new Date(subProject.expectedCompletionDate as string);
-  const isOnHold = subProject.isOnHold;
-  const delayDays = completionPercentage < 100 && !isOnHold ? differenceInDays(new Date(), expectedDate) : 0;
+  const isEffectivelyOnHold = subProject.isOnHold || subProject.isParentOnHold;
+
+  const delayDays = completionPercentage < 100 && !isEffectivelyOnHold ? differenceInDays(new Date(), expectedDate) : 0;
 
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
 
   const getProgressColor = () => {
-    if (isOnHold) return 'bg-amber-500';
+    if (isEffectivelyOnHold) return 'bg-amber-500';
     if (delayDays > 7 || isOverdue) return 'bg-destructive';
     if (delayDays > 0) return 'bg-yellow-500';
     if (completionPercentage === 100) return 'bg-green-500';
@@ -48,19 +49,19 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
       <Card
         className={cn(
           'flex cursor-pointer flex-col transition-all hover:shadow-lg hover:-translate-y-1',
-          isOverdue && !isOnHold && 'border-destructive border-2',
-          isOnHold && 'border-amber-400 border-2 bg-amber-50'
+          isOverdue && !isEffectivelyOnHold && 'border-destructive border-2',
+          isEffectivelyOnHold && 'border-amber-400 border-2 bg-amber-50'
         )}
         onClick={() => onCardClick(subProject)}
       >
         <CardHeader className="relative pb-2">
-           {isOnHold && (
+           {(subProject.isOnHold || subProject.isParentOnHold) && (
             <Badge className="absolute -top-2 -right-2 bg-amber-500 text-white flex items-center gap-1 z-10">
               <PauseCircle className="h-3 w-3" />
-              暫緩中
+              {subProject.isOnHold ? '子專案暫緩中' : '主專案暫緩中'}
             </Badge>
           )}
-          {isOverdue && !isOnHold && (
+          {isOverdue && !isEffectivelyOnHold && (
             <Badge variant="destructive" className="absolute -top-2 -right-2 z-10">
               逾期未報
             </Badge>
@@ -74,7 +75,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           <InfoRow 
             label="預計完成日" 
             value={formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd')}
-            isDelayed={delayDays > 0 && completionPercentage < 100 && !isOnHold}
+            isDelayed={delayDays > 0 && completionPercentage < 100 && !isEffectivelyOnHold}
             delayText={`延遲 ${delayDays} 天`}
           />
           <InfoSection label="本週摘要" content={latestLog?.executionSummary || '尚未回報'} maxLines={3} />

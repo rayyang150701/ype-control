@@ -52,6 +52,7 @@ export interface SubProject {
   tpmOfficeContact?: string;
   egigaContact?: string;
   isOnHold?: boolean;
+  isParentOnHold?: boolean; // New field to track parent project's on-hold status
 }
 
 export interface ProgressLog {

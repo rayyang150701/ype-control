@@ -136,7 +136,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   className={cn(
                     'hover:bg-blue-50',
                     projectIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50',
-                    sp.isOnHold && 'bg-amber-50 hover:bg-amber-100/50'
+                    (sp.isOnHold || sp.isParentOnHold) && 'bg-amber-50 hover:bg-amber-100/50'
                   )}
                 >
                   {subProjectIndex === 0 && (
@@ -150,10 +150,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
                         <div className='flex items-center gap-2'>
                           <span>{project.name}</span>
-                          {project.isOnHold && !project.subProjects.some(sub => sub.isOnHold) && (
+                          {project.isOnHold && (
                              <Badge className="bg-amber-500 text-white flex items-center gap-1">
                                 <PauseCircle className="h-3 w-3" />
-                                暫緩中
+                                主專案暫緩中
                              </Badge>
                           )}
                         </div>
