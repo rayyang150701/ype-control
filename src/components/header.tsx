@@ -14,12 +14,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
-import { driver } from "driver.js";
+
 
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   
-  const startTour = () => {
+  const startTour = async () => {
+    const { driver } = await import("driver.js");
+
     const driverObj = driver({
       showProgress: true,
       steps: [
