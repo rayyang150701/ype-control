@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import DashboardLoading from './loading';
 
 export const revalidate = 0;
+export const maxDuration = 60; // Set max duration for server actions on this page
 
 export default async function DashboardPage() {
   const subProjects = await getSubProjectsWithLatestLogs();
@@ -14,3 +15,5 @@ export default async function DashboardPage() {
     </Suspense>
   );
 }
+
+    

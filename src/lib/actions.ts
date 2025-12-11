@@ -42,7 +42,7 @@ const editProjectSchema = z.object({
   caseNumber: z.string().min(1, '主專案案號為必填'),
   name: z.string().min(1, '主專案名稱為必填'),
   projectPurpose: z.string().optional(),
-  currentStatusAndIssues: z.string().optional(),
+  currentStatusAndIssues: zstring().optional(),
   yiehPhuiProjectManager: z.string().optional(),
   tpmOfficeContact: z.string().optional(),
   egigaContact: z.string().optional(),
@@ -55,9 +55,6 @@ const userSchema = z.object({
   role: z.enum(['admin', 'editor', 'viewer']),
   status: z.enum(['active', 'pending']),
 });
-
-// Set max duration for Server Actions that might take longer.
-export const maxDuration = 60; // 60 seconds
 
 // Server Actions
 
@@ -604,3 +601,5 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
+
+    
