@@ -1,6 +1,6 @@
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Users } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,10 +14,38 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
-
+import { driver } from "driver.js";
 
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
+  
+  const startTour = () => {
+    const driverObj = driver({
+      showProgress: true,
+      steps: [
+        { 
+          element: '[data-tour="add-new-project"]', 
+          popover: { 
+            title: '新增專案', 
+            description: '點擊這裡可以一次性建立一個主專案及其下的多個子專案。',
+            side: "left", 
+            align: 'start' 
+          }
+        },
+        { 
+          element: '[data-tour="filter-status"]', 
+          popover: { 
+            title: '篩選專案狀態', 
+            description: '使用此選單可以快速篩選出不同狀態的專案，例如「進行中」、「已完成」或「逾期未報」。',
+            side: "left", 
+            align: 'start' 
+          }
+        },
+      ]
+    });
+    
+    driverObj.drive();
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -41,8 +69,28 @@ export function Header() {
             </Link>
         </div>
 
-        <div className="flex items-center justify-end space-x-4">
-          <nav className="flex items-center space-x-2">
+        <div className="flex items-center justify-end space-x-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1">
+                  <HelpCircle className="h-4 w-4" />
+                  幫助
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={startTour}>
+                  <Route className="mr-2 h-4 w-4" />
+                  <span>功能導覽</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href="/manual.pdf" target="_blank" rel="noopener noreferrer">
+                    <Book className="mr-2 h-4 w-4" />
+                    <span>下載操作手冊</span>
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -81,7 +129,6 @@ export function Header() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </nav>
         </div>
       </div>
     </header>

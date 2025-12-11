@@ -46,18 +46,20 @@ export function FilterControls({
         />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[220px]">
-            <SelectValue placeholder="篩選狀態" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">所有專案</SelectItem>
-            <SelectItem value="in_progress">所有專案 (排除已完成)</SelectItem>
-            <SelectItem value="on-hold">暫緩中</SelectItem>
-            <SelectItem value="overdue">逾期未報</SelectItem>
-            <SelectItem value="completed">已完成</SelectItem>
-          </SelectContent>
-        </Select>
+        <div data-tour="filter-status">
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="篩選狀態" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">所有專案</SelectItem>
+              <SelectItem value="in_progress">所有專案 (排除已完成)</SelectItem>
+              <SelectItem value="on-hold">暫緩中</SelectItem>
+              <SelectItem value="overdue">逾期未報</SelectItem>
+              <SelectItem value="completed">已完成</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         <ToggleGroup type="single" value={viewMode} onValueChange={(value: 'grid' | 'table') => value && setViewMode(value)}>
           <ToggleGroupItem value="grid" aria-label="Grid view">
@@ -68,7 +70,7 @@ export function FilterControls({
           </ToggleGroupItem>
         </ToggleGroup>
         
-        <Button onClick={onAddNewProject} variant="outline">
+        <Button onClick={onAddNewProject} variant="outline" data-tour="add-new-project">
           <Plus className="mr-2 h-4 w-4" />
           新增專案
         </Button>
