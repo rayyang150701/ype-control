@@ -85,7 +85,7 @@ export function Header() {
                   <span>功能導覽</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <a href="/manual.pdf" download target="_blank" rel="noopener noreferrer">
+                  <a href="/manual.pdf" download rel="noopener noreferrer">
                     <Book className="mr-2 h-4 w-4" />
                     <span>下載操作手冊</span>
                   </a>
