@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -13,6 +14,7 @@ import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
 import { TableView } from './table-view';
 import { DeleteProjectDialog } from './delete-project-dialog';
+import { OnHoldDialog } from './on-hold-dialog';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -38,6 +40,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
+  const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
   
   const router = useRouter();
   const { toast } = useToast();
@@ -324,6 +327,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   };
 
+  const onProjectOnHold = () => {
+    setIsOnHoldProjectOpen(false);
+    refreshData();
+  };
+
   return (
     <>
       <FilterControls
@@ -333,6 +341,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setFilter={setFilter}
         onExportAll={handleExportAll}
         onAddNewProject={() => setIsNewProjectOpen(true)}
+        onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
         onDeleteProject={() => setIsDeleteProjectOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
@@ -401,12 +410,20 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       )}
 
       {isClient && (
-        <DeleteProjectDialog
-          isOpen={isDeleteProjectOpen}
-          setIsOpen={setIsDeleteProjectOpen}
-          projects={fullProjects}
-          onProjectDeleted={onProjectDeleted}
-        />
+        <>
+          <DeleteProjectDialog
+            isOpen={isDeleteProjectOpen}
+            setIsOpen={setIsDeleteProjectOpen}
+            projects={fullProjects}
+            onProjectDeleted={onProjectDeleted}
+          />
+          <OnHoldDialog
+              isOpen={isOnHoldProjectOpen}
+              setIsOpen={setIsOnHoldProjectOpen}
+              projects={fullProjects}
+              onSuccess={onProjectOnHold}
+          />
+        </>
       )}
     </>
   );

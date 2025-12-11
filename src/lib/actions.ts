@@ -1,3 +1,4 @@
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
@@ -353,59 +354,48 @@ export async function deleteProject(projectId: string) {
 // On-Hold and Resume Actions
 export async function setProjectOnHold(
   projectId: string,
+  subProjectIds: string[],
   onHoldData: {
     reason: string;
     startDate: Date;
     endDate?: Date;
     notes?: string;
-  },
-  subProjectId?: string
+  }
 ) {
   try {
     const projectRef = db.collection('projects').doc(projectId);
     const subProjectsCol = projectRef.collection('sub_projects');
+    const subProjectsSnapshot = await subProjectsCol.get();
 
-    if (subProjectId) {
-      const subProjectRef = subProjectsCol.doc(subProjectId);
-      const subProjectsSnapshot = await subProjectsCol.get();
-
-      // Always update the specific sub-project
-      const subProjectUpdateData = {
+    const allSubProjectIds = subProjectsSnapshot.docs.map(doc => doc.id);
+    const isAllSubProjectsSelected = subProjectIds.length === allSubProjectIds.length && allSubProjectIds.every(id => subProjectIds.includes(id));
+    
+    const onHoldPayload = {
         isOnHold: true,
         onHoldReason: onHoldData.reason,
         onHoldStartDate: onHoldData.startDate,
         onHoldEndDate: onHoldData.endDate ?? null,
         onHoldNotes: onHoldData.notes ?? '',
-      };
-      await subProjectRef.update(subProjectUpdateData);
+    };
 
-      // If it's the only sub-project, also update the parent project
-      if (subProjectsSnapshot.size === 1) {
-        await projectRef.update({
-          status: 'on-hold',
-          isOnHold: true,
-          // We also write the details to the parent project
-          onHoldReason: onHoldData.reason,
-          onHoldStartDate: onHoldData.startDate,
-          onHoldEndDate: onHoldData.endDate ?? null,
-          onHoldNotes: onHoldData.notes ?? '',
-        });
-      }
-    } else {
-      // If no subProjectId, put the main project on hold
-      const projectUpdateData = {
+    if (isAllSubProjectsSelected) {
+      // If all sub-projects are selected, update the parent project as well
+      await projectRef.update({
+        ...onHoldPayload,
         status: 'on-hold',
-        isOnHold: true,
-        onHoldReason: onHoldData.reason,
-        onHoldStartDate: onHoldData.startDate,
-        onHoldEndDate: onHoldData.endDate ?? null,
-        onHoldNotes: onHoldData.notes ?? '',
-      };
-      await projectRef.update(projectUpdateData);
+      });
     }
+
+    // Update all selected sub-projects
+    const batch = db.batch();
+    subProjectIds.forEach(id => {
+      const subProjectRef = subProjectsCol.doc(id);
+      batch.update(subProjectRef, onHoldPayload);
+    });
+    await batch.commit();
     
     revalidatePath('/dashboard');
-    return { success: true, message: '專案已設為暫緩' };
+    return { success: true, message: '專案/子專案已成功設為暫緩' };
   } catch (error) {
     console.error('設定暫緩失敗:', error);
     return { 

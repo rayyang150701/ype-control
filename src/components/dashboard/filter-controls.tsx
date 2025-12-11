@@ -1,9 +1,10 @@
+
 'use client';
 
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Search, LayoutGrid, List, Trash2 } from 'lucide-react';
+import { Download, Plus, Search, LayoutGrid, List, Trash2, PauseCircle } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type FilterControlsProps = {
@@ -14,6 +15,7 @@ type FilterControlsProps = {
   onExportAll: () => void;
   onAddNewProject: () => void;
   onDeleteProject: () => void;
+  onOnHoldProject: () => void;
   viewMode: 'grid' | 'table';
   setViewMode: (mode: 'grid' | 'table') => void;
 };
@@ -26,6 +28,7 @@ export function FilterControls({
   onExportAll,
   onAddNewProject,
   onDeleteProject,
+  onOnHoldProject,
   viewMode,
   setViewMode,
 }: FilterControlsProps) {
@@ -66,6 +69,10 @@ export function FilterControls({
         <Button onClick={onAddNewProject} variant="outline">
           <Plus className="mr-2 h-4 w-4" />
           新增專案
+        </Button>
+        <Button onClick={onOnHoldProject} variant="outline">
+            <PauseCircle className="mr-2 h-4 w-4" />
+            專案暫緩
         </Button>
         <Button onClick={onDeleteProject} variant="destructive">
             <Trash2 className="mr-2 h-4 w-4" />

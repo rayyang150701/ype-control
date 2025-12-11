@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useTransition, useState, useEffect } from 'react';
@@ -27,8 +28,6 @@ import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
 import { updateProject, getUsers, resumeProject, getFullProjectById } from '@/lib/actions';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
-import { OnHoldDialog } from './on-hold-dialog';
-
 
 const subProjectSchema = z.object({
   id: z.string().optional(),
@@ -63,8 +62,6 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
-  const [isOnHoldDialogOpen, setIsOnHoldDialogOpen] = useState(false);
-  const [onHoldTarget, setOnHoldTarget] = useState<{ projectId: string; subProjectId?: string; name: string } | null>(null);
   
   const {
     register,
@@ -132,13 +129,13 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   };
   
-  const handleResumeProject = (subProjectId?: string) => {
+  const handleResumeProject = (isParent: boolean, subProjectId?: string) => {
     startTransition(async () => {
-      const result = await resumeProject(project.id, subProjectId);
+      const result = await resumeProject(project.id, isParent ? undefined : subProjectId);
       if (result.success) {
         toast({
           title: '專案已恢復',
-          description: subProjectId ? '子專案狀態已變更為進行中' : '主專案狀態已變更為進行中',
+          description: isParent ? '主專案狀態已變更為進行中' : '子專案狀態已變更為進行中',
         });
         const updatedProject = await getFullProjectById(project.id);
         if (updatedProject) {
@@ -153,25 +150,6 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
       }
     });
   };
-
-  const handleOpenOnHoldDialog = (subProjectId?: string) => {
-    const targetName = subProjectId 
-      ? project.subProjects.find(sp => sp.id === subProjectId)?.name 
-      : project.name;
-    
-    if (targetName) {
-      setOnHoldTarget({ projectId: project.id, subProjectId, name: targetName });
-      setIsOnHoldDialogOpen(true);
-    }
-  };
-
-  const handleSuccess = async () => {
-    const updatedProject = await getFullProjectById(project.id);
-    if(updatedProject) {
-      onProjectUpdated(updatedProject);
-    }
-    setIsOnHoldDialogOpen(false);
-  }
 
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
@@ -219,7 +197,15 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
 
                 <div className="grid gap-2">
                   <Label htmlFor="name">主專案名稱</Label>
-                  <Input id="name" {...register('name')} />
+                  <div className="flex items-center gap-2">
+                    <Input id="name" {...register('name')} />
+                    {project.isOnHold && (
+                        <Button type="button" size="sm" variant="outline" onClick={() => handleResumeProject(true)}>
+                            <PlayCircle className="mr-2 h-4 w-4" />
+                            恢復主專案
+                        </Button>
+                    )}
+                  </div>
                   {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
                 </div>
 
@@ -262,7 +248,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                     return (
                       <div
                         key={field.id}
-                        className={cn("grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative", isSubProjectOnHold && "bg-amber-50 border-amber-200")}
+                        className={cn("grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative", (isSubProjectOnHold || project.isOnHold) && "bg-amber-50 border-amber-200")}
                       >
                         {/* 子專案名稱 */}
                         <div className="col-span-12 sm:col-span-3">
@@ -381,37 +367,21 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                             )}
                           />
                         </div>
-
-                         {/* 子專案狀態操作 */}
-                        <div className="col-span-12 sm:col-span-2 flex items-end">
-                            {isSubProjectOnHold ? (
-                                <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="w-full"
-                                onClick={() => handleResumeProject(subProject?.id)}
-                                disabled={isPending}
-                                >
-                                <PlayCircle className="mr-2 h-4 w-4" />
-                                {isPending ? '恢復中...' : '恢復'}
-                                </Button>
-                            ) : (
-                                <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="w-full"
-                                onClick={() => handleOpenOnHoldDialog(subProject?.id)}
-                                disabled={isPending}
-                                >
-                                <PauseCircle className="mr-2 h-4 w-4" />
-                                暫緩
-                                </Button>
-                            )}
-                        </div>
-
-                        {/* 刪除按鈕 */}
+                        {isSubProjectOnHold && (
+                          <div className="col-span-12 sm:col-span-2 flex items-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => handleResumeProject(false, subProject?.id)}
+                              disabled={isPending}
+                            >
+                              <PlayCircle className="mr-2 h-4 w-4" />
+                              {isPending ? '恢復中...' : '恢復子專案'}
+                            </Button>
+                          </div>
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -463,17 +433,6 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
           </form>
         </DialogContent>
       </Dialog>
-      
-      {onHoldTarget && (
-        <OnHoldDialog
-            isOpen={isOnHoldDialogOpen}
-            setIsOpen={setIsOnHoldDialogOpen}
-            projectId={onHoldTarget.projectId}
-            subProjectId={onHoldTarget.subProjectId}
-            projectName={onHoldTarget.name}
-            onSuccess={handleSuccess}
-        />
-      )}
     </>
   );
 }
