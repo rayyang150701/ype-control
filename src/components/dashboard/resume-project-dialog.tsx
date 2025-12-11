@@ -65,7 +65,7 @@ export function ResumeProjectDialog({
   const onSubmit = (data: ResumeFormData) => {
     const { projects: projectIds, subProjects: subProjectsByProject } = data;
     
-    if (projectIds.length === 0 && Object.keys(subProjectsByProject).every(key => subProjectsByProject[key].length === 0)) {
+    if (projectIds.length === 0 && Object.values(subProjectsByProject).every(arr => arr.length === 0)) {
         toast({
             title: "未選擇項目",
             description: "請至少選擇一個要恢復的專案或子專案",
@@ -104,12 +104,11 @@ export function ResumeProjectDialog({
     });
   };
 
-  const handleParentProjectToggle = (projectId: string, isChecked: boolean, subProjectIds: string[]) => {
+  const handleParentProjectToggle = (projectId: string, isChecked: boolean) => {
     form.setValue(
       'projects',
       isChecked ? [...form.watch('projects'), projectId] : form.watch('projects').filter(id => id !== projectId)
     );
-    form.setValue('subProjects', { ...form.watch('subProjects'), [projectId]: [] });
   };
   
   const handleSubProjectToggle = (projectId: string, subProjectId: string, isChecked: boolean) => {
@@ -151,7 +150,7 @@ export function ResumeProjectDialog({
                                     <Checkbox
                                         checked={field.value?.includes(project.id)}
                                         onCheckedChange={(checked) => {
-                                            handleParentProjectToggle(project.id, !!checked, project.subProjects.map(sp => sp.id))
+                                            handleParentProjectToggle(project.id, !!checked)
                                         }}
                                         disabled={!project.isOnHold}
                                     />
