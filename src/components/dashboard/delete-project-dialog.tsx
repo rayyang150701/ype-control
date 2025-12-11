@@ -73,9 +73,6 @@ export function DeleteProjectDialog({ isOpen, setIsOpen, projects, onProjectDele
     try {
       const response = await fetch(`/api/projects/${data.projectId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
       });
 
       if (!response.ok) {
@@ -91,8 +88,8 @@ export function DeleteProjectDialog({ isOpen, setIsOpen, projects, onProjectDele
           description: '專案已成功刪除',
         });
         
-        setIsOpen(false);
         form.reset();
+        setIsOpen(false);
         onProjectDeleted();
       } else {
         toast({
@@ -115,8 +112,8 @@ export function DeleteProjectDialog({ isOpen, setIsOpen, projects, onProjectDele
 
   const handleClose = () => {
     if (!isDeleting) {
-      setIsOpen(false);
       form.reset();
+      setIsOpen(false);
     }
   };
 
@@ -133,7 +130,7 @@ export function DeleteProjectDialog({ isOpen, setIsOpen, projects, onProjectDele
           <div className="space-y-2">
             <Label htmlFor="projectId">選擇要刪除的專案</Label>
             <Select 
-              onValueChange={(value) => form.setValue('projectId', value)} 
+              onValueChange={(value) => form.setValue('projectId', value, { shouldValidate: true })} 
               value={selectedProjectId}
               disabled={isDeleting}
             >

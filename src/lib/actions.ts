@@ -336,12 +336,10 @@ export async function deleteProject(projectId: string) {
     const projectRef = db.collection('projects').doc(projectId);
 
     await db.runTransaction(async (transaction) => {
-        const subProjectsRef = projectRef.collection('sub_projects');
-        const subProjectsSnapshot = await subProjectsRef.get();
+        const subProjectsSnapshot = await projectRef.collection('sub_projects').get();
 
         for (const subDoc of subProjectsSnapshot.docs) {
-            const progressLogsRef = subDoc.ref.collection('progress_logs');
-            const progressLogsSnapshot = await progressLogsRef.get();
+            const progressLogsSnapshot = await subDoc.ref.collection('progress_logs').get();
             progressLogsSnapshot.docs.forEach(logDoc => transaction.delete(logDoc.ref));
             transaction.delete(subDoc.ref);
         }
