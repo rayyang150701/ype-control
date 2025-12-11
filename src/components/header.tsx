@@ -104,15 +104,8 @@ export function Header() {
   }
 
   const handleDownload = () => {
-    // Dynamically create a link element
-    const link = document.createElement('a');
-    link.href = '/manual.pdf';
-    link.download = '操作手冊.pdf'; // This attribute forces download
-    
-    // Append to the body, click, and then remove
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // This now simply navigates to our API endpoint, which handles the download.
+    window.location.href = '/api/download-manual';
   };
 
   return (
