@@ -595,7 +595,7 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: subProjectIsOnHold, // Use only the sub-project's own onHold status
+                isOnHold: finalOnHoldStatus,
                 expectedCompletionDate,
                 actualCompletionDate,
                 createdAt
@@ -688,7 +688,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: subProjectIsOnHold, // Use only the sub-project's own onHold status
+                isOnHold: finalOnHoldStatus,
             } as SubProjectWithLatestLog);
         }
     }
