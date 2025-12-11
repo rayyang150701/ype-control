@@ -36,7 +36,7 @@ export function FilterControls({
 }: FilterControlsProps) {
   return (
     <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="relative w-full sm:max-w-xs">
+      <div className="relative w-full sm:max-w-xs" data-tour="search">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="搜尋案號、專案名稱、TPM管理室窗口..."
@@ -74,11 +74,11 @@ export function FilterControls({
           <Plus className="mr-2 h-4 w-4" />
           新增專案
         </Button>
-        <Button onClick={onOnHoldProject} variant="outline">
+        <Button onClick={onOnHoldProject} variant="outline" data-tour="on-hold-project">
             <PauseCircle className="mr-2 h-4 w-4" />
             專案暫緩
         </Button>
-        <Button onClick={onReusmeProject} variant="outline">
+        <Button onClick={onReusmeProject} variant="outline" data-tour="resume-project">
             <PlayCircle className="mr-2 h-4 w-4" />
             恢復專案
         </Button>
@@ -86,7 +86,7 @@ export function FilterControls({
             <Trash2 className="mr-2 h-4 w-4" />
             刪除專案
         </Button>
-        <Button onClick={onExportAll}>
+        <Button onClick={onExportAll} data-tour="export-all">
           <Download className="mr-2 h-4 w-4" />
           匯出總表
         </Button>

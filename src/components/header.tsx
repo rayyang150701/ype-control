@@ -26,11 +26,11 @@ export function Header() {
       showProgress: true,
       steps: [
         { 
-          element: '[data-tour="add-new-project"]', 
+          element: '[data-tour="search"]', 
           popover: { 
-            title: '新增專案', 
-            description: '點擊這裡可以一次性建立一個主專案及其下的多個子專案。',
-            side: "left", 
+            title: '全域搜尋', 
+            description: '在這裡輸入案號、專案名稱或TPM窗口等關鍵字，可以快速找到您想查詢的任何專案。',
+            side: "bottom", 
             align: 'start' 
           }
         },
@@ -39,10 +39,64 @@ export function Header() {
           popover: { 
             title: '篩選專案狀態', 
             description: '使用此選單可以快速篩選出不同狀態的專案，例如「進行中」、「已完成」或「逾期未報」。',
-            side: "left", 
+            side: "bottom", 
             align: 'start' 
           }
         },
+        { 
+          element: '[data-tour="add-new-project"]', 
+          popover: { 
+            title: '新增專案', 
+            description: '點擊這裡可以一次性建立一個主專案及其下的多個子專案。',
+            side: "bottom", 
+            align: 'start' 
+          }
+        },
+        {
+          element: '[data-tour="on-hold-project"]',
+          popover: {
+            title: '專案暫緩',
+            description: '若有專案或子專案需要暫停，可使用此功能進行標記。',
+            side: "bottom",
+            align: 'center'
+          }
+        },
+        {
+          element: '[data-tour="resume-project"]',
+          popover: {
+            title: '恢復專案',
+            description: '從這裡可以將先前被暫緩的專案或子專案恢復成「進行中」狀態。',
+            side: "bottom",
+            align: 'center'
+          }
+        },
+        {
+          element: '[data-tour="export-all"]',
+          popover: {
+            title: '匯出總表',
+            description: '一鍵將所有專案的最新進度匯出成 Excel 總表，方便線下報告與存檔。',
+            side: "bottom",
+            align: 'end'
+          }
+        },
+        {
+          element: '[data-tour="add-new-log"]',
+          popover: {
+            title: '新增週報',
+            description: '點擊任一專案卡片上的這個按鈕，即可為該子專案快速新增一筆本週進度回報。',
+            side: "top",
+            align: 'center'
+          }
+        },
+        {
+          element: '[data-tour="help-menu"]',
+          popover: {
+            title: '需要協助嗎？',
+            description: '您可以隨時從這裡重新啟動功能導覽，或下載完整的操作手冊。',
+            side: "bottom",
+            align: 'end'
+          }
+        }
       ]
     });
     
@@ -50,9 +104,12 @@ export function Header() {
   }
 
   const handleDownload = () => {
+    // Dynamically create a link element
     const link = document.createElement('a');
     link.href = '/manual.pdf';
-    link.download = '操作手冊.pdf';
+    link.download = '操作手冊.pdf'; // This attribute forces download
+    
+    // Append to the body, click, and then remove
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -83,7 +140,7 @@ export function Header() {
         <div className="flex items-center justify-end space-x-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1">
+                <Button variant="ghost" size="sm" className="gap-1" data-tour="help-menu">
                   <HelpCircle className="h-4 w-4" />
                   幫助
                 </Button>

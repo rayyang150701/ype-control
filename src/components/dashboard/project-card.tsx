@@ -103,7 +103,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
                 </Tooltip>
             </TooltipProvider>
 
-          <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleAddLogClick}>
+          <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleAddLogClick} data-tour="add-new-log">
             <PlusCircle className="mr-2 h-4 w-4" />
             新增週報
           </Button>
