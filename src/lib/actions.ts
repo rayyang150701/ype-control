@@ -56,6 +56,8 @@ const userSchema = z.object({
   status: z.enum(['active', 'pending']),
 });
 
+// Set max duration for Server Actions that might take longer.
+export const maxDuration = 60; // 60 seconds
 
 // Server Actions
 
@@ -334,7 +336,7 @@ export async function getAiSuggestions(
 async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference, batchSize: number, transaction: FirebaseFirestore.Transaction) {
     const query = collectionRef.limit(batchSize);
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
         deleteQueryBatch(query, transaction, resolve, reject);
     });
 }

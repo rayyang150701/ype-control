@@ -38,23 +38,41 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   
-  const [isClient, setIsClient] = useState(false);
-  
   const router = useRouter();
   const { toast } = useToast();
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
+  // 初始載入時獲取完整專案列表
   useEffect(() => {
     async function fetchFullProjects() {
+      try {
         const projects = await getFullProjects();
         setFullProjects(projects);
+      } catch (error) {
+        console.error("Failed to fetch full projects", error);
+        toast({
+          title: "載入失敗",
+          description: "無法載入專案列表",
+          variant: "destructive",
+        });
+      }
     }
     fetchFullProjects();
-  }, [subProjects]); // Re-fetch full projects if sub-projects change
+  }, []); // 只在初始化時執行一次
 
+  // 當子專案更新時,重新獲取完整專案列表
+  useEffect(() => {
+    if (subProjects !== initialSubProjects) {
+      async function refreshFullProjects() {
+        try {
+          const projects = await getFullProjects();
+          setFullProjects(projects);
+        } catch (error) {
+          console.error("Failed to refresh full projects", error);
+        }
+      }
+      refreshFullProjects();
+    }
+  }, [subProjects, initialSubProjects]);
 
   const filteredSubProjects = useMemo(() => {
     return subProjects
@@ -104,11 +122,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         if (filteredSubProjectsList.length > 0) {
           return { ...project, subProjects: filteredSubProjectsList };
         }
-        return null; // Return null for projects that don't match after filtering subprojects
+        return null;
       })
-      .filter((project): project is FullProject => project !== null); // Filter out the null projects
+      .filter((project): project is FullProject => project !== null);
   }, [fullProjects, searchQuery, filter]);
-  
 
   const handleSubProjectClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
@@ -120,67 +137,98 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     } catch (error) {
       console.error("Failed to fetch logs", error);
       setTimelineLogs([]);
+      toast({
+        title: "載入失敗",
+        description: "無法載入進度記錄",
+        variant: "destructive",
+      });
     } finally {
       setIsTimelineLoading(false);
     }
   };
 
   const handleEditProjectClick = async (projectId: string) => {
-    const fullProject = await getFullProjectById(projectId);
-    if(fullProject){
-      setSelectedFullProject(fullProject);
-      setIsTimelineOpen(false); // Close timeline modal if open
-      setIsEditProjectOpen(true);
-    } else {
-        // handle error, maybe show a toast
+    try {
+      const fullProject = await getFullProjectById(projectId);
+      if (fullProject) {
+        setSelectedFullProject(fullProject);
+        setIsTimelineOpen(false);
+        setIsEditProjectOpen(true);
+      } else {
+        toast({
+          title: "載入失敗",
+          description: "無法找到該專案",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch project", error);
+      toast({
+        title: "載入失敗",
+        description: "無法載入專案資料",
+        variant: "destructive",
+      });
     }
   };
 
   const handleExportHistory = async () => {
     if (selectedSubProject) {
+      try {
         const users = await getUsers();
         exportSubProjectHistory(selectedSubProject, timelineLogs, users);
+      } catch (error) {
+        console.error("Export failed", error);
+        toast({
+          title: "匯出失敗",
+          description: "無法匯出歷史記錄",
+          variant: "destructive",
+        });
+      }
     }
-  }
+  };
 
   const handleExportAll = async () => {
-    const users = await getUsers();
-    exportAllProjectsSummary(initialSubProjects, users);
-  }
+    try {
+      const users = await getUsers();
+      exportAllProjectsSummary(initialSubProjects, users);
+    } catch (error) {
+      console.error("Export all failed", error);
+      toast({
+        title: "匯出失敗",
+        description: "無法匯出所有專案摘要",
+        variant: "destructive",
+      });
+    }
+  };
 
   const onLogAdded = (newLog: ProgressLog, subProjectId: string) => {
     setSubProjects(prevSubProjects =>
       prevSubProjects.map(sp => {
         if (sp.id === subProjectId) {
-          // Check if this new log is later than the current latestLog
           const isNewer = !sp.latestLog || new Date(newLog.updatedAt as string) > new Date(sp.latestLog.updatedAt as string);
           
           return {
             ...sp,
             latestLog: isNewer ? newLog : sp.latestLog,
-            isOverdue: false, // Assume adding a log resolves overdue status
+            isOverdue: false,
           };
         }
         return sp;
       })
     );
   
-    // If the timeline for the updated project is open, add the new log
     if (selectedSubProject?.id === subProjectId) {
-      // Add to timeline and sort
       setTimelineLogs(prevLogs => [newLog, ...prevLogs].sort((a, b) => new Date(b.updatedAt as string).getTime() - new Date(a.updatedAt as string).getTime()));
     }
   };
 
   const onLogUpdated = (updatedLog: ProgressLog, subProjectId: string) => {
-    // Update the log in the timeline view
     if (selectedSubProject?.id === subProjectId) {
       setTimelineLogs(prevLogs =>
         prevLogs.map(log => (log.id === updatedLog.id ? updatedLog : log))
       );
     }
   
-    // Update the latestLog on the card if the updated log is the latest one
     setSubProjects(prevSubProjects =>
       prevSubProjects.map(sp => {
         if (sp.id === subProjectId) {
@@ -195,28 +243,36 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   };
   
   const refreshData = async () => {
-    const updatedSubProjects = await getSubProjectsWithLatestLogs();
-    setSubProjects(updatedSubProjects);
-    const updatedFullProjects = await getFullProjects();
-    setFullProjects(updatedFullProjects);
+    try {
+      const updatedSubProjects = await getSubProjectsWithLatestLogs();
+      setSubProjects(updatedSubProjects);
+      const updatedFullProjects = await getFullProjects();
+      setFullProjects(updatedFullProjects);
+    } catch (error) {
+      console.error("Failed to refresh data", error);
+      toast({
+        title: "重新整理失敗",
+        description: "無法更新資料",
+        variant: "destructive",
+      });
+    }
   };
-
 
   const onProjectAdded = () => {
     setIsNewProjectOpen(false);
     refreshData();
-  }
+  };
 
   const onProjectUpdated = () => {
     setIsEditProjectOpen(false);
     refreshData();
-  }
+  };
 
   const onProjectDeleted = () => {
     setIsDeleteProjectOpen(false);
     toast({ title: "專案已成功刪除" });
     refreshData();
-  }
+  };
 
   return (
     <>
@@ -251,18 +307,18 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
       {viewMode === 'table' && (
         <>
-        {filteredFullProjects.length > 0 ? (
+          {filteredFullProjects.length > 0 ? (
             <TableView 
               groupedProjects={filteredFullProjects}
               onEditProject={handleEditProjectClick}
               onSubProjectClick={handleSubProjectClick}
             />
-        ) : (
+          ) : (
             <EmptyState
               title="無符合條件的專案"
               description="請嘗試調整您的篩選條件或清除搜尋關鍵字。"
             />
-        )}
+          )}
         </>
       )}
 
@@ -294,14 +350,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         />
       )}
 
-      {isClient && (
-        <DeleteProjectDialog
-          isOpen={isDeleteProjectOpen}
-          setIsOpen={setIsDeleteProjectOpen}
-          projects={fullProjects}
-          onProjectDeleted={onProjectDeleted}
-        />
-      )}
+      {/* 移除 isClient 條件,直接渲染 DeleteProjectDialog */}
+      <DeleteProjectDialog
+        isOpen={isDeleteProjectOpen}
+        setIsOpen={setIsDeleteProjectOpen}
+        projects={fullProjects}
+        onProjectDeleted={onProjectDeleted}
+      />
     </>
   );
 }
