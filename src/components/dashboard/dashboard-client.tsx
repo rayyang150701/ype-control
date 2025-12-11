@@ -38,8 +38,14 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   
+  const [isClient, setIsClient] = useState(false);
+  
   const router = useRouter();
   const { toast } = useToast();
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     async function fetchFullProjects() {
@@ -288,12 +294,14 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         />
       )}
 
-      <DeleteProjectDialog
-        isOpen={isDeleteProjectOpen}
-        setIsOpen={setIsDeleteProjectOpen}
-        projects={fullProjects}
-        onProjectDeleted={onProjectDeleted}
-      />
+      {isClient && (
+        <DeleteProjectDialog
+          isOpen={isDeleteProjectOpen}
+          setIsOpen={setIsDeleteProjectOpen}
+          projects={fullProjects}
+          onProjectDeleted={onProjectDeleted}
+        />
+      )}
     </>
   );
 }
