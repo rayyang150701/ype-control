@@ -82,11 +82,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const filteredSubProjects = useMemo(() => {
     return subProjects
       .filter(sp => {
-        const projectIsOnHold = sp.isOnHold;
-        if (filter === 'overdue') return sp.isOverdue && !projectIsOnHold;
+        const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
+        if (filter === 'overdue') return sp.isOverdue && !isEffectivelyOnHold;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-        if (filter === 'in_progress') return !projectIsOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
-        if (filter === 'on-hold') return projectIsOnHold;
+        if (filter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
+        if (filter === 'on-hold') return isEffectivelyOnHold;
         return true;
       })
       .filter(sp => {
@@ -107,17 +107,26 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     return fullProjects
       .map(project => {
         const filteredSubProjectsList = project.subProjects.filter(sp => {
-          const projectIsOnHold = sp.isOnHold; // Use sub-project's own onHold status
-          if (filter === 'overdue') return sp.isOverdue && !projectIsOnHold;
+          const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
+          if (filter === 'overdue') return sp.isOverdue && !isEffectivelyOnHold;
           if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-          if (filter === 'in_progress') return !projectIsOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
-          if (filter === 'on-hold') return projectIsOnHold;
+          if (filter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
+          if (filter === 'on-hold') return isEffectivelyOnHold;
           return true; // 'all'
         });
   
         // If no sub-projects match the status filter, don't include the project at all
-        if (filteredSubProjectsList.length === 0) {
-          return null;
+        if (filteredSubProjectsList.length === 0 && filter !== 'all') {
+            if (!query) return null; // If no query, definitely hide
+            // If there is a query, check if the project itself matches, but has no matching subprojects
+            const projectMatchesQuery =
+                project.name.toLowerCase().includes(query) ||
+                project.caseNumber.toLowerCase().includes(query) ||
+                (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query));
+            if (projectMatchesQuery && filteredSubProjectsList.length === 0) {
+                 return { ...project, subProjects: [] }; // Show project, but no sub-projects
+            }
+            return null;
         }
   
         // If there's a search query, filter further
@@ -290,9 +299,23 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   };
 
-  const onProjectUpdated = () => {
+  const onProjectUpdated = (updatedProject: FullProject) => {
     setIsEditProjectOpen(false);
-    refreshData();
+    // 精準更新 fullProjects 狀態
+    setFullProjects(prevProjects => 
+      prevProjects.map(p => p.id === updatedProject.id ? updatedProject : p)
+    );
+  
+    // 從更新後的 fullProject 重新組合 subProjects 列表
+    setSubProjects(prevSubProjects => {
+      const otherSubProjects = prevSubProjects.filter(sp => sp.projectId !== updatedProject.id);
+      return [...otherSubProjects, ...updatedProject.subProjects];
+    });
+  
+    // 如果正在編輯的專案被更新，也更新 selectedFullProject
+    if (selectedFullProject && selectedFullProject.id === updatedProject.id) {
+      setSelectedFullProject(updatedProject);
+    }
   };
 
   const onProjectDeleted = () => {

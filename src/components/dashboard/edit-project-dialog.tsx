@@ -25,7 +25,7 @@ import { User, FullProject } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
-import { updateProject, getUsers, resumeProject } from '@/lib/actions';
+import { updateProject, getUsers, resumeProject, getFullProjectById } from '@/lib/actions';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 import { OnHoldDialog } from './on-hold-dialog';
 
@@ -55,7 +55,7 @@ type EditProjectDialogProps = {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   project: FullProject;
-  onProjectUpdated: () => void;
+  onProjectUpdated: (updatedProject: FullProject) => void;
 };
 
 export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated }: EditProjectDialogProps) {
@@ -138,7 +138,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
           title: '專案已恢復',
           description: '專案狀態已變更為進行中',
         });
-        onProjectUpdated();
+        const updatedProject = await getFullProjectById(project.id);
+        if (updatedProject) {
+          onProjectUpdated(updatedProject);
+        }
       } else {
         toast({
           title: '錯誤',
@@ -149,12 +152,23 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     });
   };
 
+  const handleSuccess = async () => {
+    const updatedProject = await getFullProjectById(project.id);
+    if(updatedProject) {
+      onProjectUpdated(updatedProject);
+    }
+    setIsOnHoldDialogOpen(false);
+  }
+
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
       const result = await updateProject(project.id, data, originalSubProjectIds);
       if (result.success) {
         toast({ title: result.message });
-        onProjectUpdated();
+        const updatedProject = await getFullProjectById(project.id);
+        if (updatedProject) {
+          onProjectUpdated(updatedProject);
+        }
         setIsOpen(false);
       } else {
         toast({ title: '錯誤', description: result.message, variant: 'destructive' });
@@ -459,7 +473,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         setIsOpen={setIsOnHoldDialogOpen}
         projectId={project.id}
         projectName={`${project.caseNumber} - ${project.name}`}
-        onSuccess={onProjectUpdated}
+        onSuccess={handleSuccess}
       />
     </>
   );
