@@ -495,9 +495,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog
         }
+        
+        const subProjectIsOnHold = subProjectData.isOnHold ?? project.isOnHold ?? false;
 
         let isOverdue = false;
-        if (!project.isOnHold) {
+        if (!subProjectIsOnHold) {
             const sevenDaysAgo = subDays(new Date(), 7);
             isOverdue = latestLog?.updatedAt
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -525,7 +527,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
-            isOnHold: project.isOnHold ?? false, // Propagate from parent project
+            isOnHold: subProjectIsOnHold,
         } as SubProjectWithLatestLog);
     }
   
@@ -592,9 +594,11 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                     createdByName: userMap.get(logData.createdBy),
                  } as ProgressLog;
             }
+            
+            const subProjectIsOnHold = subProjectData.isOnHold ?? project.isOnHold ?? false;
 
             let isOverdue = false;
-            if (!project.isOnHold) {
+            if (!subProjectIsOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt
                     ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -622,7 +626,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: project.isOnHold ?? false, // Propagate from parent project
+                isOnHold: subProjectIsOnHold,
             } as SubProjectWithLatestLog);
         }
     }

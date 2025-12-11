@@ -24,8 +24,8 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = new Date(subProject.expectedCompletionDate as string);
-  const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
   const isOnHold = subProject.isOnHold;
+  const delayDays = completionPercentage < 100 && !isOnHold ? differenceInDays(new Date(), expectedDate) : 0;
 
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
 

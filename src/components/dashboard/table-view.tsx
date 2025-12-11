@@ -136,7 +136,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   className={cn(
                     'hover:bg-blue-50',
                     projectIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50',
-                    project.isOnHold && 'bg-amber-50 hover:bg-amber-100/50'
+                    sp.isOnHold && 'bg-amber-50 hover:bg-amber-100/50'
                   )}
                 >
                   {subProjectIndex === 0 && (
@@ -150,7 +150,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       <td rowSpan={project.subProjects.length} className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20" style={{ backgroundColor: projectIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
                         <div className='flex items-center gap-2'>
                           <span>{project.name}</span>
-                          {project.isOnHold && (
+                          {project.isOnHold && !project.subProjects.some(sub => sub.isOnHold) && (
                              <Badge className="bg-amber-500 text-white flex items-center gap-1">
                                 <PauseCircle className="h-3 w-3" />
                                 暫緩中
@@ -176,13 +176,21 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                     </>
                   )}
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">
-                    <button
-                      type="button"
-                      onClick={() => onSubProjectClick(sp)}
-                      className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left"
-                    >
-                      {sp.name}
-                    </button>
+                     <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onSubProjectClick(sp)}
+                          className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left"
+                        >
+                          {sp.name}
+                        </button>
+                        {sp.isOnHold && (
+                          <Badge className="bg-amber-500 text-white flex items-center gap-1">
+                            <PauseCircle className="h-3 w-3" />
+                            暫緩中
+                          </Badge>
+                        )}
+                      </div>
                   </td>
                   <td className="border-b px-3 py-2 text-sm text-gray-800 break-words align-middle">
                       {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
