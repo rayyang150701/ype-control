@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useTransition, useState, useEffect } from 'react';
@@ -185,7 +186,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     className="grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative"
                   >
                     {/* 子專案名稱 */}
-                    <div className="col-span-12 sm:col-span-3">
+                    <div className="col-span-12 sm:col-span-4">
                       <Label>子專案名稱</Label>
                       <Input {...register(`subProjects.${index}.name`)} />
                       {errors.subProjects?.[index]?.name && (
@@ -196,7 +197,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     </div>
 
                     {/* 負責人 */}
-                    <div className="col-span-12 sm:col-span-3">
+                    <div className="col-span-12 sm:col-span-2">
                       <Label>負責人</Label>
                       <Controller
                         name={`subProjects.${index}.owner`}

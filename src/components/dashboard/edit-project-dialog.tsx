@@ -251,7 +251,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                         className={cn("grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative", (isSubProjectOnHold || project.isOnHold) && "bg-amber-50 border-amber-200")}
                       >
                         {/* 子專案名稱 */}
-                        <div className="col-span-12 sm:col-span-3">
+                        <div className="col-span-12 sm:col-span-4">
                           <Label>子專案名稱</Label>
                           <Input {...register(`subProjects.${index}.name`)} />
                           {errors.subProjects?.[index]?.name && (
@@ -262,7 +262,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                         </div>
 
                         {/* 負責人 */}
-                        <div className="col-span-12 sm:col-span-3">
+                        <div className="col-span-12 sm:col-span-2">
                           <Label>負責人</Label>
                           <Controller
                             name={`subProjects.${index}.owner`}
@@ -290,7 +290,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                         </div>
 
                         {/* 預計完成日 */}
-                        <div className="col-span-6 sm:col-span-2">
+                        <div className="col-span-6 sm:col-span-3">
                           <Label>預計完成日</Label>
                           <Controller
                             name={`subProjects.${index}.expectedCompletionDate`}
@@ -329,7 +329,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                         </div>
 
                         {/* 實際完成日 */}
-                        <div className="col-span-6 sm:col-span-2">
+                        <div className="col-span-6 sm:col-span-3">
                           <Label>實際完成日</Label>
                           <Controller
                             name={`subProjects.${index}.actualCompletionDate`}
@@ -368,7 +368,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                           />
                         </div>
                         {isSubProjectOnHold && (
-                          <div className="col-span-12 sm:col-span-2 flex items-end">
+                          <div className="col-span-12 flex items-end">
                             <Button
                               type="button"
                               size="sm"
