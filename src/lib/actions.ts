@@ -432,7 +432,7 @@ export async function resumeProject(projectId: string, subProjectId?: string) {
   }
 }
 
-export async function resumeProjects(projectIds: string[], subProjectIds: Record<string, string[]>) {
+export async function resumeProjects(projectIds: string[], subProjectsByProject: Record<string, string[]>) {
     try {
       const batch = db.batch();
       const resumeUpdate = {
@@ -447,8 +447,8 @@ export async function resumeProjects(projectIds: string[], subProjectIds: Record
       });
   
       // Resume sub-projects
-      for (const projectId in subProjectIds) {
-        const spIds = subProjectIds[projectId];
+      for (const projectId in subProjectsByProject) {
+        const spIds = subProjectsByProject[projectId];
         spIds.forEach(spId => {
           const subProjectRef = db.collection('projects').doc(projectId).collection('sub_projects').doc(spId);
           batch.update(subProjectRef, resumeUpdate);
@@ -648,7 +648,7 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
             const parentProjectIsOnHold = project.isOnHold ?? false;
 
             let isOverdue = false;
-            if (!subProjectIsOn-Hold && !parentProjectIsOnHold) {
+            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
             }
