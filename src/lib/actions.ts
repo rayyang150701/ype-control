@@ -9,7 +9,6 @@ import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, 
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
-
 // Schema definitions
 
 const subProjectSchema = z.object({
@@ -55,8 +54,6 @@ const userSchema = z.object({
   role: z.enum(['admin', 'editor', 'viewer']),
   status: z.enum(['active', 'pending']),
 });
-
-// Server Actions
 
 // User Management Actions
 export async function createUser(data: z.infer<typeof userSchema>) {
@@ -496,10 +493,12 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             } as ProgressLog
         }
         
-        const subProjectIsOnHold = subProjectData.isOnHold ?? project.isOnHold ?? false;
+        const subProjectIsOnHold = subProjectData.isOnHold ?? false;
+        const parentProjectIsOnHold = project.isOnHold ?? false;
+        const finalOnHoldStatus = subProjectIsOnHold || parentProjectIsOnHold;
 
         let isOverdue = false;
-        if (!subProjectIsOnHold) {
+        if (!finalOnHoldStatus) {
             const sevenDaysAgo = subDays(new Date(), 7);
             isOverdue = latestLog?.updatedAt
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -527,7 +526,7 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
-            isOnHold: subProjectIsOnHold,
+            isOnHold: finalOnHoldStatus,
         } as SubProjectWithLatestLog);
     }
   
@@ -542,17 +541,78 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
 
 export const getFullProjects = async (): Promise<FullProject[]> => {
     const projectsSnapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
+    const users = await getUsers();
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
     const fullProjects: FullProject[] = [];
-  
+
     for (const projectDoc of projectsSnapshot.docs) {
-      const project = await getFullProjectById(projectDoc.id);
-      if (project) {
-        fullProjects.push(project);
-      }
+        const projectData = projectDoc.data() as Omit<Project, 'id'>;
+        const project: Project = { id: projectDoc.id, ...projectData };
+
+        const subProjectsCol = projectDoc.ref.collection('sub_projects');
+        const subProjectSnapshot = await subProjectsCol.orderBy('createdAt', 'asc').get();
+        const subProjects: SubProjectWithLatestLog[] = [];
+
+        for (const subProjectDoc of subProjectSnapshot.docs) {
+            const subProjectData = subProjectDoc.data();
+
+            const logsCol = subProjectDoc.ref.collection('progress_logs');
+            const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
+            const logsSnapshot = await logsQuery.get();
+            
+            let latestLog: ProgressLog | null = null;
+            if (logsSnapshot.docs.length > 0) {
+                const logData = logsSnapshot.docs[0].data();
+                const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
+                latestLog = {
+                    ...logData,
+                    id: logsSnapshot.docs[0].id,
+                    updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
+                    createdByName: userMap.get(logData.createdBy),
+                } as ProgressLog;
+            }
+
+            const subProjectIsOnHold = subProjectData.isOnHold ?? false;
+            const finalOnHoldStatus = subProjectIsOnHold || (project.isOnHold ?? false);
+
+            let isOverdue = false;
+            if (!finalOnHoldStatus) {
+                const sevenDaysAgo = subDays(new Date(), 7);
+                isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
+            }
+
+            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+            const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+            const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+
+            subProjects.push({
+                ...subProjectData,
+                id: subProjectDoc.id,
+                projectId: project.id,
+                projectName: project.name,
+                projectCaseNumber: project.caseNumber,
+                ownerName: userMap.get(subProjectData.owner),
+                latestLog,
+                isOverdue,
+                isOnHold: subProjectIsOnHold, // Use only the sub-project's own onHold status
+                expectedCompletionDate,
+                actualCompletionDate,
+                createdAt
+            } as SubProjectWithLatestLog);
+        }
+
+        const createdAtTimestamp = projectData.createdAt as FirebaseFirestore.Timestamp;
+        fullProjects.push({
+            ...project,
+            subProjects,
+            createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
+        });
     }
-  
-    return fullProjects;
+
+    return JSON.parse(JSON.stringify(fullProjects));
 };
+
 
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
     const projectsCol = db.collection('projects');
@@ -595,10 +655,12 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                  } as ProgressLog;
             }
             
-            const subProjectIsOnHold = subProjectData.isOnHold ?? project.isOnHold ?? false;
+            const subProjectIsOnHold = subProjectData.isOnHold ?? false;
+            const finalOnHoldStatus = subProjectIsOnHold || (project.isOnHold ?? false);
+
 
             let isOverdue = false;
-            if (!subProjectIsOnHold) {
+            if (!finalOnHoldStatus) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt
                     ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -626,7 +688,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 ownerName: userMap.get(subProjectData.owner),
                 latestLog,
                 isOverdue,
-                isOnHold: subProjectIsOnHold,
+                isOnHold: subProjectIsOnHold, // Use only the sub-project's own onHold status
             } as SubProjectWithLatestLog);
         }
     }

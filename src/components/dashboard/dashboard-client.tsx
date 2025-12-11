@@ -82,10 +82,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const filteredSubProjects = useMemo(() => {
     return subProjects
       .filter(sp => {
-        if (filter === 'overdue') return sp.isOverdue;
+        const projectIsOnHold = sp.isOnHold;
+        if (filter === 'overdue') return sp.isOverdue && !projectIsOnHold;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100 && !sp.isOnHold;
-        if (filter === 'on-hold') return sp.isOnHold;
+        if (filter === 'in_progress') return !projectIsOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
+        if (filter === 'on-hold') return projectIsOnHold;
         return true;
       })
       .filter(sp => {
@@ -101,89 +102,56 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   }, [subProjects, searchQuery, filter]);
 
   const filteredFullProjects = useMemo(() => {
-    if (!searchQuery && filter === 'all') {
-      return fullProjects;
-    }
+    const query = searchQuery.toLowerCase();
   
     return fullProjects
       .map(project => {
-        // Filter sub-projects first
-        const filteredSubProjectsList = project.subProjects
-          .filter(sp => {
-            if (filter === 'overdue') return sp.isOverdue;
-            if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100 && !project.isOnHold;
-            if (filter === 'on-hold') return project.isOnHold;
-            return true;
-          });
-
-        // If the main filter is "on-hold", we only care if the parent project matches.
-        // If it does, we return it with all its sub-projects.
-        if (filter === 'on-hold') {
-            if (project.isOnHold) {
-                // If there's a search query, we still need to filter by it.
-                if (searchQuery) {
-                     const projectMatchesQuery = (
-                        project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        project.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(searchQuery.toLowerCase()))
-                     );
-                     const subProjectsMatchQuery = project.subProjects.some(sp => sp.name.toLowerCase().includes(searchQuery.toLowerCase()));
-
-                     if (projectMatchesQuery) return project; // return all subprojects
-                     if (subProjectsMatchQuery) {
-                         return { 
-                             ...project, 
-                             subProjects: project.subProjects.filter(sp => sp.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                         };
-                     }
-                     return null;
-                }
-                return project; // No search query, return the whole on-hold project
-            }
-            return null; // Project is not on hold
-        }
-
-
-        // Determine if the project itself matches the search query or if any of its filtered sub-projects match
-        const projectMatchesQuery = (
-          project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          project.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(searchQuery.toLowerCase()))
-        );
-
-        const subProjectsMatchQuery = filteredSubProjectsList.some(sp => 
-            sp.name.toLowerCase().includes(searchQuery.toLowerCase())
-        );
+        const filteredSubProjectsList = project.subProjects.filter(sp => {
+          const projectIsOnHold = sp.isOnHold; // Use sub-project's own onHold status
+          if (filter === 'overdue') return sp.isOverdue && !projectIsOnHold;
+          if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
+          if (filter === 'in_progress') return !projectIsOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
+          if (filter === 'on-hold') return projectIsOnHold;
+          return true; // 'all'
+        });
   
-        if (searchQuery) {
-          if (projectMatchesQuery) {
-             // If project matches, return it with its filtered sub-projects
-             return { ...project, subProjects: filteredSubProjectsList };
-          } else if (subProjectsMatchQuery) {
-             // If only sub-projects match, filter them further by the query
-             const queryFilteredSubProjects = filteredSubProjectsList.filter(sp => 
-                sp.name.toLowerCase().includes(searchQuery.toLowerCase())
-             );
-             if (queryFilteredSubProjects.length > 0) {
-                return { ...project, subProjects: queryFilteredSubProjects };
-             }
-          }
-          return null; // Neither project nor sub-projects match search query
-        } else {
-           // No search query, just return the project with sub-projects filtered by status
-           if (filteredSubProjectsList.length > 0) {
-              return { ...project, subProjects: filteredSubProjectsList };
-           }
-           // If the filter is 'completed' or 'overdue' and no sub-projects match, the whole project shouldn't be shown
-            if (filter === 'completed' || filter === 'overdue' || filter === 'in_progress') {
-                return null;
-            }
-           return project;
+        // If no sub-projects match the status filter, don't include the project at all
+        if (filteredSubProjectsList.length === 0) {
+          return null;
         }
+  
+        // If there's a search query, filter further
+        if (query) {
+          const projectMatchesQuery =
+            project.name.toLowerCase().includes(query) ||
+            project.caseNumber.toLowerCase().includes(query) ||
+            (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query));
+  
+          // Filter sub-projects that match the query
+          const subProjectsMatchQueryList = filteredSubProjectsList.filter(sp =>
+            sp.name.toLowerCase().includes(query)
+          );
+  
+          // If the project itself matches, include all its status-filtered sub-projects
+          if (projectMatchesQuery) {
+            return { ...project, subProjects: filteredSubProjectsList };
+          }
+  
+          // If only some sub-projects match, include only those
+          if (subProjectsMatchQueryList.length > 0) {
+            return { ...project, subProjects: subProjectsMatchQueryList };
+          }
+  
+          // If neither the project nor any sub-projects match the query, exclude the project
+          return null;
+        }
+  
+        // No search query, so return the project with its status-filtered sub-projects
+        return { ...project, subProjects: filteredSubProjectsList };
       })
       .filter((project): project is FullProject => project !== null);
   }, [fullProjects, searchQuery, filter]);
+
 
   const handleSubProjectClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
@@ -248,7 +216,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const handleExportAll = async () => {
     try {
       const users = await getUsers();
-      exportAllProjectsSummary(initialSubProjects, users);
+      const allSubProjects = await getSubProjectsWithLatestLogs();
+      exportAllProjectsSummary(allSubProjects, users);
     } catch (error) {
       console.error("Export all failed", error);
       toast({
