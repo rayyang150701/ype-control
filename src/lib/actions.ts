@@ -527,11 +527,9 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         const subProjectIsOnHold = subProjectData.isOnHold ?? false;
         const parentProjectIsOnHold = project.isOnHold ?? false;
-        const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
-
 
         let isOverdue = false;
-        if (!isEffectivelyOnHold) {
+        if (!subProjectIsOnHold && !parentProjectIsOnHold) {
             const sevenDaysAgo = subDays(new Date(), 7);
             isOverdue = latestLog?.updatedAt
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -581,8 +579,14 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
     const fullProjects: FullProject[] = [];
 
     for (const projectDoc of projectsSnapshot.docs) {
-        const projectData = projectDoc.data() as Omit<Project, 'id'>;
-        const project: Project = { id: projectDoc.id, ...projectData };
+        const projectData = projectDoc.data() as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp, onHoldStartDate?: FirebaseFirestore.Timestamp, onHoldEndDate?: FirebaseFirestore.Timestamp };
+        const project: Project = { 
+            id: projectDoc.id, 
+            ...projectData,
+            createdAt: projectData.createdAt ? projectData.createdAt.toDate().toISOString() : new Date().toISOString(),
+            onHoldStartDate: projectData.onHoldStartDate ? projectData.onHoldStartDate.toDate().toISOString() : undefined,
+            onHoldEndDate: projectData.onHoldEndDate ? projectData.onHoldEndDate.toDate().toISOString() : undefined,
+        };
 
         const subProjectsCol = projectDoc.ref.collection('sub_projects');
         const subProjectSnapshot = await subProjectsCol.orderBy('createdAt', 'asc').get();
@@ -609,11 +613,9 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
 
             const subProjectIsOnHold = subProjectData.isOnHold ?? false;
             const parentProjectIsOnHold = project.isOnHold ?? false;
-            const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
-
 
             let isOverdue = false;
-            if (!isEffectivelyOnHold) {
+            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
             }
@@ -621,6 +623,9 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
             const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+            const onHoldStartDate = subProjectData.onHoldStartDate ? (subProjectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+            const onHoldEndDate = subProjectData.onHoldEndDate ? (subProjectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+
 
             subProjects.push({
                 ...subProjectData,
@@ -635,15 +640,15 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
                 isParentOnHold: parentProjectIsOnHold,
                 expectedCompletionDate,
                 actualCompletionDate,
-                createdAt
+                createdAt,
+                onHoldStartDate,
+                onHoldEndDate,
             } as SubProjectWithLatestLog);
         }
 
-        const createdAtTimestamp = projectData.createdAt as FirebaseFirestore.Timestamp;
         fullProjects.push({
             ...project,
             subProjects,
-            createdAt: createdAtTimestamp ? createdAtTimestamp.toDate().toISOString() : new Date().toISOString(),
         });
     }
 
@@ -694,11 +699,9 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             
             const subProjectIsOnHold = subProjectData.isOnHold ?? false;
             const parentProjectIsOnHold = project.isOnHold ?? false;
-            const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
-
 
             let isOverdue = false;
-            if (!isEffectivelyOnHold) {
+            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt
                     ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
@@ -708,6 +711,9 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+            const onHoldStartDate = subProjectData.onHoldStartDate ? (subProjectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+            const onHoldEndDate = subProjectData.onHoldEndDate ? (subProjectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+
 
             allSubProjects.push({
                 ...subProjectData,
@@ -715,6 +721,8 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                 expectedCompletionDate,
                 actualCompletionDate,
                 createdAt,
+                onHoldStartDate,
+                onHoldEndDate,
                 projectId: project.id,
                 projectName: project.name,
                 projectCaseNumber: project.caseNumber,
