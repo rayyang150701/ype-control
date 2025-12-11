@@ -9,6 +9,8 @@ import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, 
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
+export const maxDuration = 60;
+
 
 // Schema definitions
 
@@ -42,7 +44,7 @@ const editProjectSchema = z.object({
   caseNumber: z.string().min(1, '主專案案號為必填'),
   name: z.string().min(1, '主專案名稱為必填'),
   projectPurpose: z.string().optional(),
-  currentStatusAndIssues: zstring().optional(),
+  currentStatusAndIssues: z.string().optional(),
   yiehPhuiProjectManager: z.string().optional(),
   tpmOfficeContact: z.string().optional(),
   egigaContact: z.string().optional(),
@@ -330,64 +332,30 @@ export async function getAiSuggestions(
   }
 }
 
-async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference, batchSize: number, transaction: FirebaseFirestore.Transaction) {
-    const query = collectionRef.limit(batchSize);
-
-    return new Promise<void>((resolve, reject) => {
-        deleteQueryBatch(query, transaction, resolve, reject);
-    });
-}
-
-async function deleteQueryBatch(query: FirebaseFirestore.Query, transaction: FirebaseFirestore.Transaction, resolve: () => void, reject: (reason?: any) => void) {
-    const snapshot = await transaction.get(query);
-
-    if (snapshot.size === 0) {
-        return resolve();
-    }
-    
-    snapshot.docs.forEach((doc) => {
-        transaction.delete(doc.ref);
-    });
-    
-    process.nextTick(() => {
-        deleteQueryBatch(query, transaction, resolve, reject);
-    });
-}
-
-
-export async function deleteProject(projectId: string): Promise<{ success: boolean; message: string; }> {
+// This function will be called from the API route, not directly from the client.
+export async function deleteProject(projectId: string) {
     if (!projectId) {
-        return { success: false, message: '必須提供專案 ID。' };
+        throw new Error('Project ID is required.');
     }
 
-    try {
-        const projectRef = db.collection('projects').doc(projectId);
+    const projectRef = db.collection('projects').doc(projectId);
 
-        await db.runTransaction(async (transaction) => {
-            // Delete sub-collections first
-            const subProjectsRef = projectRef.collection('sub_projects');
-            const subProjectsSnapshot = await transaction.get(subProjectsRef);
+    await db.runTransaction(async (transaction) => {
+        const subProjectsRef = projectRef.collection('sub_projects');
+        const subProjectsSnapshot = await transaction.get(subProjectsRef);
 
-            for (const subDoc of subProjectsSnapshot.docs) {
-                // Delete progress_logs for each sub_project
-                const progressLogsRef = subDoc.ref.collection('progress_logs');
-                await deleteCollection(progressLogsRef, 50, transaction);
-                // Delete the sub_project itself
-                transaction.delete(subDoc.ref);
-            }
+        for (const subDoc of subProjectsSnapshot.docs) {
+            const progressLogsRef = subDoc.ref.collection('progress_logs');
+            const progressLogsSnapshot = await transaction.get(progressLogsRef);
+            progressLogsSnapshot.docs.forEach(logDoc => transaction.delete(logDoc.ref));
+            transaction.delete(subDoc.ref);
+        }
+        transaction.delete(projectRef);
+    });
 
-            // Finally, delete the main project document
-            transaction.delete(projectRef);
-        });
-
-        revalidatePath('/dashboard');
-        return { success: true, message: '專案已成功刪除。' };
-
-    } catch (error) {
-        console.error(`Error deleting project ${projectId}:`, error);
-        return { success: false, message: `刪除專案時發生錯誤: ${error instanceof Error ? error.message : '未知錯誤'}` };
-    }
+    revalidatePath('/dashboard');
 }
+
 
 // Data fetching functions
 
@@ -601,5 +569,3 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
     }
     return allSubProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
 };
-
-    
