@@ -2,7 +2,8 @@
 
 import { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, ArrowUpDown } from 'lucide-react';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, FC } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -27,10 +28,82 @@ import { User } from '@/types';
 import { Badge } from '../ui/badge';
 import { deleteUser } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
 
 type ColumnsProps = {
   onEdit: (user: User) => void;
+};
+
+// A new component to handle the state and logic for the actions cell.
+const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, onEdit }) => {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
+  const router = useRouter();
+
+  const handleDelete = () => {
+    startTransition(async () => {
+      const result = await deleteUser(user.uid);
+      if (result.success) {
+        toast({ title: '成員已刪除' });
+        router.refresh();
+      } else {
+        toast({
+          title: '刪除失敗',
+          description: result.message,
+          variant: 'destructive',
+        });
+      }
+      setIsDeleteDialogOpen(false);
+    });
+  };
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-8 w-8 p-0">
+            <span className="sr-only">Open menu</span>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>操作</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => onEdit(user)}>
+            編輯
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive"
+            onClick={() => setIsDeleteDialogOpen(true)}
+          >
+            刪除
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確定要刪除這位成員嗎？</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作無法復原。將會永久刪除成員 "{user.displayName}"。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isPending}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isPending ? '刪除中...' : '確定刪除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 };
 
 export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
@@ -83,75 +156,9 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
     id: 'actions',
     cell: ({ row }) => {
       const user = row.original;
-      const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-      const [isPending, startTransition] = useTransition();
-      const { toast } = useToast();
-      const router = useRouter();
-
-      const handleDelete = () => {
-        startTransition(async () => {
-          const result = await deleteUser(user.uid);
-          if (result.success) {
-            toast({ title: '成員已刪除' });
-            router.refresh();
-          } else {
-            toast({
-              title: '刪除失敗',
-              description: result.message,
-              variant: 'destructive',
-            });
-          }
-          setIsDeleteDialogOpen(false);
-        });
-      };
-
-      return (
-        <>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>操作</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => onEdit(user)}>
-                編輯
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() => setIsDeleteDialogOpen(true)}
-              >
-                刪除
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <AlertDialog
-            open={isDeleteDialogOpen}
-            onOpenChange={setIsDeleteDialogOpen}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>確定要刪除這位成員嗎？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  此操作無法復原。將會永久刪除成員 "{user.displayName}"。
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  disabled={isPending}
-                  className="bg-destructive hover:bg-destructive/90"
-                >
-                  {isPending ? '刪除中...' : '確定刪除'}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      );
+      // Now the cell just renders the ActionsCell component, passing the necessary props.
+      // All hook-related logic is self-contained within ActionsCell.
+      return <ActionsCell user={user} onEdit={onEdit} />;
     },
   },
 ];
