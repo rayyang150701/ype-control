@@ -48,6 +48,7 @@ export function FilterControls({
           <SelectContent>
             <SelectItem value="all">所有專案</SelectItem>
             <SelectItem value="in_progress">所有專案 (排除已完成)</SelectItem>
+            <SelectItem value="on-hold">暫緩中</SelectItem>
             <SelectItem value="overdue">逾期未報</SelectItem>
             <SelectItem value="completed">已完成</SelectItem>
           </SelectContent>

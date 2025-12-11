@@ -1,6 +1,6 @@
 'use client';
 import { format, differenceInDays } from 'date-fns';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, PauseCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = new Date(subProject.expectedCompletionDate as string);
   const delayDays = completionPercentage < 100 ? differenceInDays(new Date(), expectedDate) : 0;
+  const isOnHold = subProject.isOnHold
 
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
 
@@ -46,12 +47,19 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
       <Card
         className={cn(
           'flex cursor-pointer flex-col transition-all hover:shadow-lg hover:-translate-y-1',
-          isOverdue && 'border-destructive border-2'
+          isOverdue && !isOnHold && 'border-destructive border-2',
+          isOnHold && 'opacity-75 border-amber-400 border-2'
         )}
         onClick={() => onCardClick(subProject)}
       >
         <CardHeader className="relative pb-2">
-          {isOverdue && (
+           {isOnHold && (
+            <Badge className="absolute -top-2 -right-2 bg-amber-500 text-white flex items-center gap-1">
+              <PauseCircle className="h-3 w-3" />
+              暫緩中
+            </Badge>
+          )}
+          {isOverdue && !isOnHold && (
             <Badge variant="destructive" className="absolute -top-2 -right-2">
               逾期未報
             </Badge>

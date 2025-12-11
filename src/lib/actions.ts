@@ -329,7 +329,6 @@ export async function getAiSuggestions(
   }
 }
 
-// This function will be called from the API route, not directly from the client.
 export async function deleteProject(projectId: string) {
     if (!projectId) {
         throw new Error('Project ID is required.');
@@ -351,6 +350,58 @@ export async function deleteProject(projectId: string) {
     });
 
     revalidatePath('/dashboard');
+}
+
+// On-Hold and Resume Actions
+export async function setProjectOnHold(
+  projectId: string,
+  onHoldData: {
+    reason: string;
+    startDate: Date;
+    endDate?: Date;
+    notes?: string;
+  }
+) {
+  try {
+    const projectRef = db.collection('projects').doc(projectId);
+    await projectRef.update({
+      status: 'on-hold',
+      isOnHold: true,
+      onHoldReason: onHoldData.reason,
+      onHoldStartDate: onHoldData.startDate,
+      onHoldEndDate: onHoldData.endDate ?? null,
+      onHoldNotes: onHoldData.notes ?? '',
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true, message: '專案已設為暫緩' };
+  } catch (error) {
+    console.error('設定暫緩失敗:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : '設定暫緩時發生未知錯誤'
+    };
+  }
+}
+
+export async function resumeProject(projectId: string) {
+  try {
+    const projectRef = db.collection('projects').doc(projectId);
+    await projectRef.update({
+      status: 'active',
+      isOnHold: false,
+      onHoldEndDate: new Date(), // Set the actual resume date in the end date field
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true, message: '專案已恢復進行' };
+  } catch (error) {
+    console.error('恢復專案失敗:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : '恢復專案時發生未知錯誤'
+    };
+  }
 }
 
 
@@ -409,11 +460,13 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
       return null;
     }
     
-    const projectData = projectDoc.data()! as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp };
+    const projectData = projectDoc.data()! as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp, onHoldStartDate?: FirebaseFirestore.Timestamp, onHoldEndDate?: FirebaseFirestore.Timestamp };
     const project: Project = { 
         id: projectDoc.id, 
         ...projectData,
         createdAt: projectData.createdAt ? projectData.createdAt.toDate().toISOString() : new Date().toISOString(),
+        onHoldStartDate: projectData.onHoldStartDate ? projectData.onHoldStartDate.toDate().toISOString() : undefined,
+        onHoldEndDate: projectData.onHoldEndDate ? projectData.onHoldEndDate.toDate().toISOString() : undefined,
     };
   
     const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
@@ -442,10 +495,13 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             } as ProgressLog
         }
 
-        const sevenDaysAgo = subDays(new Date(), 7);
-        const isOverdue = latestLog?.updatedAt
-            ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
-            : true;
+        let isOverdue = false;
+        if (!project.isOnHold) {
+            const sevenDaysAgo = subDays(new Date(), 7);
+            isOverdue = latestLog?.updatedAt
+                ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
+                : true;
+        }
 
         const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
         const actualCompletionDateTimestamp = subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp;
@@ -503,7 +559,7 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
             id: doc.id, 
             ...data,
             createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-        }
+        } as Project
     });
 
     const users = await getUsers();
@@ -535,10 +591,13 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
                  } as ProgressLog;
             }
 
-            const sevenDaysAgo = subDays(new Date(), 7);
-            const isOverdue = latestLog?.updatedAt
-                ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
-                : true;
+            let isOverdue = false;
+            if (!project.isOnHold) {
+                const sevenDaysAgo = subDays(new Date(), 7);
+                isOverdue = latestLog?.updatedAt
+                    ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
+                    : true;
+            }
             
             const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
             const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;

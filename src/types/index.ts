@@ -12,7 +12,7 @@ export interface User {
   createdAt: Timestamp | Date | string;
 }
 
-export type ProjectStatus = 'active' | 'completed' | 'on-hold';
+export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'cancelled';
 
 export interface Project {
   id: string;
@@ -27,6 +27,11 @@ export interface Project {
   tpmOfficeContact?: string;
   egigaContact?: string;
   subProjects?: SubProject[];
+  isOnHold?: boolean;
+  onHoldReason?: string;
+  onHoldStartDate?: Timestamp | Date | string;
+  onHoldEndDate?: Timestamp | Date | string;
+  onHoldNotes?: string;
 }
 
 export interface SubProject {
@@ -46,6 +51,7 @@ export interface SubProject {
   yiehPhuiProjectManager?: string;
   tpmOfficeContact?: string;
   egigaContact?: string;
+  isOnHold?: boolean;
 }
 
 export interface ProgressLog {

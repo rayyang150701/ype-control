@@ -26,6 +26,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [isClient, setIsClient] = useState(false);
   
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
@@ -40,6 +41,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   
   const router = useRouter();
   const { toast } = useToast();
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // 初始載入時獲取完整專案列表
   useEffect(() => {
@@ -80,6 +85,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         if (filter === 'overdue') return sp.isOverdue;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
         if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
+        if (filter === 'on-hold') return sp.isOnHold;
         return true;
       })
       .filter(sp => {
@@ -101,28 +107,46 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   
     return fullProjects
       .map(project => {
+        // Filter sub-projects first
         const filteredSubProjectsList = project.subProjects
           .filter(sp => {
             if (filter === 'overdue') return sp.isOverdue;
             if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
             if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
+            if (filter === 'on-hold') return project.isOnHold || sp.isOnHold;
             return true;
-          })
-          .filter(sp => {
-            const query = searchQuery.toLowerCase();
-            if (!query) return true;
-            return (
-              sp.name.toLowerCase().includes(query) ||
-              project.name.toLowerCase().includes(query) ||
-              project.caseNumber.toLowerCase().includes(query) ||
-              (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query))
-            );
           });
+
+        // Determine if the project itself matches the search query or if any of its filtered sub-projects match
+        const projectMatchesQuery = (
+          project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          project.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(searchQuery.toLowerCase()))
+        );
+
+        const subProjectsMatchQuery = filteredSubProjectsList.some(sp => 
+            sp.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
   
-        if (filteredSubProjectsList.length > 0) {
-          return { ...project, subProjects: filteredSubProjectsList };
+        if (searchQuery) {
+          if (projectMatchesQuery) {
+             // If project matches, return it with its filtered sub-projects
+             return { ...project, subProjects: filteredSubProjectsList };
+          } else if (subProjectsMatchQuery) {
+             // If only sub-projects match, filter them further by the query
+             const queryFilteredSubProjects = filteredSubProjectsList.filter(sp => 
+                sp.name.toLowerCase().includes(searchQuery.toLowerCase())
+             );
+             return { ...project, subProjects: queryFilteredSubProjects };
+          }
+          return null; // Neither project nor sub-projects match search query
+        } else {
+           // No search query, just return the project with sub-projects filtered by status
+           if (filteredSubProjectsList.length > 0) {
+              return { ...project, subProjects: filteredSubProjectsList };
+           }
+           return null;
         }
-        return null;
       })
       .filter((project): project is FullProject => project !== null);
   }, [fullProjects, searchQuery, filter]);
@@ -350,13 +374,14 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         />
       )}
 
-      {/* 移除 isClient 條件,直接渲染 DeleteProjectDialog */}
-      <DeleteProjectDialog
-        isOpen={isDeleteProjectOpen}
-        setIsOpen={setIsDeleteProjectOpen}
-        projects={fullProjects}
-        onProjectDeleted={onProjectDeleted}
-      />
+      {isClient && (
+        <DeleteProjectDialog
+          isOpen={isDeleteProjectOpen}
+          setIsOpen={setIsDeleteProjectOpen}
+          projects={fullProjects}
+          onProjectDeleted={onProjectDeleted}
+        />
+      )}
     </>
   );
 }
