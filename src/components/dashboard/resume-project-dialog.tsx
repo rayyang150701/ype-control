@@ -104,17 +104,16 @@ export function ResumeProjectDialog({
     });
   };
 
-  const handleParentProjectToggle = (projectId: string, isChecked: boolean) => {
-    const currentProjects = form.getValues('projects');
+  const handleParentProjectToggle = (field: any, projectId: string, isChecked: boolean) => {
+    const currentProjects = field.value || [];
     const newProjects = isChecked
       ? [...currentProjects, projectId]
-      : currentProjects.filter(id => id !== projectId);
-    
-    form.setValue('projects', newProjects, { shouldValidate: true });
+      : currentProjects.filter((id: string) => id !== projectId);
+    field.onChange(newProjects);
 
     // If parent is checked, clear sub-project selections for that parent
     if (isChecked) {
-      form.setValue(`subProjects.${projectId}`, [], { shouldValidate: true });
+      form.setValue(`subProjects.${projectId}`, []);
     }
   };
   
@@ -157,7 +156,7 @@ export function ResumeProjectDialog({
                                     <Checkbox
                                         checked={field.value?.includes(project.id)}
                                         onCheckedChange={(checked) => {
-                                            handleParentProjectToggle(project.id, !!checked)
+                                            handleParentProjectToggle(field, project.id, !!checked)
                                         }}
                                         disabled={!project.isOnHold}
                                     />
