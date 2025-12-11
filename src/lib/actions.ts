@@ -367,8 +367,8 @@ export async function setProjectOnHold(
     const subProjectsCol = projectRef.collection('sub_projects');
     const subProjectsSnapshot = await subProjectsCol.get();
 
-    const allSubProjectIds = subProjectsSnapshot.docs.map(doc => doc.id);
-    const isAllSubProjectsSelected = subProjectIds.length === allSubProjectIds.length && allSubProjectIds.every(id => subProjectIds.includes(id));
+    const allSubProjectIdsInProject = subProjectsSnapshot.docs.map(doc => doc.id);
+    const isAllSubProjectsSelected = subProjectIds.length === allSubProjectIdsInProject.length && allSubProjectIdsInProject.every(id => subProjectIds.includes(id));
     
     const onHoldPayload = {
         isOnHold: true,
@@ -379,14 +379,12 @@ export async function setProjectOnHold(
     };
 
     if (isAllSubProjectsSelected) {
-      // If all sub-projects are selected, update the parent project as well
       await projectRef.update({
         ...onHoldPayload,
         status: 'on-hold',
       });
     }
 
-    // Update all selected sub-projects
     const batch = db.batch();
     subProjectIds.forEach(id => {
       const subProjectRef = subProjectsCol.doc(id);
@@ -432,6 +430,41 @@ export async function resumeProject(projectId: string, subProjectId?: string) {
       message: error instanceof Error ? error.message : '恢復專案時發生未知錯誤'
     };
   }
+}
+
+export async function resumeProjects(projectIds: string[], subProjectIds: Record<string, string[]>) {
+    try {
+      const batch = db.batch();
+      const resumeUpdate = {
+        isOnHold: false,
+        onHoldEndDate: new Date(),
+      };
+  
+      // Resume parent projects
+      projectIds.forEach(pid => {
+        const projectRef = db.collection('projects').doc(pid);
+        batch.update(projectRef, { ...resumeUpdate, status: 'active' });
+      });
+  
+      // Resume sub-projects
+      for (const projectId in subProjectIds) {
+        const spIds = subProjectIds[projectId];
+        spIds.forEach(spId => {
+          const subProjectRef = db.collection('projects').doc(projectId).collection('sub_projects').doc(spId);
+          batch.update(subProjectRef, resumeUpdate);
+        });
+      }
+  
+      await batch.commit();
+      revalidatePath('/dashboard');
+      return { success: true, message: '所選項目已成功恢復' };
+    } catch (error) {
+      console.error('恢復專案/子專案失敗:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '恢復專案時發生未知錯誤',
+      };
+    }
 }
 
 
@@ -583,7 +616,7 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
         const project: Project = { 
             id: projectDoc.id, 
             ...projectData,
-            createdAt: projectData.createdAt ? projectData.createdAt.toDate().toISOString() : new Date().toISOString(),
+            createdAt: projectData.createdAt.toDate().toISOString(),
             onHoldStartDate: projectData.onHoldStartDate ? projectData.onHoldStartDate.toDate().toISOString() : undefined,
             onHoldEndDate: projectData.onHoldEndDate ? projectData.onHoldEndDate.toDate().toISOString() : undefined,
         };
@@ -615,7 +648,7 @@ export const getFullProjects = async (): Promise<FullProject[]> => {
             const parentProjectIsOnHold = project.isOnHold ?? false;
 
             let isOverdue = false;
-            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
+            if (!subProjectIsOn-Hold && !parentProjectIsOnHold) {
                 const sevenDaysAgo = subDays(new Date(), 7);
                 isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
             }

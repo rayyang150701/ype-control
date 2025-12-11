@@ -15,6 +15,7 @@ import { EditProjectDialog } from './edit-project-dialog';
 import { TableView } from './table-view';
 import { DeleteProjectDialog } from './delete-project-dialog';
 import { OnHoldDialog } from './on-hold-dialog';
+import { ResumeProjectDialog } from './resume-project-dialog';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -41,6 +42,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
+  const [isResumeProjectOpen, setIsResumeProjectOpen] = useState(false);
   
   const router = useRouter();
   const { toast } = useToast();
@@ -327,10 +329,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   };
 
-  const onProjectOnHold = () => {
+  const onOperationSuccess = () => {
     setIsOnHoldProjectOpen(false);
+    setIsResumeProjectOpen(false);
     refreshData();
   };
+
 
   return (
     <>
@@ -343,6 +347,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         onAddNewProject={() => setIsNewProjectOpen(true)}
         onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
         onDeleteProject={() => setIsDeleteProjectOpen(true)}
+        onReusmeProject={() => setIsResumeProjectOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
       />
@@ -421,8 +426,14 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
               isOpen={isOnHoldProjectOpen}
               setIsOpen={setIsOnHoldProjectOpen}
               projects={fullProjects}
-              onSuccess={onProjectOnHold}
+              onSuccess={onOperationSuccess}
           />
+           <ResumeProjectDialog
+              isOpen={isResumeProjectOpen}
+              setIsOpen={setIsResumeProjectOpen}
+              projects={fullProjects}
+              onSuccess={onOperationSuccess}
+            />
         </>
       )}
     </>
