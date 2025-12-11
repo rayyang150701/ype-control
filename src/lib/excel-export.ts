@@ -131,7 +131,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
         yiehPhuiProjectManager: representativeSubProject?.yiehPhuiProjectManager ?? '',
         tpmOfficeContact: representativeSubProject?.tpmOfficeContact ?? '',
         egigaContact: representativeSubProject?.egigaContact ?? '',
-        isOnHold: sp.isOnHold,
+        isOnHold: sp.isParentOnHold, // Use isParentOnHold from one of its children
         subProjects: [],
       } as FullProject & { subProjects: SubProjectWithLatestLog[] });
     }
@@ -139,13 +139,12 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   });
 
   const onHoldProjectRows: number[] = [];
-  let dataRowIndex = 4; // Starting row index for actual data
+  let dataRowIndex = 4; // Starting row index for actual data (A5 in Excel)
 
   projectsMap.forEach(project => {
-    const isProjectOnHold = project.isOnHold;
-    const startRowForProject = dataRowIndex;
-
     project.subProjects.forEach((sp, index) => {
+      const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
+
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
       const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
       const completionPercentage = `${sp.latestLog?.completionPercentage ?? 0}%`;
@@ -178,14 +177,13 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
             actualDate
           ];
       data.push(row);
+      
+      if (isEffectivelyOnHold) {
+          onHoldProjectRows.push(dataRowIndex);
+      }
+      
       dataRowIndex++;
     });
-
-    if(isProjectOnHold) {
-        for(let i = startRowForProject; i < dataRowIndex; i++) {
-            onHoldProjectRows.push(i);
-        }
-    }
   });
 
   const merges: XLSX.Range[] = [
@@ -223,6 +221,9 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
       const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: C });
       if (ws[cellRef]) {
         ws[cellRef].s = onHoldStyle;
+      } else {
+        // If cell doesn't exist (e.g., merged cells), create it to apply style
+        ws[cellRef] = { t: 's', v: '', s: onHoldStyle };
       }
     }
   });
