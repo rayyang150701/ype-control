@@ -1,6 +1,6 @@
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Sheet, Download, FileText, FolderKanban, Users } from 'lucide-react';
+import { LogOut, User, Users } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,12 +18,6 @@ import Link from 'next/link';
 
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
-
-  // Dummy functions for export. In a real app, these would trigger the export logic.
-  const handleExportAll = () => alert('Exporting all projects summary...');
-  const handleExportSingleProject = () => alert('Please select a project to export.');
-  const handleExportSubProject = () => alert('Please select a sub-project to export.');
-
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -49,30 +43,6 @@ export function Header() {
 
         <div className="flex items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
-             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                    <Download className="mr-2 h-4 w-4" /> 匯出 Excel
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56">
-                <DropdownMenuLabel>匯出選項</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleExportAll}>
-                  <Sheet className="mr-2 h-4 w-4" />
-                  <span>全專案最新進度總表</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportSingleProject} disabled>
-                  <FolderKanban className="mr-2 h-4 w-4" />
-                  <span>單一專案總表</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportSubProject} disabled>
-                  <FileText className="mr-2 h-4 w-4" />
-                  <span>單一子專案歷史週報</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">

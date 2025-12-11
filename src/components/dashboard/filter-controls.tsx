@@ -3,9 +3,8 @@
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Search, LayoutGrid, List } from 'lucide-react';
+import { Download, Plus, Search, LayoutGrid, List, Trash2 } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from '@/lib/utils';
 
 type FilterControlsProps = {
   searchQuery: string;
@@ -14,6 +13,7 @@ type FilterControlsProps = {
   setFilter: (filter: string) => void;
   onExportAll: () => void;
   onAddNewProject: () => void;
+  onDeleteProject: () => void;
   viewMode: 'grid' | 'table';
   setViewMode: (mode: 'grid' | 'table') => void;
 };
@@ -25,6 +25,7 @@ export function FilterControls({
   setFilter,
   onExportAll,
   onAddNewProject,
+  onDeleteProject,
   viewMode,
   setViewMode,
 }: FilterControlsProps) {
@@ -39,7 +40,7 @@ export function FilterControls({
           className="pl-10"
         />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="篩選狀態" />
@@ -64,6 +65,10 @@ export function FilterControls({
         <Button onClick={onAddNewProject} variant="outline">
           <Plus className="mr-2 h-4 w-4" />
           新增專案
+        </Button>
+        <Button onClick={onDeleteProject} variant="destructive">
+            <Trash2 className="mr-2 h-4 w-4" />
+            刪除專案
         </Button>
         <Button onClick={onExportAll}>
           <Download className="mr-2 h-4 w-4" />

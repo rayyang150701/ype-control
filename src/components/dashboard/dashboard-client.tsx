@@ -8,10 +8,12 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
-import { getProgressLogsForSubProject, getUsers, updateProject, getFullProjectById, getSubProjectsWithLatestLogs, getFullProjects } from '@/lib/actions';
+import { getProgressLogsForSubProject, getUsers, updateProject, getFullProjectById, getSubProjectsWithLatestLogs, getFullProjects, deleteProject } from '@/lib/actions';
 import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
 import { TableView } from './table-view';
+import { DeleteProjectDialog } from './delete-project-dialog';
+import { useToast } from '@/hooks/use-toast';
 
 
 type DashboardClientProps = {
@@ -34,18 +36,18 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     async function fetchFullProjects() {
-      if (viewMode === 'table') {
         const projects = await getFullProjects();
         setFullProjects(projects);
-      }
     }
     fetchFullProjects();
-  }, [viewMode]);
+  }, [subProjects]); // Re-fetch full projects if sub-projects change
 
 
   const filteredSubProjects = useMemo(() => {
@@ -53,7 +55,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       .filter(sp => {
         if (filter === 'overdue') return sp.isOverdue;
         if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) !== 100;
+        if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
         return true;
       })
       .filter(sp => {
@@ -61,9 +63,9 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         if (!query) return true;
         return (
           sp.name.toLowerCase().includes(query) ||
-          sp.projectCaseNumber?.toLowerCase().includes(query) ||
-          sp.projectName?.toLowerCase().includes(query) ||
-          sp.tpmOfficeContact?.toLowerCase().includes(query)
+          (sp.projectCaseNumber && sp.projectCaseNumber.toLowerCase().includes(query)) ||
+          (sp.projectName && sp.projectName.toLowerCase().includes(query)) ||
+          (sp.tpmOfficeContact && sp.tpmOfficeContact.toLowerCase().includes(query))
         );
       });
   }, [subProjects, searchQuery, filter]);
@@ -75,11 +77,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   
     return fullProjects
       .map(project => {
-        const filteredSubProjects = project.subProjects
+        const filteredSubProjectsList = project.subProjects
           .filter(sp => {
             if (filter === 'overdue') return sp.isOverdue;
             if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) !== 100;
+            if (filter === 'in_progress') return (sp.latestLog?.completionPercentage ?? 0) < 100;
             return true;
           })
           .filter(sp => {
@@ -89,13 +91,16 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
               sp.name.toLowerCase().includes(query) ||
               project.name.toLowerCase().includes(query) ||
               project.caseNumber.toLowerCase().includes(query) ||
-              project.tpmOfficeContact?.toLowerCase().includes(query)
+              (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query))
             );
           });
   
-        return { ...project, subProjects: filteredSubProjects };
+        if (filteredSubProjectsList.length > 0) {
+          return { ...project, subProjects: filteredSubProjectsList };
+        }
+        return null; // Return null for projects that don't match after filtering subprojects
       })
-      .filter(project => project.subProjects.length > 0);
+      .filter((project): project is FullProject => project !== null); // Filter out the null projects
   }, [fullProjects, searchQuery, filter]);
   
 
@@ -186,10 +191,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const refreshData = async () => {
     const updatedSubProjects = await getSubProjectsWithLatestLogs();
     setSubProjects(updatedSubProjects);
-    if (viewMode === 'table') {
-      const updatedFullProjects = await getFullProjects();
-      setFullProjects(updatedFullProjects);
-    }
+    const updatedFullProjects = await getFullProjects();
+    setFullProjects(updatedFullProjects);
   };
 
 
@@ -203,6 +206,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   }
 
+  const onProjectDeleted = () => {
+    setIsDeleteProjectOpen(false);
+    toast({ title: "專案已成功刪除" });
+    refreshData();
+  }
+
   return (
     <>
       <FilterControls
@@ -212,6 +221,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setFilter={setFilter}
         onExportAll={handleExportAll}
         onAddNewProject={() => setIsNewProjectOpen(true)}
+        onDeleteProject={() => setIsDeleteProjectOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
       />
@@ -277,6 +287,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           onProjectUpdated={onProjectUpdated}
         />
       )}
+
+      <DeleteProjectDialog
+        isOpen={isDeleteProjectOpen}
+        setIsOpen={setIsDeleteProjectOpen}
+        projects={fullProjects}
+        onProjectDeleted={onProjectDeleted}
+      />
     </>
   );
 }

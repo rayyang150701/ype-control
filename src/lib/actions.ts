@@ -331,12 +331,63 @@ export async function getAiSuggestions(
   }
 }
 
-export async function deleteProject(projectId: string) {
-    console.log(`(Simulated) Deleting project with ID: ${projectId}`);
+async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference, batchSize: number, transaction: FirebaseFirestore.Transaction) {
+    const query = collectionRef.limit(batchSize);
+
+    return new Promise((resolve, reject) => {
+        deleteQueryBatch(query, transaction, resolve, reject);
+    });
+}
+
+async function deleteQueryBatch(query: FirebaseFirestore.Query, transaction: FirebaseFirestore.Transaction, resolve: () => void, reject: (reason?: any) => void) {
+    const snapshot = await transaction.get(query);
+
+    if (snapshot.size === 0) {
+        return resolve();
+    }
     
-    revalidatePath('/dashboard');
+    snapshot.docs.forEach((doc) => {
+        transaction.delete(doc.ref);
+    });
     
-    return { message: `Project ${projectId} deleted successfully.` };
+    process.nextTick(() => {
+        deleteQueryBatch(query, transaction, resolve, reject);
+    });
+}
+
+
+export async function deleteProject(projectId: string): Promise<{ success: boolean; message: string; }> {
+    if (!projectId) {
+        return { success: false, message: '必須提供專案 ID。' };
+    }
+
+    try {
+        const projectRef = db.collection('projects').doc(projectId);
+
+        await db.runTransaction(async (transaction) => {
+            // Delete sub-collections first
+            const subProjectsRef = projectRef.collection('sub_projects');
+            const subProjectsSnapshot = await transaction.get(subProjectsRef);
+
+            for (const subDoc of subProjectsSnapshot.docs) {
+                // Delete progress_logs for each sub_project
+                const progressLogsRef = subDoc.ref.collection('progress_logs');
+                await deleteCollection(progressLogsRef, 50, transaction);
+                // Delete the sub_project itself
+                transaction.delete(subDoc.ref);
+            }
+
+            // Finally, delete the main project document
+            transaction.delete(projectRef);
+        });
+
+        revalidatePath('/dashboard');
+        return { success: true, message: '專案已成功刪除。' };
+
+    } catch (error) {
+        console.error(`Error deleting project ${projectId}:`, error);
+        return { success: false, message: `刪除專案時發生錯誤: ${error instanceof Error ? error.message : '未知錯誤'}` };
+    }
 }
 
 // Data fetching functions
