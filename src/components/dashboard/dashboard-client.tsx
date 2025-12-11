@@ -163,7 +163,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         // No search query, so return the project with its status-filtered sub-projects
         return { ...project, subProjects: filteredSubProjectsList };
       })
-      .filter((project): project is FullProject => project !== null);
+      .filter((project): project is FullProject => project !== null)
+      .sort((a, b) => b.caseNumber.localeCompare(a.caseNumber, undefined, { numeric: true }));
   }, [fullProjects, searchQuery, filter]);
 
 
