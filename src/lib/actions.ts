@@ -365,11 +365,11 @@ export async function setProjectOnHold(
     const projectRef = db.collection('projects').doc(projectId);
     const subProjectsCol = projectRef.collection('sub_projects');
 
-    // If a subProjectId is provided, apply logic based on sub-project count
     if (subProjectId) {
-      const subProjectsSnapshot = await subProjectsCol.get();
       const subProjectRef = subProjectsCol.doc(subProjectId);
+      const subProjectsSnapshot = await subProjectsCol.get();
 
+      // Always update the specific sub-project
       const subProjectUpdateData = {
         isOnHold: true,
         onHoldReason: onHoldData.reason,
@@ -377,22 +377,22 @@ export async function setProjectOnHold(
         onHoldEndDate: onHoldData.endDate ?? null,
         onHoldNotes: onHoldData.notes ?? '',
       };
-
-      // If there's only one sub-project, put the main project on hold as well
-      if (subProjectsSnapshot.size === 1) {
-        const projectUpdateData = {
-          status: 'on-hold',
-          isOnHold: true,
-          ...subProjectUpdateData, // Mirror data to parent
-        };
-        await projectRef.update(projectUpdateData);
-      }
-      
-      // Always update the sub-project itself
       await subProjectRef.update(subProjectUpdateData);
 
+      // If it's the only sub-project, also update the parent project
+      if (subProjectsSnapshot.size === 1) {
+        await projectRef.update({
+          status: 'on-hold',
+          isOnHold: true,
+          // We also write the details to the parent project
+          onHoldReason: onHoldData.reason,
+          onHoldStartDate: onHoldData.startDate,
+          onHoldEndDate: onHoldData.endDate ?? null,
+          onHoldNotes: onHoldData.notes ?? '',
+        });
+      }
     } else {
-      // If no subProjectId, put the main project and ALL its sub-projects on hold
+      // If no subProjectId, put the main project on hold
       const projectUpdateData = {
         status: 'on-hold',
         isOnHold: true,
