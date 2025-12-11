@@ -9,9 +9,6 @@ import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, 
 import { FieldValue } from 'firebase-admin/firestore';
 import { format, differenceInDays, subDays } from 'date-fns';
 
-export const maxDuration = 60;
-
-
 // Schema definitions
 
 const subProjectSchema = z.object({
