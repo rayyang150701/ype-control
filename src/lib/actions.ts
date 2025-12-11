@@ -358,19 +358,52 @@ export async function setProjectOnHold(
     startDate: Date;
     endDate?: Date;
     notes?: string;
-  }
+  },
+  subProjectId?: string
 ) {
   try {
     const projectRef = db.collection('projects').doc(projectId);
-    await projectRef.update({
-      status: 'on-hold',
-      isOnHold: true,
-      onHoldReason: onHoldData.reason,
-      onHoldStartDate: onHoldData.startDate,
-      onHoldEndDate: onHoldData.endDate ?? null,
-      onHoldNotes: onHoldData.notes ?? '',
-    });
+    const subProjectsCol = projectRef.collection('sub_projects');
 
+    // If a subProjectId is provided, apply logic based on sub-project count
+    if (subProjectId) {
+      const subProjectsSnapshot = await subProjectsCol.get();
+      const subProjectRef = subProjectsCol.doc(subProjectId);
+
+      const subProjectUpdateData = {
+        isOnHold: true,
+        onHoldReason: onHoldData.reason,
+        onHoldStartDate: onHoldData.startDate,
+        onHoldEndDate: onHoldData.endDate ?? null,
+        onHoldNotes: onHoldData.notes ?? '',
+      };
+
+      // If there's only one sub-project, put the main project on hold as well
+      if (subProjectsSnapshot.size === 1) {
+        const projectUpdateData = {
+          status: 'on-hold',
+          isOnHold: true,
+          ...subProjectUpdateData, // Mirror data to parent
+        };
+        await projectRef.update(projectUpdateData);
+      }
+      
+      // Always update the sub-project itself
+      await subProjectRef.update(subProjectUpdateData);
+
+    } else {
+      // If no subProjectId, put the main project and ALL its sub-projects on hold
+      const projectUpdateData = {
+        status: 'on-hold',
+        isOnHold: true,
+        onHoldReason: onHoldData.reason,
+        onHoldStartDate: onHoldData.startDate,
+        onHoldEndDate: onHoldData.endDate ?? null,
+        onHoldNotes: onHoldData.notes ?? '',
+      };
+      await projectRef.update(projectUpdateData);
+    }
+    
     revalidatePath('/dashboard');
     return { success: true, message: '專案已設為暫緩' };
   } catch (error) {
@@ -382,15 +415,24 @@ export async function setProjectOnHold(
   }
 }
 
-export async function resumeProject(projectId: string) {
+export async function resumeProject(projectId: string, subProjectId?: string) {
   try {
     const projectRef = db.collection('projects').doc(projectId);
-    await projectRef.update({
-      status: 'active',
-      isOnHold: false,
-      onHoldEndDate: new Date(), // Set the actual resume date in the end date field
-    });
 
+    if (subProjectId) {
+      const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
+      await subProjectRef.update({
+        isOnHold: false,
+        onHoldEndDate: new Date(),
+      });
+    } else {
+      await projectRef.update({
+        status: 'active',
+        isOnHold: false,
+        onHoldEndDate: new Date(),
+      });
+    }
+    
     revalidatePath('/dashboard');
     return { success: true, message: '專案已恢復進行' };
   } catch (error) {
@@ -495,7 +537,6 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         const subProjectIsOnHold = subProjectData.isOnHold ?? false;
         const parentProjectIsOnHold = project.isOnHold ?? false;
-        // This is the combined status for UI purposes (like overdue calculation)
         const isEffectivelyOnHold = subProjectIsOnHold || parentProjectIsOnHold;
 
 
@@ -528,8 +569,8 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
-            isOnHold: subProjectIsOnHold, // Use the sub-project's own status for direct state
-            isParentOnHold: parentProjectIsOnHold, // Pass parent status separately
+            isOnHold: subProjectIsOnHold,
+            isParentOnHold: parentProjectIsOnHold,
         } as SubProjectWithLatestLog);
     }
   

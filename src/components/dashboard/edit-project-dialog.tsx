@@ -4,7 +4,7 @@ import { useTransition, useState, useEffect } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CalendarIcon, PlusCircle, Trash2, PauseCircle } from 'lucide-react';
+import { CalendarIcon, PlusCircle, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { User, FullProject } from '@/types';
+import { User, FullProject, SubProjectWithLatestLog } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
@@ -64,6 +64,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const [users, setUsers] = useState<User[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
   const [isOnHoldDialogOpen, setIsOnHoldDialogOpen] = useState(false);
+  const [onHoldTarget, setOnHoldTarget] = useState<{ projectId: string; subProjectId?: string; name: string } | null>(null);
   
   const {
     register,
@@ -71,6 +72,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     handleSubmit,
     formState: { errors },
     reset,
+    getValues
   } = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
@@ -130,13 +132,13 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   };
   
-  const handleResumeProject = () => {
+  const handleResumeProject = (subProjectId?: string) => {
     startTransition(async () => {
-      const result = await resumeProject(project.id);
+      const result = await resumeProject(project.id, subProjectId);
       if (result.success) {
         toast({
           title: '專案已恢復',
-          description: '專案狀態已變更為進行中',
+          description: subProjectId ? '子專案狀態已變更為進行中' : '主專案狀態已變更為進行中',
         });
         const updatedProject = await getFullProjectById(project.id);
         if (updatedProject) {
@@ -150,6 +152,17 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         });
       }
     });
+  };
+
+  const handleOpenOnHoldDialog = (subProjectId?: string) => {
+    const targetName = subProjectId 
+      ? project.subProjects.find(sp => sp.id === subProjectId)?.name 
+      : project.name;
+    
+    if (targetName) {
+      setOnHoldTarget({ projectId: project.id, subProjectId, name: targetName });
+      setIsOnHoldDialogOpen(true);
+    }
   };
 
   const handleSuccess = async () => {
@@ -196,57 +209,6 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
 
             <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4">
               
-              {/* 專案狀態 */}
-              <div className="space-y-2">
-                <Label>專案狀態</Label>
-                <div className="flex items-center gap-2">
-                  {project.isOnHold ? (
-                    <>
-                      <Badge className="bg-amber-500 hover:bg-amber-500/90 text-white flex items-center gap-1">
-                        <PauseCircle className="h-3 w-3" />
-                        暫緩中
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleResumeProject}
-                        disabled={isPending}
-                      >
-                        {isPending ? '恢復中...' : '恢復專案'}
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsOnHoldDialogOpen(true)}
-                    >
-                      設為暫緩
-                    </Button>
-                  )}
-                </div>
-                {project.isOnHold && project.onHoldReason && (
-                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
-                    <p className="font-semibold text-amber-900">暫緩原因:</p>
-                    <p className="text-amber-800">{project.onHoldReason}</p>
-                    {project.onHoldStartDate && (
-                      <p className="text-amber-700 mt-1">
-                        暫緩日期: {format(new Date(project.onHoldStartDate as string), 'yyyy/MM/dd')}
-                      </p>
-                    )}
-                    {project.onHoldEndDate && (
-                      <p className="text-amber-700">
-                        預計恢復: {format(new Date(project.onHoldEndDate as string), 'yyyy/MM/dd')}
-                      </p>
-                    )}
-                    {project.onHoldNotes && (
-                      <p className="text-amber-700 mt-1">備註: {project.onHoldNotes}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              <Separator />
-
               {/* 主專案資訊 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="grid gap-2">
@@ -293,141 +255,175 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
               <div>
                 <Label className="text-base font-medium">子專案列表</Label>
                 <div className="mt-2 space-y-4">
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative"
-                    >
-                      {/* 子專案名稱 */}
-                      <div className="col-span-12 sm:col-span-3">
-                        <Label>子專案名稱</Label>
-                        <Input {...register(`subProjects.${index}.name`)} />
-                        {errors.subProjects?.[index]?.name && (
-                          <p className="text-sm text-destructive">
-                            {errors.subProjects?.[index]?.name?.message}
-                          </p>
-                        )}
-                      </div>
+                  {fields.map((field, index) => {
+                    const subProject = project.subProjects.find(sp => sp.id === field.id);
+                    const isSubProjectOnHold = subProject?.isOnHold ?? false;
 
-                      {/* 負責人 */}
-                      <div className="col-span-12 sm:col-span-3">
-                        <Label>負責人</Label>
-                        <Controller
-                          name={`subProjects.${index}.owner`}
-                          control={control}
-                          render={({ field }) => (
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="選擇負責人" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {users.map(user => (
-                                  <SelectItem key={user.uid} value={user.uid}>
-                                    {user.displayName}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        />
-                        {errors.subProjects?.[index]?.owner && (
-                          <p className="text-sm text-destructive">
-                            {errors.subProjects?.[index]?.owner?.message}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* 預計完成日 */}
-                      <div className="col-span-6 sm:col-span-3">
-                        <Label>預計完成日</Label>
-                        <Controller
-                          name={`subProjects.${index}.expectedCompletionDate`}
-                          control={control}
-                          render={({ field }) => (
-                            <div className="relative">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => handleCalendarOpen('expected', index)}
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {formatDate(field.value)}
-                              </Button>
-                              {openCalendar?.type === 'expected' && openCalendar?.index === index && (
-                                <>
-                                  <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
-                                  <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
-                                    <CustomCalendar
-                                      selected={field.value}
-                                      onSelect={(date) => {
-                                        field.onChange(date);
-                                        setOpenCalendar(null);
-                                      }}
-                                    />
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        />
-                      </div>
-
-                      {/* 實際完成日 */}
-                      <div className="col-span-6 sm:col-span-3">
-                        <Label>實際完成日</Label>
-                        <Controller
-                          name={`subProjects.${index}.actualCompletionDate`}
-                          control={control}
-                          render={({ field }) => (
-                            <div className="relative">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => handleCalendarOpen('actual', index)}
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {formatDate(field.value)}
-                              </Button>
-
-                              {openCalendar?.type === 'actual' && openCalendar?.index === index && (
-                                <>
-                                  <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
-                                  <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
-                                    <CustomCalendar
-                                      selected={field.value}
-                                      onSelect={(date) => {
-                                        field.onChange(date);
-                                        setOpenCalendar(null);
-                                      }}
-                                    />
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        />
-                      </div>
-
-                      {/* 刪除按鈕 */}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute -top-3 -right-3 h-7 w-7"
-                        onClick={() => remove(index)}
+                    return (
+                      <div
+                        key={field.id}
+                        className={cn("grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative", isSubProjectOnHold && "bg-amber-50 border-amber-200")}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
+                        {/* 子專案名稱 */}
+                        <div className="col-span-12 sm:col-span-3">
+                          <Label>子專案名稱</Label>
+                          <Input {...register(`subProjects.${index}.name`)} />
+                          {errors.subProjects?.[index]?.name && (
+                            <p className="text-sm text-destructive">
+                              {errors.subProjects?.[index]?.name?.message}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 負責人 */}
+                        <div className="col-span-12 sm:col-span-3">
+                          <Label>負責人</Label>
+                          <Controller
+                            name={`subProjects.${index}.owner`}
+                            control={control}
+                            render={({ field }) => (
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="選擇負責人" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {users.map(user => (
+                                    <SelectItem key={user.uid} value={user.uid}>
+                                      {user.displayName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                          {errors.subProjects?.[index]?.owner && (
+                            <p className="text-sm text-destructive">
+                              {errors.subProjects?.[index]?.owner?.message}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 預計完成日 */}
+                        <div className="col-span-6 sm:col-span-2">
+                          <Label>預計完成日</Label>
+                          <Controller
+                            name={`subProjects.${index}.expectedCompletionDate`}
+                            control={control}
+                            render={({ field }) => (
+                              <div className="relative">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => handleCalendarOpen('expected', index)}
+                                  className={cn(
+                                    "w-full justify-start text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {formatDate(field.value)}
+                                </Button>
+                                {openCalendar?.type === 'expected' && openCalendar?.index === index && (
+                                  <>
+                                    <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
+                                    <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                                      <CustomCalendar
+                                        selected={field.value}
+                                        onSelect={(date) => {
+                                          field.onChange(date);
+                                          setOpenCalendar(null);
+                                        }}
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          />
+                        </div>
+
+                        {/* 實際完成日 */}
+                        <div className="col-span-6 sm:col-span-2">
+                          <Label>實際完成日</Label>
+                          <Controller
+                            name={`subProjects.${index}.actualCompletionDate`}
+                            control={control}
+                            render={({ field }) => (
+                              <div className="relative">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => handleCalendarOpen('actual', index)}
+                                  className={cn(
+                                    "w-full justify-start text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {formatDate(field.value)}
+                                </Button>
+
+                                {openCalendar?.type === 'actual' && openCalendar?.index === index && (
+                                  <>
+                                    <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
+                                    <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[101] bg-popover">
+                                      <CustomCalendar
+                                        selected={field.value}
+                                        onSelect={(date) => {
+                                          field.onChange(date);
+                                          setOpenCalendar(null);
+                                        }}
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          />
+                        </div>
+
+                         {/* 子專案狀態操作 */}
+                        <div className="col-span-12 sm:col-span-2 flex items-end">
+                            {isSubProjectOnHold ? (
+                                <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => handleResumeProject(subProject?.id)}
+                                disabled={isPending}
+                                >
+                                <PlayCircle className="mr-2 h-4 w-4" />
+                                {isPending ? '恢復中...' : '恢復'}
+                                </Button>
+                            ) : (
+                                <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => handleOpenOnHoldDialog(subProject?.id)}
+                                disabled={isPending}
+                                >
+                                <PauseCircle className="mr-2 h-4 w-4" />
+                                暫緩
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* 刪除按鈕 */}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute -top-3 -right-3 h-7 w-7"
+                          onClick={() => remove(index)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    )
+                  })}
 
                   {/* 新增子專案按鈕 */}
                   <Button
@@ -468,13 +464,16 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         </DialogContent>
       </Dialog>
       
-      <OnHoldDialog
-        isOpen={isOnHoldDialogOpen}
-        setIsOpen={setIsOnHoldDialogOpen}
-        projectId={project.id}
-        projectName={`${project.caseNumber} - ${project.name}`}
-        onSuccess={handleSuccess}
-      />
+      {onHoldTarget && (
+        <OnHoldDialog
+            isOpen={isOnHoldDialogOpen}
+            setIsOpen={setIsOnHoldDialogOpen}
+            projectId={onHoldTarget.projectId}
+            subProjectId={onHoldTarget.subProjectId}
+            projectName={onHoldTarget.name}
+            onSuccess={handleSuccess}
+        />
+      )}
     </>
   );
 }

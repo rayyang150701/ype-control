@@ -55,7 +55,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
         onClick={() => onCardClick(subProject)}
       >
         <CardHeader className="relative pb-2">
-           {(subProject.isOnHold || subProject.isParentOnHold) && (
+           {isEffectivelyOnHold && (
             <Badge className="absolute -top-2 -right-2 bg-amber-500 text-white flex items-center gap-1 z-10">
               <PauseCircle className="h-3 w-3" />
               {subProject.isOnHold ? '子專案暫緩中' : '主專案暫緩中'}

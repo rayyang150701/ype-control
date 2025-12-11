@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const onHoldSchema = z.object({
-  projectId: z.string(),
   reason: z.string().min(1, '請輸入暫緩原因'),
   startDate: z.date({
     required_error: '請選擇暫緩開始日期',
@@ -40,6 +39,7 @@ interface OnHoldDialogProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   projectId: string;
+  subProjectId?: string;
   projectName: string;
   onSuccess: () => void;
 }
@@ -48,6 +48,7 @@ export function OnHoldDialog({
   isOpen,
   setIsOpen,
   projectId,
+  subProjectId,
   projectName,
   onSuccess,
 }: OnHoldDialogProps) {
@@ -57,7 +58,6 @@ export function OnHoldDialog({
   const form = useForm<OnHoldFormData>({
     resolver: zodResolver(onHoldSchema),
     defaultValues: {
-      projectId,
       reason: '',
       startDate: new Date(),
       notes: '',
@@ -67,12 +67,16 @@ export function OnHoldDialog({
   const onSubmit = (data: OnHoldFormData) => {
     startTransition(async () => {
       try {
-        const result = await setProjectOnHold(data.projectId, {
-          reason: data.reason,
-          startDate: data.startDate,
-          endDate: data.endDate,
-          notes: data.notes,
-        });
+        const result = await setProjectOnHold(
+          projectId, 
+          {
+            reason: data.reason,
+            startDate: data.startDate,
+            endDate: data.endDate,
+            notes: data.notes,
+          },
+          subProjectId
+        );
 
         if (result.success) {
           toast({
@@ -80,7 +84,7 @@ export function OnHoldDialog({
             description: '專案已設為暫緩狀態',
           });
           setIsOpen(false);
-          form.reset({ projectId, reason: '', startDate: new Date(), notes: '' });
+          form.reset({ reason: '', startDate: new Date(), notes: '' });
           onSuccess();
         } else {
           toast({
@@ -106,7 +110,7 @@ export function OnHoldDialog({
         <DialogHeader>
           <DialogTitle>設定專案暫緩</DialogTitle>
           <DialogDescription>
-            專案:{' '}
+            目標:{' '}
             <span className="font-semibold text-foreground">{projectName}</span>
           </DialogDescription>
         </DialogHeader>
