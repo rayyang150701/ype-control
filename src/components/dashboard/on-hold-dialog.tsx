@@ -27,6 +27,8 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 import { FullProject } from '@/types';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+
 
 const onHoldSchema = z.object({
   projectId: z.string().min(1, '請選擇一個主專案'),
@@ -133,221 +135,239 @@ export function OnHoldDialog({
             選擇要暫緩的專案和子專案，並填寫相關資訊。
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4 max-h-[70vh] overflow-y-auto pr-4">
-          
-          <FormField
-            control={form.control}
-            name="projectId"
-            render={({ field }) => (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4 max-h-[70vh] overflow-y-auto pr-4">
+            
+            <FormField
+              control={form.control}
+              name="projectId"
+              render={({ field }) => (
+                  <FormItem>
+                      <FormLabel>選擇主專案 *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                          <SelectTrigger>
+                              <SelectValue placeholder="請選擇一個主專案..." />
+                          </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                          {projects.map(project => (
+                              <SelectItem key={project.id} value={project.id}>
+                              {project.caseNumber} - {project.name}
+                              </SelectItem>
+                          ))}
+                          </SelectContent>
+                      </Select>
+                      <FormMessage />
+                  </FormItem>
+              )}
+            />
+
+            {selectedProject && (
+              <div className="space-y-2">
+                  <div className='flex justify-between items-center'>
+                      <FormLabel>選擇要暫緩的子專案 *</FormLabel>
+                      <div className="flex items-center space-x-2">
+                          <Checkbox
+                              id="selectAll"
+                              onCheckedChange={(checked) => handleAllSubProjectsToggle(checked as boolean)}
+                              checked={selectedProject.subProjects.length > 0 && form.watch('subProjectIds').length === selectedProject.subProjects.length}
+                          />
+                          <label
+                              htmlFor="selectAll"
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          >
+                              全選
+                          </label>
+                      </div>
+                  </div>
+                  <div className="rounded-md border p-4 grid grid-cols-2 gap-4">
+                      {selectedProject.subProjects.map(subProject => (
+                          <FormField
+                              key={subProject.id}
+                              control={form.control}
+                              name="subProjectIds"
+                              render={({ field }) => {
+                                  return (
+                                  <FormItem
+                                      key={subProject.id}
+                                      className="flex flex-row items-start space-x-3 space-y-0"
+                                  >
+                                      <FormControl>
+                                      <Checkbox
+                                          checked={field.value?.includes(subProject.id)}
+                                          onCheckedChange={(checked) => {
+                                          return checked
+                                              ? field.onChange([...field.value, subProject.id])
+                                              : field.onChange(
+                                                  field.value?.filter(
+                                                  (value) => value !== subProject.id
+                                                  )
+                                              )
+                                          }}
+                                      />
+                                      </FormControl>
+                                      <FormLabel className="font-normal">
+                                          {subProject.name}
+                                      </FormLabel>
+                                  </FormItem>
+                                  )
+                              }}
+                          />
+                      ))}
+                  </div>
+                  <FormMessage />
+                  <p className="text-xs text-muted-foreground">提示: 若勾選所有子專案，將會將整個主專案標記為暫緩。</p>
+              </div>
+            )}
+
+            <FormField
+              control={form.control}
+              name="reason"
+              render={({ field }) => (
                 <FormItem>
-                    <Label>選擇主專案 *</Label>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger>
-                            <SelectValue placeholder="請選擇一個主專案..." />
-                        </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {projects.map(project => (
-                            <SelectItem key={project.id} value={project.id}>
-                            {project.caseNumber} - {project.name}
-                            </SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
+                  <FormLabel>暫緩原因 *</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="reason"
+                      placeholder="例如:客戶要求暫停、資源不足、等待審核等"
+                      disabled={isPending}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
                 </FormItem>
-            )}
-          />
+              )}
+            />
 
-          {selectedProject && (
-            <div className="space-y-2">
-                <div className='flex justify-between items-center'>
-                    <Label>選擇要暫緩的子專案 *</Label>
-                    <div className="flex items-center space-x-2">
-                        <Checkbox
-                            id="selectAll"
-                            onCheckedChange={(checked) => handleAllSubProjectsToggle(checked as boolean)}
-                            checked={selectedProject.subProjects.length > 0 && form.watch('subProjectIds').length === selectedProject.subProjects.length}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>暫緩開始日期 *</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              'w-full justify-start text-left font-normal',
+                              !field.value && 'text-muted-foreground'
+                            )}
+                            disabled={isPending}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {field.value ? (
+                              format(field.value, 'yyyy/MM/dd')
+                            ) : (
+                              <span>選擇日期</span>
+                            )}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <CustomCalendar
+                          selected={field.value}
+                          onSelect={(date) => date && field.onChange(date)}
                         />
-                        <label
-                            htmlFor="selectAll"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                            全選
-                        </label>
-                    </div>
-                </div>
-                <div className="rounded-md border p-4 grid grid-cols-2 gap-4">
-                    {selectedProject.subProjects.map(subProject => (
-                        <FormField
-                            key={subProject.id}
-                            control={form.control}
-                            name="subProjectIds"
-                            render={({ field }) => {
-                                return (
-                                <FormItem
-                                    key={subProject.id}
-                                    className="flex flex-row items-start space-x-3 space-y-0"
-                                >
-                                    <FormControl>
-                                    <Checkbox
-                                        checked={field.value?.includes(subProject.id)}
-                                        onCheckedChange={(checked) => {
-                                        return checked
-                                            ? field.onChange([...field.value, subProject.id])
-                                            : field.onChange(
-                                                field.value?.filter(
-                                                (value) => value !== subProject.id
-                                                )
-                                            )
-                                        }}
-                                    />
-                                    </FormControl>
-                                    <FormLabel className="font-normal">
-                                        {subProject.name}
-                                    </FormLabel>
-                                </FormItem>
-                                )
-                            }}
-                         />
-                    ))}
-                </div>
-                {form.formState.errors.subProjectIds && <p className="text-sm text-destructive">{form.formState.errors.subProjectIds.message}</p>}
-                <p className="text-xs text-muted-foreground">提示: 若勾選所有子專案，將會將整個主專案標記為暫緩。</p>
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>預計恢復日期</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              'w-full justify-start text-left font-normal',
+                              !field.value && 'text-muted-foreground'
+                            )}
+                            disabled={isPending}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {field.value ? (
+                              format(field.value, 'yyyy/MM/dd')
+                            ) : (
+                              <span>選擇日期(可選)</span>
+                            )}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <CustomCalendar
+                          selected={field.value}
+                          onSelect={(date) => date && field.onChange(date)}
+                          disabled={(date) =>
+                            form.watch('startDate')
+                              ? date < form.watch('startDate')
+                              : false
+                          }
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="reason">暫緩原因 *</Label>
-            <Input
-              id="reason"
-              {...form.register('reason')}
-              placeholder="例如:客戶要求暫停、資源不足、等待審核等"
-              disabled={isPending}
-            />
-            {form.formState.errors.reason && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.reason.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Controller
-              name="startDate"
+            
+            <FormField
               control={form.control}
+              name="notes"
               render={({ field }) => (
-                <div className="space-y-2">
-                  <Label>暫緩開始日期 *</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'w-full justify-start text-left font-normal',
-                          !field.value && 'text-muted-foreground'
-                        )}
-                        disabled={isPending}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {field.value ? (
-                          format(field.value, 'yyyy/MM/dd')
-                        ) : (
-                          <span>選擇日期</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <CustomCalendar
-                        selected={field.value}
-                        onSelect={(date) => date && field.onChange(date)}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  {form.formState.errors.startDate && (
-                    <p className="text-sm text-destructive">
-                      {form.formState.errors.startDate.message}
-                    </p>
-                  )}
-                </div>
+                <FormItem>
+                  <FormLabel>備註</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      id="notes"
+                      placeholder="其他需要記錄的資訊..."
+                      rows={3}
+                      disabled={isPending}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
             />
 
-            <Controller
-              name="endDate"
-              control={form.control}
-              render={({ field }) => (
-                 <div className="space-y-2">
-                  <Label>預計恢復日期</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'w-full justify-start text-left font-normal',
-                          !field.value && 'text-muted-foreground'
-                        )}
-                        disabled={isPending}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {field.value ? (
-                          format(field.value, 'yyyy/MM/dd')
-                        ) : (
-                          <span>選擇日期(可選)</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <CustomCalendar
-                        selected={field.value}
-                        onSelect={(date) => date && field.onChange(date)}
-                        disabled={(date) =>
-                          form.watch('startDate')
-                            ? date < form.watch('startDate')
-                            : false
-                        }
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notes">備註</Label>
-            <Textarea
-              id="notes"
-              {...form.register('notes')}
-              placeholder="其他需要記錄的資訊..."
-              rows={3}
-              disabled={isPending}
-            />
-          </div>
-
-          <DialogFooter className="pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsOpen(false)}
-              disabled={isPending}
-            >
-              取消
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  處理中...
-                </>
-              ) : (
-                '確認暫緩'
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter className="pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsOpen(false)}
+                disabled={isPending}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    處理中...
+                  </>
+                ) : (
+                  '確認暫緩'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
 }
+
+    
