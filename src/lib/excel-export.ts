@@ -21,6 +21,16 @@ const centerAlign = { alignment: { horizontal: 'center', vertical: 'center' } };
 const leftAlign = { alignment: { horizontal: 'left', vertical: 'center' } };
 const wrapText = { alignment: { wrapText: true, vertical: 'top' } };
 
+// Style for on-hold projects
+const onHoldStyle = {
+  font: { color: { rgb: "A9A9A9" } }, // Dark Gray
+  alignment: { 
+    wrapText: true, 
+    vertical: 'center', 
+    horizontal: 'left' 
+  } 
+};
+
 const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF--8';
 const fileExtension = '.xlsx';
 
@@ -76,6 +86,11 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
 
 // 1. 全專案最新進度總表
 export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[], users: User[]) => {
+  // Sort projects by caseNumber descending
+  subProjects.sort((a, b) => 
+    (b.projectCaseNumber ?? '').localeCompare(a.projectCaseNumber ?? '', undefined, { numeric: true })
+  );
+
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
   const headers = [
     '主專案案號', 
@@ -105,7 +120,6 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   subProjects.forEach(sp => {
     if (!projectsMap.has(sp.projectId)) {
-        // Find a representative sub-project to pull shared project details from, just in case.
         const representativeSubProject = subProjects.find(p => p.projectId === sp.projectId && (p.projectPurpose || p.currentStatusAndIssues));
       
         projectsMap.set(sp.projectId, {
@@ -117,13 +131,20 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
         yiehPhuiProjectManager: representativeSubProject?.yiehPhuiProjectManager ?? '',
         tpmOfficeContact: representativeSubProject?.tpmOfficeContact ?? '',
         egigaContact: representativeSubProject?.egigaContact ?? '',
+        isOnHold: sp.isOnHold,
         subProjects: [],
       } as FullProject & { subProjects: SubProjectWithLatestLog[] });
     }
     projectsMap.get(sp.projectId)?.subProjects.push(sp);
   });
 
+  const onHoldProjectRows: number[] = [];
+  let dataRowIndex = 4; // Starting row index for actual data
+
   projectsMap.forEach(project => {
+    const isProjectOnHold = project.isOnHold;
+    const startRowForProject = dataRowIndex;
+
     project.subProjects.forEach((sp, index) => {
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
       const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
@@ -157,7 +178,14 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
             actualDate
           ];
       data.push(row);
-    })
+      dataRowIndex++;
+    });
+
+    if(isProjectOnHold) {
+        for(let i = startRowForProject; i < dataRowIndex; i++) {
+            onHoldProjectRows.push(i);
+        }
+    }
   });
 
   const merges: XLSX.Range[] = [
@@ -188,6 +216,16 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
     ],
     merges
   );
+
+  // Apply on-hold style
+  onHoldProjectRows.forEach(rowIndex => {
+    for (let C = 0; C < headers.length; ++C) {
+      const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: C });
+      if (ws[cellRef]) {
+        ws[cellRef].s = onHoldStyle;
+      }
+    }
+  });
   
   exportToExcel([{ ws, name: '全專案總表' }], '全專案最新進度總表');
 };
