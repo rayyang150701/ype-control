@@ -3,8 +3,6 @@ import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 import './globals.css';
 import { Header } from '@/components/header';
-import { SidebarProvider, Sidebar, SidebarInset } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/layout/sidebar';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
