@@ -82,7 +82,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   
   const data: any[][] = [
     [title],
-    [`製表單位: 資訊部`, '', '', '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+    [`製表單位: TPM管理室`, '', '', '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
     [], // Spacer
     headers
   ];
@@ -202,7 +202,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
 
     const data = [
         [title],
-        [`製表單位: 資訊部`, '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+        [`製表單位: TPM管理室`, '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
         [],
         headers
     ];
@@ -251,3 +251,5 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
 
     exportToExcel([{ ws, name: '子專案歷史' }], `${subProject.name}_歷史週報`);
 };
+
+    
