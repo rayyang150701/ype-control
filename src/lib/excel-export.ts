@@ -82,8 +82,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   
   const data: any[][] = [
     [title],
-    [`製表單位: 資訊部`],
-    [`日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+    [`製表單位: 資訊部`, '', '', '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
     [], // Spacer
     headers
   ];
@@ -155,11 +154,11 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
 
   const merges: XLSX.Range[] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length -1 } }, // Title
-    { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length -1 } }, // Dept
-    { s: { r: 2, c: 0 }, e: { r: 2, c: headers.length -1 } }, // Date
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, // Dept
+    { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, // Date
   ];
 
-  let currentRow = 4; // Start after headers (index-based)
+  let currentRow = 3; // Start after headers (index-based)
   projectsMap.forEach(project => {
     const subProjectCount = project.subProjects.length;
     if (subProjectCount > 1) {
@@ -186,7 +185,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   if (ws['A1']) ws['A1'].s = titleStyle;
   
   // Style Headers
-  const headerRowIndex = 4;
+  const headerRowIndex = 3;
   for (let C = 0; C < headers.length; C++) {
     const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: C });
     if (ws[cellRef]) ws[cellRef].s = headerStyle;
@@ -203,8 +202,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
 
     const data = [
         [title],
-        [`製表單位: 資訊部`],
-        [`日期: ${format(new Date(), 'yyyy/MM/dd')}`],
+        [`製表單位: 資訊部`, '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
         [],
         headers
     ];
@@ -227,8 +225,8 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
         [{ wch: 20 }, { wch: 40 }, { wch: 40 }, { wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 15 }],
         [
             { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
-            { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+            { s: { r: 1, c: 4 }, e: { r: 1, c: 6 } },
         ]
     );
 
@@ -236,7 +234,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
     if (ws['A1']) ws['A1'].s = titleStyle;
 
     // Style Headers
-    const headerRowIndex = 4;
+    const headerRowIndex = 3;
     for (let C = 0; C < headers.length; C++) {
         const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: C });
         if (ws[cellRef]) ws[cellRef].s = headerStyle;
