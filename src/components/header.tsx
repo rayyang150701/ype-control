@@ -14,10 +14,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
+import { useToast } from '@/hooks/use-toast';
 
 
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
+  const { toast } = useToast();
   
   const startTour = async () => {
     const { driver } = await import("driver.js");
@@ -103,10 +105,45 @@ export function Header() {
     driverObj.drive();
   }
 
-  const handleDownload = () => {
-    // This now simply navigates to our API endpoint, which handles the download.
-    window.location.href = '/api/download-manual';
+  const handleDownload = async () => {
+    try {
+      // Fetch the file from the public directory
+      const response = await fetch('/manual.pdf');
+      if (!response.ok) {
+        throw new Error('找不到檔案或網路錯誤');
+      }
+
+      // Get the file content as a Blob
+      const blob = await response.blob();
+
+      // Create a temporary URL for the Blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      // Specify the desired file name for the download
+      a.download = '操作手冊.pdf';
+      
+      // Append the anchor to the body, trigger the click, and then remove it
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up by revoking the temporary URL and removing the anchor
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+    } catch (error) {
+      console.error('下載失敗:', error);
+      toast({
+        title: "下載失敗",
+        description: "無法取得操作手冊，請稍後再試或聯繫管理員。",
+        variant: "destructive",
+      });
+    }
   };
+
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
