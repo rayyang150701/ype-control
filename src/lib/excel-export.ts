@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import * as XLSX from 'xlsx-js-style';
@@ -158,7 +159,7 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
     { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, // Date
   ];
 
-  let currentRow = 3; // Start after headers (index-based)
+  let currentRow = 4; // Start after headers (index-based)
   projectsMap.forEach(project => {
     const subProjectCount = project.subProjects.length;
     if (subProjectCount > 1) {
