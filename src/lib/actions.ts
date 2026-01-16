@@ -477,17 +477,15 @@ export const getUsers = async (): Promise<User[]> => {
     return userList;
 };
 
-export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
-    const projectsSnapshot = await db.collectionGroup('sub_projects').where('id', '==', subProjectId).get();
-    let logs: ProgressLog[] = [];
-    if (projectsSnapshot.empty) {
-        return [];
+export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
+    if (!projectId) {
+        throw new Error('Project ID is required to fetch progress logs.');
     }
-    const subProjectDoc = projectsSnapshot.docs[0];
-    const logsCol = subProjectDoc.ref.collection('progress_logs');
+    const logsCol = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`);
     const q = logsCol.orderBy('updatedAt', 'desc');
     const logsSnapshot = await q.get();
     
+    let logs: ProgressLog[] = [];
     if (!logsSnapshot.empty) {
         const users = await getUsers();
         const userMap = new Map(users.map(u => [u.uid, u.displayName]));

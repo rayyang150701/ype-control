@@ -173,7 +173,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     setIsTimelineOpen(true);
     setIsTimelineLoading(true);
     try {
-      const logs = await getProgressLogsForSubProject(subProject.id);
+      const logs = await getProgressLogsForSubProject(subProject.projectId, subProject.id);
       setTimelineLogs(logs);
     } catch (error) {
       console.error("Failed to fetch logs", error);
