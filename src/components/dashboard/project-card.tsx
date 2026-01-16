@@ -23,10 +23,10 @@ type ProjectCardProps = {
 export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCardProps) {
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
-  const expectedDate = new Date(subProject.expectedCompletionDate as string);
+  const expectedDate = subProject.expectedCompletionDate ? new Date(subProject.expectedCompletionDate as string) : null;
   const isEffectivelyOnHold = subProject.isOnHold || subProject.isParentOnHold;
 
-  const delayDays = completionPercentage < 100 && !isEffectivelyOnHold ? differenceInDays(new Date(), expectedDate) : 0;
+  const delayDays = expectedDate && completionPercentage < 100 && !isEffectivelyOnHold ? differenceInDays(new Date(), expectedDate) : 0;
 
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
 
@@ -74,8 +74,8 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           <InfoRow label="TPM管理室窗口" value={subProject.tpmOfficeContact ?? 'N/A'} />
           <InfoRow 
             label="預計完成日" 
-            value={formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd')}
-            isDelayed={delayDays > 0 && completionPercentage < 100 && !isEffectivelyOnHold}
+            value={expectedDate ? formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd') : '未設定'}
+            isDelayed={delayDays > 0}
             delayText={`延遲 ${delayDays} 天`}
           />
           <InfoSection label="本週摘要" content={latestLog?.executionSummary || '尚未回報'} maxLines={3} />

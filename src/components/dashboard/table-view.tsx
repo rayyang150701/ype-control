@@ -49,8 +49,13 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     }));
   };
 
-  const formatDate = (dateString?: string | Date) => {
-    if (!dateString) return <span className="text-gray-400">進行中</span>;
+  const formatDate = (dateString?: string | Date, fieldType: 'expected' | 'actual' = 'expected') => {
+    if (!dateString) {
+        if (fieldType === 'actual') {
+            return <span className="text-gray-400">進行中</span>;
+        }
+        return <span className="text-gray-400">未設定</span>;
+    }
     return format(new Date(dateString), 'yyyy/MM/dd');
   };
 
@@ -226,8 +231,8 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                     )}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-left text-gray-800 align-middle", getCellBgColor(project, sp, false))}>{sp.latestLog?.completionPercentage ?? 0}%</td>
-                  <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.expectedCompletionDate)}</td>
-                  <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate)}</td>
+                  <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.expectedCompletionDate, 'expected')}</td>
+                  <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate, 'actual')}</td>
                 </tr>
               ))
             )}
