@@ -204,27 +204,15 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
     }
 }
 
-
-async function findProjectIdForSubProject(subProjectId: string): Promise<string | null> {
-    const projectsSnapshot = await db.collection('projects').get();
-    for (const projectDoc of projectsSnapshot.docs) {
-        const subProjectDoc = await projectDoc.ref.collection('sub_projects').doc(subProjectId).get();
-        if (subProjectDoc.exists) {
-            return projectDoc.id;
-        }
-    }
-    return null;
-}
-
 export async function updateProgressLog(
     logId: string,
+    projectId: string,
     subProjectId: string,
     logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName' | 'reportingPeriod'>
   ): Promise<ProgressLog> {
-    const projectId = await findProjectIdForSubProject(subProjectId);
     
     if (!projectId) {
-        throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+        throw new Error(`Project ID was not provided for sub-project ID: ${subProjectId}`);
     }
   
     const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
@@ -255,14 +243,14 @@ export async function updateProgressLog(
 }
 
 export async function addProgressLog (
+    projectId: string,
     subProjectId: string, 
     logData: Omit<ProgressLog, 'id' | 'subProjectId' | 'updatedAt' | 'createdBy' | 'createdByName'>
 ): Promise<ProgressLog> {
     const userId = 'user-1'; // Placeholder
-    const projectId = await findProjectIdForSubProject(subProjectId);
 
     if (!projectId) {
-        throw new Error(`Could not find project for sub-project ID: ${subProjectId}`);
+        throw new Error(`Project ID was not provided.`);
     }
     
     const newLogRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
@@ -490,29 +478,29 @@ export const getUsers = async (): Promise<User[]> => {
 };
 
 export const getProgressLogsForSubProject = async (subProjectId: string): Promise<ProgressLog[]> => {
-    const projectId = await findProjectIdForSubProject(subProjectId);
-    
+    const projectsSnapshot = await db.collectionGroup('sub_projects').where('id', '==', subProjectId).get();
     let logs: ProgressLog[] = [];
-
-    if (projectId) {
-        const logsCol = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`);
-        const q = logsCol.orderBy('updatedAt', 'desc');
-        const logsSnapshot = await q.get();
-        
-        if (!logsSnapshot.empty) {
-            const users = await getUsers();
-            const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-            logs = logsSnapshot.docs.map(doc => {
-                const data = doc.data();
-                const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp;
-                return {
-                    ...data,
-                    id: doc.id,
-                    updatedAt: updatedAt.toDate().toISOString(),
-                    createdByName: userMap.get(data.createdBy)
-                } as ProgressLog;
-            });
-        }
+    if (projectsSnapshot.empty) {
+        return [];
+    }
+    const subProjectDoc = projectsSnapshot.docs[0];
+    const logsCol = subProjectDoc.ref.collection('progress_logs');
+    const q = logsCol.orderBy('updatedAt', 'desc');
+    const logsSnapshot = await q.get();
+    
+    if (!logsSnapshot.empty) {
+        const users = await getUsers();
+        const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+        logs = logsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            const updatedAt = data.updatedAt as FirebaseFirestore.Timestamp;
+            return {
+                ...data,
+                id: doc.id,
+                updatedAt: updatedAt.toDate().toISOString(),
+                createdByName: userMap.get(data.createdBy)
+            } as ProgressLog;
+        });
     }
     return logs;
 };

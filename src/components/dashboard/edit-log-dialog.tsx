@@ -26,12 +26,13 @@ type LogFormData = z.infer<typeof logSchema>;
 type EditLogDialogProps = {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  projectId: string;
   subProjectId: string;
   log: ProgressLog;
   onLogUpdated: (updatedLog: ProgressLog) => void;
 };
 
-export function EditLogDialog({ isOpen, setIsOpen, subProjectId, log, onLogUpdated }: EditLogDialogProps) {
+export function EditLogDialog({ isOpen, setIsOpen, projectId, subProjectId, log, onLogUpdated }: EditLogDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
@@ -52,7 +53,7 @@ export function EditLogDialog({ isOpen, setIsOpen, subProjectId, log, onLogUpdat
   const onSubmit = (data: LogFormData) => {
     startTransition(async () => {
       try {
-        const updatedLog = await updateProgressLog(log.id, subProjectId, {
+        const updatedLog = await updateProgressLog(log.id, projectId, subProjectId, {
             ...data,
             roadblocks: data.roadblocks ?? '',
         });

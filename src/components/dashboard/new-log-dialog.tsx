@@ -105,7 +105,7 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
           reportingPeriod,
         };
   
-        const newLog = await addProgressLog(subProject.id, newLogData);
+        const newLog = await addProgressLog(subProject.projectId, subProject.id, newLogData);
         
         onLogAdded(newLog, subProject.id);
   

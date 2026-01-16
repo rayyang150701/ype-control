@@ -89,6 +89,7 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
         <EditLogDialog
           isOpen={!!editingLog}
           setIsOpen={() => setEditingLog(null)}
+          projectId={subProject.projectId}
           subProjectId={subProject.id}
           log={editingLog}
           onLogUpdated={handleLogUpdated}
