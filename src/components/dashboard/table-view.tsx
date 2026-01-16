@@ -76,16 +76,15 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
   };
   
-  const renderCollapsibleCell = (project: FullProject, field: 'projectPurpose' | 'currentStatusAndIssues') => {
-    const content = project[field] || '';
-    const key = `${project.id}-${field}`;
+  const renderCollapsibleText = (content: string | null | undefined, id: string, emptyText: string = '尚未填寫') => {
+    const key = `collapsible-${id}`;
     const isExpanded = expandedCells[key];
-    const needsExpand = content.length > 50; 
+    const needsExpand = content && (content.length > 80 || content.includes('\n')); 
 
     return (
       <div className="space-y-1">
-        <p className={cn('break-words', !isExpanded && needsExpand && 'line-clamp-3')}>
-          {content || <span className="text-gray-400 italic">尚未填寫</span>}
+        <p className={cn('break-words whitespace-pre-wrap', !isExpanded && needsExpand && 'line-clamp-3')}>
+          {content || <span className="text-gray-400 italic">{emptyText}</span>}
         </p>
         {needsExpand && (
           <button
@@ -182,10 +181,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                         </div>
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                        {renderCollapsibleCell(project, 'projectPurpose')}
+                        {renderCollapsibleText(project.projectPurpose, `${project.id}-purpose`)}
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                        {renderCollapsibleCell(project, 'currentStatusAndIssues')}
+                        {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
                         {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
@@ -216,10 +215,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       </div>
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                      {sp.latestLog?.executionSummary || <span className="text-gray-400">無</span>}
+                      {renderCollapsibleText(sp.latestLog?.executionSummary, `${sp.id}-summary`, '無')}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                      {sp.latestLog?.nextWeekPlan || <span className="text-gray-400">無</span>}
+                      {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '無')}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm break-words align-middle", getCellBgColor(project, sp, false))}>
                     {sp.latestLog?.roadblocks ? (
