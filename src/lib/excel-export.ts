@@ -57,10 +57,10 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
 };
 
 // 1. 全專案最新進度總表
-export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[], users: User[]) => {
-  // Sort projects by caseNumber descending
-  subProjects.sort((a, b) => 
-    (b.projectCaseNumber ?? '').localeCompare(a.projectCaseNumber ?? '', undefined, { numeric: true })
+export const exportAllProjectsSummary = (projects: FullProject[], users: User[]) => {
+  // The client component already sorts projects, but we can re-sort here to be safe.
+  projects.sort((a, b) => 
+    (b.caseNumber ?? '').localeCompare(a.caseNumber ?? '', undefined, { numeric: true })
   );
 
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
@@ -88,29 +88,25 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
     headers
   ];
 
-  const projectsMap = new Map<string, FullProject & { subProjects: SubProjectWithLatestLog[] }>();
-
-  subProjects.forEach(sp => {
-    if (!projectsMap.has(sp.projectId)) {
-        const representativeSubProject = subProjects.find(p => p.projectId === sp.projectId && (p.projectPurpose || p.currentStatusAndIssues));
-      
-        projectsMap.set(sp.projectId, {
-        id: sp.projectId,
-        caseNumber: sp.projectCaseNumber ?? '',
-        name: sp.projectName ?? '',
-        projectPurpose: representativeSubProject?.projectPurpose ?? '',
-        currentStatusAndIssues: representativeSubProject?.currentStatusAndIssues ?? '',
-        yiehPhuiProjectManager: representativeSubProject?.yiehPhuiProjectManager ?? '',
-        tpmOfficeContact: representativeSubProject?.tpmOfficeContact ?? '',
-        egigaContact: representativeSubProject?.egigaContact ?? '',
-        isOnHold: sp.isParentOnHold, // Use isParentOnHold from one of its children
-        subProjects: [],
-      } as FullProject & { subProjects: SubProjectWithLatestLog[] });
+  projects.forEach(project => {
+    if (!project.subProjects || project.subProjects.length === 0) {
+      const isEffectivelyOnHold = project.isOnHold;
+      const cellStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
+       const row = [
+            { v: project.caseNumber, s: cellStyle },
+            { v: project.name, s: cellStyle },
+            { v: project.projectPurpose || '尚未填寫', s: cellStyle },
+            { v: project.currentStatusAndIssues || '尚未填寫', s: cellStyle },
+            { v: project.yiehPhuiProjectManager || '尚未填寫', s: cellStyle },
+            { v: project.tpmOfficeContact || '尚未填寫', s: cellStyle },
+            { v: project.egigaContact || '尚未填寫', s: cellStyle },
+            { v: '(無子專案)', s: cellStyle },
+             ...Array(6).fill({ v: '', s: cellStyle })
+      ];
+      data.push(row);
+      return;
     }
-    projectsMap.get(sp.projectId)?.subProjects.push(sp);
-  });
 
-  projectsMap.forEach(project => {
     project.subProjects.forEach((sp, index) => {
       const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
       const isSingleSubProject = project.subProjects.length === 1;
@@ -154,14 +150,14 @@ export const exportAllProjectsSummary = (subProjects: SubProjectWithLatestLog[],
   });
 
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length -1 } }, // Title
+    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, // Title
     { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, // Dept
     { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, // Date
   ];
 
   let currentRow = 4; // Start after headers (index-based)
-  projectsMap.forEach(project => {
-    const subProjectCount = project.subProjects.length;
+  projects.forEach(project => {
+    const subProjectCount = project.subProjects.length > 0 ? project.subProjects.length : 1;
     if (subProjectCount > 1) {
       for(let i=0; i < 7; i++){
          merges.push({ s: { r: currentRow, c: i }, e: { r: currentRow + subProjectCount - 1, c: i } });

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -152,8 +153,50 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
             </tr>
           </thead>
           <tbody>
-            {groupedProjects.map((project, projectIndex) =>
-              project.subProjects.map((sp, subProjectIndex) => (
+            {groupedProjects.map((project) => {
+              if (project.subProjects.length === 0) {
+                return (
+                  <tr key={project.id}>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20 bg-white">
+                      <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20 bg-white">{project.caseNumber}</td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20 bg-white">
+                      <div className='flex items-center gap-2'>
+                        <span>{project.name}</span>
+                        {project.isOnHold && (
+                           <Badge className="bg-amber-500 text-white flex items-center gap-1">
+                              <PauseCircle className="h-3 w-3" />
+                              主專案暫緩中
+                           </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
+                      {renderCollapsibleText(project.projectPurpose, `${project.id}-purpose`)}
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
+                      {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
+                      {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
+                      {project.tpmOfficeContact || <span className="text-gray-400 italic">尚未填寫</span>}
+                    </td>
+                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
+                      {project.egigaContact || <span className="text-gray-400 italic">尚未填寫</span>}
+                    </td>
+                    <td colSpan={7} className="border-b px-3 py-2 text-center text-sm text-gray-500 italic">
+                        此專案下沒有符合目前篩選條件的子專案
+                    </td>
+                  </tr>
+                );
+              }
+
+              return project.subProjects.map((sp, subProjectIndex) => (
                 <tr
                   key={sp.id}
                   className={cn(
@@ -234,7 +277,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate, 'actual')}</td>
                 </tr>
               ))
-            )}
+            })}
           </tbody>
         </table>
       </div>

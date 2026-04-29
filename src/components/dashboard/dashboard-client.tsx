@@ -120,15 +120,16 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           return true; // 'all'
         });
   
-        // If no sub-projects match the status filter, don't include the project at all
+        // If no sub-projects match the status filter, don't include the project at all,
+        // unless it matches the search query.
         if (filteredSubProjectsList.length === 0 && filter !== 'all') {
-            if (!query) return null; // If no query, definitely hide
-            // If there is a query, check if the project itself matches, but has no matching subprojects
-            const projectMatchesQuery =
+            const projectMatchesQuery = query && (
                 project.name.toLowerCase().includes(query) ||
                 project.caseNumber.toLowerCase().includes(query) ||
-                (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query));
-            if (projectMatchesQuery && filteredSubProjectsList.length === 0) {
+                (project.tpmOfficeContact && project.tpmOfficeContact.toLowerCase().includes(query))
+            );
+
+            if (projectMatchesQuery) {
                  return { ...project, subProjects: [] }; // Show project, but no sub-projects
             }
             return null;
@@ -231,8 +232,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const handleExportAll = async () => {
     try {
       const users = await getUsers();
-      const allSubProjects = await getSubProjectsWithLatestLogs();
-      exportAllProjectsSummary(allSubProjects, users);
+      exportAllProjectsSummary(filteredFullProjects, users);
     } catch (error) {
       console.error("Export all failed", error);
       toast({
