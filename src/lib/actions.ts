@@ -4,8 +4,6 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { suggestCompletionPercentage } from '@/ai/flows/suggest-completion-percentage';
-import { smartRoadblockCarryForward } from '@/ai/flows/smart-roadblock-carry-forward';
 import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus, SubProject } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -291,30 +289,9 @@ export async function getAiSuggestions(
     nextWeekPlan: string;
   }
 ) {
-  try {
-    const [roadblockResult, percentageResult] = await Promise.all([
-      smartRoadblockCarryForward({
-        previousRoadblocks: previousLog.roadblocks,
-        executionSummary: currentFields.executionSummary,
-        nextWeekPlan: currentFields.nextWeekPlan,
-      }),
-      suggestCompletionPercentage({
-        previousCompletionPercentage: previousLog.completionPercentage,
-        executionSummary: currentFields.executionSummary,
-        nextWeekPlan: currentFields.nextWeekPlan,
-      }),
-    ]);
-
-    return {
-      suggestedRoadblock: roadblockResult.carryForwardRoadblocks
-        ? previousLog.roadblocks
-        : '',
-      suggestedPercentage: percentageResult.suggestedCompletionPercentage,
-    };
-  } catch (error) {
-    console.error('AI suggestion failed:', error);
-    return { suggestedRoadblock: null, suggestedPercentage: null };
-  }
+  // AI features temporarily disabled to resolve build issues.
+  console.error('AI suggestion temporarily disabled.');
+  return { suggestedRoadblock: null, suggestedPercentage: null };
 }
 
 export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {

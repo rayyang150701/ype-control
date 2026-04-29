@@ -149,10 +149,6 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={handleAiSuggest} disabled={isPending}>
-              <Sparkles className="mr-2 h-4 w-4" />
-              {isPending ? 'AI 思考中...' : 'AI 智慧填寫'}
-            </Button>
             <Button type="submit" disabled={isPending}>{isPending ? '儲存中...' : '儲存週報'}</Button>
           </DialogFooter>
         </form>
