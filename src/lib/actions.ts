@@ -486,7 +486,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
         db.collectionGroup('sub_projects').get(),
-        db.collectionGroup('progress_logs').orderBy('updatedAt', 'desc').get(),
+        db.collectionGroup('progress_logs').get(), // Removed .orderBy to avoid needing an index
         getUsers()
     ]);
 
@@ -512,13 +512,17 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
+        if (!logData.subProjectId || !logData.updatedAt) return;
+
         const subProjectId = logData.subProjectId;
-        if (!latestLogsMap.has(subProjectId)) { // Since logs are ordered by `updatedAt` desc, the first one is the latest
-            const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
+        const existingLog = latestLogsMap.get(subProjectId);
+        const logTimestamp = logData.updatedAt as FirebaseFirestore.Timestamp;
+
+        if (!existingLog || logTimestamp.toMillis() > new Date(existingLog.updatedAt as string).getTime()) {
             latestLogsMap.set(subProjectId, {
                 ...logData,
                 id: doc.id,
-                updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
+                updatedAt: logTimestamp.toDate().toISOString(),
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog);
         }
@@ -702,3 +706,4 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
     return allSubProjects;
 };
+
