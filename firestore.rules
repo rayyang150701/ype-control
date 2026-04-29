@@ -1,0 +1,122 @@
+/**
+ * Core Philosophy: This ruleset enforces a user-ownership and collaborative access model. All write operations (create, update, delete) are strictly controlled and must be performed by the designated owner of a resource (e.g., the 'createdBy' or 'owner' user). Read access for collaborative data like projects and their sub-data is granted to any authenticated user to facilitate visibility within the organization.
+ *
+ * Data Structure: Data is organized into a top-level `/users` collection for private user profiles and a top-level `/projects` collection for shared project data. Projects contain nested subcollections for `sub_projects` and `progress_logs`, creating a clear hierarchical structure.
+ *
+ * Key Security Decisions:
+ * - User data in `/users/{userId}` is strictly private. A user can only access their own document. User listing is disabled to protect privacy.
+ * - Project and sub-project data is readable by any authenticated user, but writable only by the document's designated owner.
+ * - Authorization data (e.g., `createdBy`, `owner` UIDs) is denormalized directly onto documents. This avoids slow and costly `get()` calls in rules, leading to better performance and simpler logic.
+ * - A special rule allows the owner of a `SubProject` to delete any `ProgressLog` within it, in addition to the log's original creator. This requires a single, targeted `get()` call to the parent document.
+ *
+ * Denormalization for Authorization: The rules heavily rely on denormalized ownership fields like `createdBy` on Projects/ProgressLogs and `owner` on SubProjects. This is a deliberate design choice to ensure security checks are fast and efficient, operating only on the data of the document being accessed.
+ *
+ * Structural Segregation: User-private data (`/users`) is kept in a separate collection from the shared, collaborative data (`/projects`), allowing for distinct and secure access policies for each type of data.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    /**
+     * Checks if the user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently authenticated user's UID matches the provided userId.
+     * This is the fundamental check for resource ownership.
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * Checks if an existing document's owner field matches the authenticated user.
+     * Ensures the operation targets an existing document.
+     */
+    function isExistingDocOwner(ownerId) {
+      return resource != null && isOwner(ownerId);
+    }
+
+    /**
+     * Checks if the authenticated user is the owner of the parent SubProject.
+     * This requires a 'get' call to the parent document.
+     */
+    function isParentSubProjectOwner(projectId, subProjectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)/sub_projects/$(subProjectId)).data.owner == request.auth.uid;
+    }
+
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+
+    /**
+     * @description Manages user profile documents.
+     * @path /users/{userId}
+     * @allow (get) A user with uid 'user_abc' reads their own document at `/users/user_abc`.
+     * @deny (get) A user with uid 'user_xyz' attempts to read `/users/user_abc`.
+     * @deny (list) Any user attempts to list all documents in the `/users` collection.
+     * @principle Restricts access to a user's own data tree.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.uid == userId;
+      allow update: if isExistingDocOwner(userId) && request.resource.data.uid == resource.data.uid;
+      allow delete: if isExistingDocOwner(userId);
+    }
+
+    /**
+     * @description Manages top-level project documents.
+     * @path /projects/{projectId}
+     * @allow (get) Any authenticated user reads a project document.
+     * @allow (create) An authenticated user 'user_abc' creates a project where the `createdBy` field is 'user_abc'.
+     * @deny (create) An authenticated user 'user_abc' creates a project where the `createdBy` field is 'user_xyz'.
+     * @deny (update) A user tries to change the `createdBy` field on an existing project.
+     * @principle Public read for authenticated users with owner-only writes. Enforces relational integrity.
+     */
+    match /projects/{projectId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isExistingDocOwner(resource.data.createdBy) && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isExistingDocOwner(resource.data.createdBy);
+    }
+
+    /**
+     * @description Manages sub-project documents nested within a project.
+     * @path /projects/{projectId}/sub_projects/{subProjectId}
+     * @allow (get) Any authenticated user reads a sub-project document.
+     * @allow (create) User 'user_abc' creates a sub-project under any project and sets the `owner` field to 'user_abc'.
+     * @deny (update) User 'user_xyz' tries to update a sub-project owned by 'user_abc'.
+     * @principle Public read for authenticated users with owner-only writes. Enforces path consistency.
+     */
+    match /projects/{projectId}/sub_projects/{subProjectId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.owner == request.auth.uid && request.resource.data.projectId == projectId;
+      allow update: if isExistingDocOwner(resource.data.owner) && request.resource.data.owner == resource.data.owner && request.resource.data.projectId == resource.data.projectId;
+      allow delete: if isExistingDocOwner(resource.data.owner);
+    }
+
+    /**
+     * @description Manages progress logs for a sub-project.
+     * @path /projects/{projectId}/sub_projects/{subProjectId}/progress_logs/{progressLogId}
+     * @allow (delete) The user who created the log ('createdBy') can delete it.
+     * @allow (delete) The owner of the parent sub-project can also delete the log.
+     * @deny (delete) A user who is neither the log creator nor the parent sub-project owner tries to delete it.
+     * @principle Implements a shared ownership model for deletion, allowing both the content creator and the project manager to manage logs.
+     */
+    match /projects/{projectId}/sub_projects/{subProjectId}/progress_logs/{progressLogId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid && request.resource.data.subProjectId == subProjectId;
+      allow update: if isExistingDocOwner(resource.data.createdBy) && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.subProjectId == resource.data.subProjectId;
+      allow delete: if resource != null && (isOwner(resource.data.createdBy) || isParentSubProjectOwner(projectId, subProjectId));
+    }
+  }
+}
