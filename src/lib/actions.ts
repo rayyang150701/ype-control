@@ -480,47 +480,62 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
     return logs;
 };
 
+// HELPER FOR EFFICIENT DATA LOADING
+async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
+    // 1. Fetch all data in parallel using collection group queries
+    const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
+        db.collection('projects').orderBy('createdAt', 'desc').get(),
+        db.collectionGroup('sub_projects').get(),
+        db.collectionGroup('progress_logs').orderBy('updatedAt', 'desc').get(),
+        getUsers()
+    ]);
 
-export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
-    const projectDoc = await db.collection('projects').doc(projectId).get();
-    if (!projectDoc.exists) {
-      return null;
-    }
-    
-    const projectData = projectDoc.data()! as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp, onHoldStartDate?: FirebaseFirestore.Timestamp, onHoldEndDate?: FirebaseFirestore.Timestamp };
-    const project: Project = { 
-        id: projectDoc.id, 
-        ...projectData,
-        createdAt: projectData.createdAt ? projectData.createdAt.toDate().toISOString() : new Date().toISOString(),
-        onHoldStartDate: projectData.onHoldStartDate ? projectData.onHoldStartDate.toDate().toISOString() : undefined,
-        onHoldEndDate: projectData.onHoldEndDate ? projectData.onHoldEndDate.toDate().toISOString() : undefined,
-    };
-  
-    const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
-    const subProjectSnapshot = await subProjectsCol.get();
-    
-    const users = await getUsers();
+    // 2. Process data into maps for efficient lookup
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+    
+    const projectsMap = new Map<string, FullProject>();
+    projectsSnapshot.docs.forEach(doc => {
+        const projectData = doc.data();
+        const createdAt = projectData.createdAt as FirebaseFirestore.Timestamp;
+        const onHoldStartDate = projectData.onHoldStartDate as FirebaseFirestore.Timestamp;
+        const onHoldEndDate = projectData.onHoldEndDate as FirebaseFirestore.Timestamp;
+        projectsMap.set(doc.id, {
+            id: doc.id,
+            ...projectData,
+            createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
+            onHoldStartDate: onHoldStartDate ? onHoldStartDate.toDate().toISOString() : undefined,
+            onHoldEndDate: onHoldEndDate ? onHoldEndDate.toDate().toISOString() : undefined,
+            subProjects: [],
+        } as FullProject);
+    });
 
-    const subProjects: SubProjectWithLatestLog[] = [];
-
-    for (const subProjectDoc of subProjectSnapshot.docs) {
-        const subProjectData = subProjectDoc.data();
-        
-        const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
-        const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
-        const logsSnapshot = await logsQuery.get();
-        let latestLog: ProgressLog | null = null;
-        if (logsSnapshot.docs.length > 0) {
-            const logData = logsSnapshot.docs[0].data();
+    const latestLogsMap = new Map<string, ProgressLog>();
+    progressLogsSnapshot.docs.forEach(doc => {
+        const logData = doc.data();
+        const subProjectId = logData.subProjectId;
+        if (!latestLogsMap.has(subProjectId)) { // Since logs are ordered by `updatedAt` desc, the first one is the latest
             const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
-            latestLog = {
+            latestLogsMap.set(subProjectId, {
                 ...logData,
-                id: logsSnapshot.docs[0].id,
+                id: doc.id,
                 updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
                 createdByName: userMap.get(logData.createdBy),
-            } as ProgressLog
+            } as ProgressLog);
         }
+    });
+
+    // 3. Assemble sub-projects and link them to parent projects
+    const allSubProjects: SubProjectWithLatestLog[] = [];
+    subProjectsSnapshot.docs.forEach(subProjectDoc => {
+        const subProjectData = subProjectDoc.data();
+        const project = projectsMap.get(subProjectData.projectId);
+        
+        if (!project) {
+            console.warn(`Sub-project ${subProjectDoc.id} is an orphan with invalid projectId ${subProjectData.projectId}.`);
+            return;
+        }
+
+        const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
         
         const subProjectIsOnHold = subProjectData.isOnHold ?? false;
         const parentProjectIsOnHold = project.isOnHold ?? false;
@@ -532,17 +547,21 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
                 ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
                 : true;
         }
+        
+        const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+        const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+        const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
+        const onHoldStartDate = subProjectData.onHoldStartDate ? (subProjectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
+        const onHoldEndDate = subProjectData.onHoldEndDate ? (subProjectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
 
-        const expectedCompletionDateTimestamp = subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp;
-        const actualCompletionDateTimestamp = subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp;
-        const subProjectCreatedAtTimestamp = subProjectData.createdAt as FirebaseFirestore.Timestamp;
-
-        subProjects.push({
+        const subProjectWithLog: SubProjectWithLatestLog = {
             ...subProjectData,
             id: subProjectDoc.id,
-            expectedCompletionDate: expectedCompletionDateTimestamp ? expectedCompletionDateTimestamp.toDate().toISOString() : undefined,
-            actualCompletionDate: actualCompletionDateTimestamp ? actualCompletionDateTimestamp.toDate().toISOString() : undefined,
-            createdAt: subProjectCreatedAtTimestamp ? subProjectCreatedAtTimestamp.toDate().toISOString() : new Date().toISOString(),
+            expectedCompletionDate,
+            actualCompletionDate,
+            createdAt,
+            onHoldStartDate,
+            onHoldEndDate,
             projectId: project.id,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
@@ -556,185 +575,130 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
             isOverdue,
             isOnHold: subProjectIsOnHold,
             isParentOnHold: parentProjectIsOnHold,
-        } as SubProjectWithLatestLog);
+        };
+        
+        allSubProjects.push(subProjectWithLog);
+        project.subProjects.push(subProjectWithLog);
+    });
+
+    // Sort sub-projects within each project by creation date
+    projectsMap.forEach(p => {
+        p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime())
+    });
+
+    const fullProjects = Array.from(projectsMap.values());
+    
+    return { allSubProjects, fullProjects };
+}
+
+export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists) {
+        return null;
     }
-  
+    
+    const projectData = projectDoc.data()!;
+    
+    const [subProjectsSnapshot, users] = await Promise.all([
+        projectDoc.ref.collection('sub_projects').orderBy('createdAt', 'asc').get(),
+        getUsers()
+    ]);
+    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+
+    const subProjectIds = subProjectsSnapshot.docs.map(doc => doc.id);
+    const latestLogsMap = new Map<string, ProgressLog>();
+
+    if (subProjectIds.length > 0) {
+        // This is more robust than a single 'in' query which is limited to 30 items.
+        const logPromises = subProjectIds.map(id => 
+            db.collection(`projects/${projectId}/sub_projects/${id}/progress_logs`)
+              .orderBy('updatedAt', 'desc')
+              .limit(1)
+              .get()
+        );
+        const logSnapshots = await Promise.all(logPromises);
+
+        logSnapshots.forEach((logSnapshot, index) => {
+            if (!logSnapshot.empty) {
+                const doc = logSnapshot.docs[0];
+                const logData = doc.data();
+                const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
+                latestLogsMap.set(subProjectIds[index], {
+                    ...logData,
+                    id: doc.id,
+                    updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
+                    createdByName: userMap.get(logData.createdBy),
+                } as ProgressLog);
+            }
+        });
+    }
+
+    const subProjects: SubProjectWithLatestLog[] = subProjectsSnapshot.docs.map(doc => {
+        const subProjectData = doc.data();
+        const latestLog = latestLogsMap.get(doc.id) || null;
+
+        const subProjectIsOnHold = subProjectData.isOnHold ?? false;
+        const parentProjectIsOnHold = projectData.isOnHold ?? false;
+
+        let isOverdue = false;
+        if (!subProjectIsOnHold && !parentProjectIsOnHold) {
+            const sevenDaysAgo = subDays(new Date(), 7);
+            isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt as string) < sevenDaysAgo : true;
+        }
+
+        return {
+            ...subProjectData,
+            id: doc.id,
+            expectedCompletionDate: subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+            actualCompletionDate: subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+            createdAt: subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString(),
+            projectId: projectId,
+            projectName: projectData.name,
+            projectCaseNumber: projectData.caseNumber,
+            projectPurpose: projectData.projectPurpose,
+            currentStatusAndIssues: projectData.currentStatusAndIssues,
+            yiehPhuiProjectManager: projectData.yiehPhuiProjectManager,
+            tpmOfficeContact: projectData.tpmOfficeContact,
+            egigaContact: projectData.egigaContact,
+            ownerName: userMap.get(subProjectData.owner),
+            latestLog,
+            isOverdue,
+            isOnHold: subProjectIsOnHold,
+            isParentOnHold: parentProjectIsOnHold,
+        } as SubProjectWithLatestLog;
+    });
+
     const fullProject: FullProject = {
-      ...project,
-      subProjects: subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()),
-    };
+        id: projectDoc.id,
+        ...projectData,
+        createdAt: (projectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+        onHoldStartDate: projectData.onHoldStartDate ? (projectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+        onHoldEndDate: projectData.onHoldEndDate ? (projectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+        subProjects,
+    } as FullProject;
 
     return JSON.parse(JSON.stringify(fullProject));
 };
 
-
 export const getFullProjects = async (): Promise<FullProject[]> => {
-    const projectsSnapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
-    const users = await getUsers();
-    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-
-    const fullProjects: FullProject[] = [];
-
-    for (const projectDoc of projectsSnapshot.docs) {
-        const projectData = projectDoc.data() as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp, onHoldStartDate?: FirebaseFirestore.Timestamp, onHoldEndDate?: FirebaseFirestore.Timestamp };
-        const project: Project = { 
-            id: projectDoc.id, 
-            ...projectData,
-            createdAt: projectData.createdAt.toDate().toISOString(),
-            onHoldStartDate: projectData.onHoldStartDate ? projectData.onHoldStartDate.toDate().toISOString() : undefined,
-            onHoldEndDate: projectData.onHoldEndDate ? projectData.onHoldEndDate.toDate().toISOString() : undefined,
-        };
-
-        const subProjectsCol = projectDoc.ref.collection('sub_projects');
-        const subProjectSnapshot = await subProjectsCol.orderBy('createdAt', 'asc').get();
-        const subProjects: SubProjectWithLatestLog[] = [];
-
-        for (const subProjectDoc of subProjectSnapshot.docs) {
-            const subProjectData = subProjectDoc.data();
-
-            const logsCol = subProjectDoc.ref.collection('progress_logs');
-            const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
-            const logsSnapshot = await logsQuery.get();
-            
-            let latestLog: ProgressLog | null = null;
-            if (logsSnapshot.docs.length > 0) {
-                const logData = logsSnapshot.docs[0].data();
-                const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
-                latestLog = {
-                    ...logData,
-                    id: logsSnapshot.docs[0].id,
-                    updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
-                    createdByName: userMap.get(logData.createdBy),
-                } as ProgressLog;
-            }
-
-            const subProjectIsOnHold = subProjectData.isOnHold ?? false;
-            const parentProjectIsOnHold = project.isOnHold ?? false;
-
-            let isOverdue = false;
-            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
-                const sevenDaysAgo = subDays(new Date(), 7);
-                isOverdue = latestLog?.updatedAt ? new Date(latestLog.updatedAt) < sevenDaysAgo : true;
-            }
-
-            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
-            const onHoldStartDate = subProjectData.onHoldStartDate ? (subProjectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const onHoldEndDate = subProjectData.onHoldEndDate ? (subProjectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-
-
-            subProjects.push({
-                ...subProjectData,
-                id: subProjectDoc.id,
-                projectId: project.id,
-                projectName: project.name,
-                projectCaseNumber: project.caseNumber,
-                ownerName: userMap.get(subProjectData.owner),
-                latestLog,
-                isOverdue,
-                isOnHold: subProjectIsOnHold,
-                isParentOnHold: parentProjectIsOnHold,
-                expectedCompletionDate,
-                actualCompletionDate,
-                createdAt,
-                onHoldStartDate,
-                onHoldEndDate,
-            } as SubProjectWithLatestLog);
-        }
-
-        fullProjects.push({
-            ...project,
-            subProjects,
-        });
-    }
-
+    const { fullProjects } = await getOptimizedProjectData();
     return JSON.parse(JSON.stringify(fullProjects));
 };
 
-
 export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLatestLog[]> => {
-    const projectsCol = db.collection('projects');
-    const projectsSnapshot = await projectsCol.orderBy('createdAt', 'desc').get();
-    const projects = projectsSnapshot.docs.map(doc => {
-        const data = doc.data() as Omit<Project, 'id' | 'createdAt'> & { createdAt: FirebaseFirestore.Timestamp };
-        return { 
-            id: doc.id, 
-            ...data,
-            createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-        } as Project
+    const { allSubProjects, fullProjects } = await getOptimizedProjectData();
+
+    const projectOrderMap = new Map(fullProjects.map((p, i) => [p.id, i]));
+    
+    allSubProjects.sort((a, b) => {
+        const orderA = projectOrderMap.get(a.projectId);
+        const orderB = projectOrderMap.get(b.projectId);
+
+        if (orderA !== undefined && orderB !== undefined && orderA !== orderB) {
+            return orderA - orderB;
+        }
+        return new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime();
     });
 
-    const users = await getUsers();
-
-    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-
-    const allSubProjects: SubProjectWithLatestLog[] = [];
-
-    for (const project of projects) {
-        const subProjectsCol = db.collection(`projects/${project.id}/sub_projects`);
-        const subProjectSnapshot = await subProjectsCol.orderBy('createdAt', 'asc').get();
-
-        for (const subProjectDoc of subProjectSnapshot.docs) {
-            const subProjectData = subProjectDoc.data();
-
-            const logsCol = db.collection(`projects/${project.id}/sub_projects/${subProjectDoc.id}/progress_logs`);
-            const logsQuery = logsCol.orderBy('updatedAt', 'desc').limit(1);
-
-            const logsSnapshot = await logsQuery.get();
-            let latestLog: ProgressLog | null = null;
-            if (logsSnapshot.docs.length > 0) {
-                 const logData = logsSnapshot.docs[0].data();
-                 const updatedAt = logData.updatedAt as FirebaseFirestore.Timestamp;
-                 latestLog = {
-                    ...logData,
-                    id: logsSnapshot.docs[0].id,
-                    updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
-                    createdByName: userMap.get(logData.createdBy),
-                 } as ProgressLog;
-            }
-            
-            const subProjectIsOnHold = subProjectData.isOnHold ?? false;
-            const parentProjectIsOnHold = project.isOnHold ?? false;
-
-            let isOverdue = false;
-            if (!subProjectIsOnHold && !parentProjectIsOnHold) {
-                const sevenDaysAgo = subDays(new Date(), 7);
-                isOverdue = latestLog?.updatedAt
-                    ? new Date(latestLog.updatedAt as string) < sevenDaysAgo
-                    : true;
-            }
-            
-            const expectedCompletionDate = subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const actualCompletionDate = subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const createdAt = subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString();
-            const onHoldStartDate = subProjectData.onHoldStartDate ? (subProjectData.onHoldStartDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-            const onHoldEndDate = subProjectData.onHoldEndDate ? (subProjectData.onHoldEndDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined;
-
-
-            allSubProjects.push({
-                ...subProjectData,
-                id: subProjectDoc.id,
-                expectedCompletionDate,
-                actualCompletionDate,
-                createdAt,
-                onHoldStartDate,
-                onHoldEndDate,
-                projectId: project.id,
-                projectName: project.name,
-                projectCaseNumber: project.caseNumber,
-                projectPurpose: project.projectPurpose,
-                currentStatusAndIssues: project.currentStatusAndIssues,
-                yiehPhuiProjectManager: project.yiehPhuiProjectManager,
-                tpmOfficeContact: project.tpmOfficeContact,
-                egigaContact: project.egigaContact,
-                ownerName: userMap.get(subProjectData.owner),
-                latestLog,
-                isOverdue,
-                isOnHold: subProjectIsOnHold,
-                isParentOnHold: parentProjectIsOnHold,
-            } as SubProjectWithLatestLog);
-        }
-    }
     return allSubProjects;
 };
