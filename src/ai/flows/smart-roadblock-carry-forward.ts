@@ -10,7 +10,7 @@
  * - `SmartRoadblockCarryForwardOutput`: The return type for the smartRoadblockCarryForward function.
  */
 
-import { ai } from '@/ai/genkit';
+import { defineFlow } from 'genkit';
 import { z } from 'zod';
 
 const SmartRoadblockCarryForwardInputSchema = z.object({
@@ -35,22 +35,7 @@ export async function smartRoadblockCarryForward(
   return smartRoadblockCarryForwardFlow(input);
 }
 
-const smartRoadblockCarryForwardPrompt = ai.definePrompt({
-  name: 'smartRoadblockCarryForwardPrompt',
-  input: { schema: SmartRoadblockCarryForwardInputSchema },
-  output: { schema: SmartRoadblockCarryForwardOutputSchema },
-  prompt: `Determine whether to carry forward the roadblocks from the previous week's progress log based on the following information.
-
-Previous Roadblocks: {{previousRoadblocks}}
-Execution Summary: {{executionSummary}}
-Next Week Plan: {{nextWeekPlan}}
-
-Carry forward the roadblocks if the execution summary or next week plan contains any of the following keywords: ${carryForwardKeywords.join(', ')}.
-
-Return true if the roadblocks should be carried forward, and false otherwise.`,
-});
-
-const smartRoadblockCarryForwardFlow = ai.defineFlow(
+const smartRoadblockCarryForwardFlow = defineFlow(
   {
     name: 'smartRoadblockCarryForwardFlow',
     inputSchema: SmartRoadblockCarryForwardInputSchema,

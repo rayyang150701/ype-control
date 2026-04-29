@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/suggest-completion-percentage.ts';
-import '@/ai/flows/smart-roadblock-carry-forward.ts';
+import '@/ai/genkit';
+import '@/ai/flows/suggest-completion-percentage';
+import '@/ai/flows/smart-roadblock-carry-forward';

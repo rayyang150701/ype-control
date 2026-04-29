@@ -8,7 +8,9 @@
  * - SuggestCompletionPercentageOutput - The return type for the suggestCompletionPercentage function.
  */
 
-import { ai } from '@/ai/genkit';
+import { defineFlow } from 'genkit';
+import { generate } from 'genkit/ai';
+import { geminiPro } from '@genkit-ai/google-ai';
 import { z } from 'zod';
 
 const SuggestCompletionPercentageInputSchema = z.object({
@@ -37,15 +39,7 @@ export async function suggestCompletionPercentage(
   return suggestCompletionPercentageFlow(input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'suggestCompletionPercentagePrompt',
-  input: {
-    schema: SuggestCompletionPercentageInputSchema,
-  },
-  output: {
-    schema: SuggestCompletionPercentageOutputSchema,
-  },
-  prompt: `You are an AI assistant helping project managers estimate project completion percentages.
+const PROMPT_TEMPLATE = `You are an AI assistant helping project managers estimate project completion percentages.
 
   Given the execution summary of the current week, the plan for the next week, and the previous completion percentage, suggest a reasonable completion percentage for the current week.
 
@@ -59,17 +53,24 @@ const prompt = ai.definePrompt({
   Execution Summary: {{{executionSummary}}}
   Next Week Plan: {{{nextWeekPlan}}}
 
-  Suggested Completion Percentage:`,
-});
+  Suggested Completion Percentage:`;
 
-const suggestCompletionPercentageFlow = ai.defineFlow(
+const suggestCompletionPercentageFlow = defineFlow(
   {
     name: 'suggestCompletionPercentageFlow',
     inputSchema: SuggestCompletionPercentageInputSchema,
     outputSchema: SuggestCompletionPercentageOutputSchema,
   },
   async input => {
-    const { output } = await prompt(input);
-    return output!;
+    const response = await generate({
+      model: geminiPro,
+      prompt: PROMPT_TEMPLATE,
+      input: input,
+      output: {
+        schema: SuggestCompletionPercentageOutputSchema,
+      },
+    });
+
+    return response.output()!;
   }
 );
