@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 9002",
+    "dev": "next dev",
     "genkit:dev": "echo 'Genkit dev server disabled'",
     "genkit:watch": "echo 'Genkit dev server disabled'",
     "build": "NODE_ENV=production next build",
