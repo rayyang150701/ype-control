@@ -486,7 +486,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
         db.collectionGroup('sub_projects').get(),
-        db.collectionGroup('progress_logs').get(), // Removed .orderBy to avoid needing an index
+        db.collectionGroup('progress_logs').get(),
         getUsers()
     ]);
 
@@ -509,20 +509,50 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } as FullProject);
     });
 
+    const getStartDateFromPeriod = (period: string): Date | null => {
+        try {
+            const dateString = period.split(' - ')[0];
+            const date = new Date(dateString);
+            return isNaN(date.getTime()) ? null : date;
+        } catch {
+            return null;
+        }
+    };
+    
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        if (!logData.subProjectId || !logData.updatedAt) return;
+        if (!logData.subProjectId || !logData.reportingPeriod) return;
 
         const subProjectId = logData.subProjectId;
         const existingLog = latestLogsMap.get(subProjectId);
-        const logTimestamp = logData.updatedAt as FirebaseFirestore.Timestamp;
+        
+        const currentLogDate = getStartDateFromPeriod(logData.reportingPeriod);
+        if (!currentLogDate) return;
 
-        if (!existingLog || logTimestamp.toMillis() > new Date(existingLog.updatedAt as string).getTime()) {
+        let shouldUpdate = false;
+        if (!existingLog) {
+            shouldUpdate = true;
+        } else {
+            const existingLogDate = getStartDateFromPeriod(existingLog.reportingPeriod);
+            if (existingLogDate && currentLogDate > existingLogDate) {
+                shouldUpdate = true;
+            } else if (existingLogDate && currentLogDate.getTime() === existingLogDate.getTime()) {
+                // If reporting periods are the same, use the most recent edit
+                const currentUpdatedAt = (logData.updatedAt as FirebaseFirestore.Timestamp).toDate();
+                const existingUpdatedAt = new Date(existingLog.updatedAt as string);
+                if (currentUpdatedAt > existingUpdatedAt) {
+                    shouldUpdate = true;
+                }
+            }
+        }
+
+        if (shouldUpdate) {
+            const updatedAt = (logData.updatedAt as FirebaseFirestore.Timestamp);
             latestLogsMap.set(subProjectId, {
                 ...logData,
                 id: doc.id,
-                updatedAt: logTimestamp.toDate().toISOString(),
+                updatedAt: updatedAt.toDate().toISOString(),
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog);
         }
@@ -706,4 +736,5 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
     return allSubProjects;
 };
+
 
