@@ -7,38 +7,30 @@ let firebaseInitError = '';
 
 if (!admin.apps.length) {
   try {
-    // Method 1: Environment variable (Vercel / production)
-    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      let raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
-      
-      let serviceAccount: any;
-      try {
-        serviceAccount = JSON.parse(raw);
-      } catch (parseErr) {
-        // If JSON.parse fails, the value might have been double-escaped or corrupted
-        // Try removing surrounding quotes if present
-        if (raw.startsWith('"') && raw.endsWith('"')) {
-          raw = raw.slice(1, -1);
-        }
-        // Try unescaping
-        raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-        serviceAccount = JSON.parse(raw);
-      }
-
-      // Fix private_key newlines — Vercel may store literal "\\n" instead of actual newlines
-      if (serviceAccount.private_key) {
-        // Replace literal \\n with actual newline characters
-        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-      }
-
+    // Method 1: Base64-encoded service account (recommended for Vercel)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64) {
+      const decoded = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64, 'base64').toString('utf8');
+      const serviceAccount = JSON.parse(decoded);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
       firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized from environment variable');
+      console.log('✅ Firebase Admin initialized from Base64 env var');
       console.log('   Project ID:', serviceAccount.project_id);
     }
-    // Method 2: Local JSON key file (development)
+    // Method 2: Raw JSON environment variable
+    else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      firebaseInitialized = true;
+      console.log('✅ Firebase Admin initialized from JSON env var');
+    }
+    // Method 3: Local JSON key file (development)
     else {
       const keyFileName = 'service-account-key.json';
       const keyFilePath = path.join(process.cwd(), keyFileName);
@@ -50,14 +42,13 @@ if (!admin.apps.length) {
         firebaseInitialized = true;
         console.log('✅ Firebase Admin initialized from', keyFileName);
       } else {
-        firebaseInitError = 'No FIREBASE_SERVICE_ACCOUNT_KEY env var and no service-account-key.json found';
+        firebaseInitError = 'No Firebase credentials found';
         console.error('⚠️', firebaseInitError);
       }
     }
   } catch (error) {
     firebaseInitError = (error as Error).message;
     console.error('⚠️ Firebase admin initialization failed:', firebaseInitError);
-    console.error('   Stack:', (error as Error).stack);
     firebaseInitialized = false;
   }
 }
@@ -65,6 +56,5 @@ if (!admin.apps.length) {
 export const isFirebaseReady = firebaseInitialized || admin.apps.length > 0;
 export const initError = firebaseInitError;
 
-// Only export db/auth if Firebase is actually initialized
 export const db = isFirebaseReady ? admin.firestore() : (null as any);
 export const auth = isFirebaseReady ? admin.auth() : (null as any);
