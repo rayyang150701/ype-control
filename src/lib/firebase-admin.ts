@@ -8,12 +8,21 @@ if (!admin.apps.length) {
   try {
     // Method 1: Environment variable (Vercel / production)
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+      const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+      const serviceAccount = JSON.parse(raw);
+
+      // Fix private_key newlines — Vercel may store literal "\n" instead of actual newlines
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
       firebaseInitialized = true;
       console.log('✅ Firebase Admin initialized from environment variable');
+      console.log('   Project ID:', serviceAccount.project_id);
+      console.log('   Client Email:', serviceAccount.client_email);
     }
     // Method 2: Local JSON key file (development)
     else {
@@ -27,15 +36,13 @@ if (!admin.apps.length) {
         firebaseInitialized = true;
         console.log('✅ Firebase Admin initialized from', keyFileName);
       } else {
-        // Method 3: Default credentials (e.g., running inside GCP)
-        admin.initializeApp();
-        firebaseInitialized = true;
-        console.log('✅ Firebase Admin initialized with default credentials');
+        console.error('⚠️ No FIREBASE_SERVICE_ACCOUNT_KEY env var and no', keyFileName, 'found');
+        console.error('   Firebase Admin will NOT be initialized.');
       }
     }
   } catch (error) {
     console.error('⚠️ Firebase admin initialization failed:', (error as Error).message);
-    console.error('   The app will run in demo mode with mock data.');
+    console.error('   Stack:', (error as Error).stack);
     firebaseInitialized = false;
   }
 }

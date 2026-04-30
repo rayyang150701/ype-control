@@ -3,7 +3,12 @@ import { isFirebaseReady, db } from '@/lib/firebase-admin';
 
 export async function GET() {
   if (!isFirebaseReady) {
-    return NextResponse.json({ projects: [] });
+    console.error('⚠️ /api/projects called but Firebase is NOT ready');
+    return NextResponse.json({ 
+      projects: [], 
+      error: 'Firebase not initialized. Check FIREBASE_SERVICE_ACCOUNT_KEY env var.',
+      hasEnvVar: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY,
+    });
   }
 
   try {
