@@ -6,33 +6,32 @@ let firebaseInitialized = false;
 
 if (!admin.apps.length) {
   try {
-    // Method 1: Try loading from a JSON key file
-    const keyFilePath = path.join(process.cwd(), 'studio-751317964-5794f-firebase-adminsdk-fbsvc-9301837026.json');
-    if (fs.existsSync(keyFilePath)) {
-      const serviceAccount = JSON.parse(fs.readFileSync(keyFilePath, 'utf8'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized from service-account-key.json');
-    }
-    // Method 2: Fallback to environment variable
-    else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      let keyString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-      keyString = keyString.replace(/\\"/g, '"');
-      keyString = keyString.replace(/\n/g, '\\n');
-      const serviceAccount = JSON.parse(keyString);
+    // Method 1: Environment variable (Vercel / production)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
       firebaseInitialized = true;
       console.log('✅ Firebase Admin initialized from environment variable');
     }
-    // Method 3: Default credentials (e.g., running inside GCP)
+    // Method 2: Local JSON key file (development)
     else {
-      admin.initializeApp();
-      firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized with default credentials');
+      const keyFileName = 'service-account-key.json';
+      const keyFilePath = path.join(process.cwd(), keyFileName);
+      if (fs.existsSync(keyFilePath)) {
+        const serviceAccount = JSON.parse(fs.readFileSync(keyFilePath, 'utf8'));
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+        firebaseInitialized = true;
+        console.log('✅ Firebase Admin initialized from', keyFileName);
+      } else {
+        // Method 3: Default credentials (e.g., running inside GCP)
+        admin.initializeApp();
+        firebaseInitialized = true;
+        console.log('✅ Firebase Admin initialized with default credentials');
+      }
     }
   } catch (error) {
     console.error('⚠️ Firebase admin initialization failed:', (error as Error).message);
