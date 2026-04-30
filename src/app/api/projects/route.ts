@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isFirebaseReady, db } from '@/lib/firebase-admin';
+import { isFirebaseReady, db, initError } from '@/lib/firebase-admin';
 
 export async function GET() {
   if (!isFirebaseReady) {
@@ -8,6 +8,8 @@ export async function GET() {
       projects: [], 
       error: 'Firebase not initialized. Check FIREBASE_SERVICE_ACCOUNT_KEY env var.',
       hasEnvVar: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY,
+      initError: initError || 'unknown',
+      envVarLength: process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.length || 0,
     });
   }
 

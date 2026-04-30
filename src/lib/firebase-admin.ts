@@ -3,16 +3,31 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 let firebaseInitialized = false;
+let firebaseInitError = '';
 
 if (!admin.apps.length) {
   try {
     // Method 1: Environment variable (Vercel / production)
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-      const serviceAccount = JSON.parse(raw);
+      let raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
+      
+      let serviceAccount: any;
+      try {
+        serviceAccount = JSON.parse(raw);
+      } catch (parseErr) {
+        // If JSON.parse fails, the value might have been double-escaped or corrupted
+        // Try removing surrounding quotes if present
+        if (raw.startsWith('"') && raw.endsWith('"')) {
+          raw = raw.slice(1, -1);
+        }
+        // Try unescaping
+        raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        serviceAccount = JSON.parse(raw);
+      }
 
-      // Fix private_key newlines — Vercel may store literal "\n" instead of actual newlines
+      // Fix private_key newlines — Vercel may store literal "\\n" instead of actual newlines
       if (serviceAccount.private_key) {
+        // Replace literal \\n with actual newline characters
         serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
       }
 
@@ -22,7 +37,6 @@ if (!admin.apps.length) {
       firebaseInitialized = true;
       console.log('✅ Firebase Admin initialized from environment variable');
       console.log('   Project ID:', serviceAccount.project_id);
-      console.log('   Client Email:', serviceAccount.client_email);
     }
     // Method 2: Local JSON key file (development)
     else {
@@ -36,18 +50,20 @@ if (!admin.apps.length) {
         firebaseInitialized = true;
         console.log('✅ Firebase Admin initialized from', keyFileName);
       } else {
-        console.error('⚠️ No FIREBASE_SERVICE_ACCOUNT_KEY env var and no', keyFileName, 'found');
-        console.error('   Firebase Admin will NOT be initialized.');
+        firebaseInitError = 'No FIREBASE_SERVICE_ACCOUNT_KEY env var and no service-account-key.json found';
+        console.error('⚠️', firebaseInitError);
       }
     }
   } catch (error) {
-    console.error('⚠️ Firebase admin initialization failed:', (error as Error).message);
+    firebaseInitError = (error as Error).message;
+    console.error('⚠️ Firebase admin initialization failed:', firebaseInitError);
     console.error('   Stack:', (error as Error).stack);
     firebaseInitialized = false;
   }
 }
 
 export const isFirebaseReady = firebaseInitialized || admin.apps.length > 0;
+export const initError = firebaseInitError;
 
 // Only export db/auth if Firebase is actually initialized
 export const db = isFirebaseReady ? admin.firestore() : (null as any);
