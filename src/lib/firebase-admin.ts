@@ -8,13 +8,17 @@ let firebaseInitError = '';
 if (!admin.apps.length) {
   try {
     // Method 1: Individual env vars (most reliable for Vercel)
-    if (process.env.FIREBASE_SA_PRIVATE_KEY && process.env.FIREBASE_SA_CLIENT_EMAIL && process.env.FIREBASE_SA_PROJECT_ID) {
-      const privateKey = process.env.FIREBASE_SA_PRIVATE_KEY.replace(/\\n/g, '\n');
+    // Supports Base64-encoded private key (FIREBASE_SA_PRIVATE_KEY_B64) or raw with \n (FIREBASE_SA_PRIVATE_KEY)
+    const rawPrivateKey = process.env.FIREBASE_SA_PRIVATE_KEY_B64
+      ? Buffer.from(process.env.FIREBASE_SA_PRIVATE_KEY_B64.trim(), 'base64').toString('utf8')
+      : process.env.FIREBASE_SA_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    if (rawPrivateKey && process.env.FIREBASE_SA_CLIENT_EMAIL && process.env.FIREBASE_SA_PROJECT_ID) {
       admin.initializeApp({
         credential: admin.credential.cert({
           projectId: process.env.FIREBASE_SA_PROJECT_ID,
           clientEmail: process.env.FIREBASE_SA_CLIENT_EMAIL,
-          privateKey: privateKey,
+          privateKey: rawPrivateKey,
         } as admin.ServiceAccount),
       });
       firebaseInitialized = true;
