@@ -5,33 +5,49 @@ import * as fs from 'fs';
 let firebaseInitialized = false;
 let firebaseInitError = '';
 
+function parseServiceAccountKey(raw: string): any {
+  // Try 1: Direct JSON parse
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.private_key) {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    }
+    return parsed;
+  } catch (_) {
+    // Not valid JSON, try Base64
+  }
+
+  // Try 2: Base64 decode then JSON parse
+  try {
+    const decoded = Buffer.from(raw, 'base64').toString('utf8');
+    const parsed = JSON.parse(decoded);
+    if (parsed.private_key) {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    }
+    return parsed;
+  } catch (_) {
+    // Not valid Base64 JSON either
+  }
+
+  throw new Error('Unable to parse service account key as JSON or Base64');
+}
+
 if (!admin.apps.length) {
   try {
-    // Method 1: Base64-encoded service account (recommended for Vercel)
-    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64) {
-      const decoded = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64, 'base64').toString('utf8');
-      const serviceAccount = JSON.parse(decoded);
+    const envKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64
+      || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+    if (envKey) {
+      const serviceAccount = parseServiceAccountKey(envKey.trim());
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
       firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized from Base64 env var');
+      console.log('✅ Firebase Admin initialized from env var');
       console.log('   Project ID:', serviceAccount.project_id);
-    }
-    // Method 2: Raw JSON environment variable
-    else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-      if (serviceAccount.private_key) {
-        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-      }
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized from JSON env var');
-    }
-    // Method 3: Local JSON key file (development)
-    else {
+      console.log('   Client Email:', serviceAccount.client_email);
+    } else {
+      // Local file fallback (development)
       const keyFileName = 'service-account-key.json';
       const keyFilePath = path.join(process.cwd(), keyFileName);
       if (fs.existsSync(keyFilePath)) {
