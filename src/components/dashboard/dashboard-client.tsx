@@ -38,7 +38,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
   const [isResumeProjectOpen, setIsResumeProjectOpen] = useState(false);
 
-  // 核心：全域刷新，徹底替換狀態，避免前端殘留重複資料
   const refreshData = async () => {
     try {
       const [updatedSubs, updatedFulls] = await Promise.all([
@@ -56,6 +55,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   }, []);
 
+  // 統一篩選與搜尋邏輯
   const filteredSubProjects = useMemo(() => {
     return subProjects
       .filter(sp => {
@@ -69,9 +69,26 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       .filter(sp => {
         const query = searchQuery.toLowerCase();
         if (!query) return true;
-        return sp.name.toLowerCase().includes(query) || sp.projectCaseNumber?.toLowerCase().includes(query) || sp.projectName?.toLowerCase().includes(query);
+        return (
+          sp.name.toLowerCase().includes(query) || 
+          sp.projectCaseNumber?.toLowerCase().includes(query) || 
+          sp.projectName?.toLowerCase().includes(query) ||
+          sp.tpmOfficeContact?.toLowerCase().includes(query)
+        );
       });
   }, [subProjects, searchQuery, filter]);
+
+  // 條列式視圖專用的過濾資料：基於 filteredSubProjects 重新組合
+  const filteredFullProjects = useMemo(() => {
+    return fullProjects
+      .map(project => ({
+        ...project,
+        subProjects: project.subProjects.filter(sp => 
+          filteredSubProjects.some(fsp => fsp.id === sp.id)
+        )
+      }))
+      .filter(project => project.subProjects.length > 0);
+  }, [fullProjects, filteredSubProjects]);
 
   const handleSubProjectClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
@@ -106,7 +123,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   };
 
   return (
-    <>
+    <div className="w-full">
       <FilterControls
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -122,13 +139,18 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       />
 
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {filteredSubProjects.map(sp => (
             <ProjectCard key={`${sp.projectId}-${sp.id}`} subProject={sp} onCardClick={handleSubProjectClick} onLogAdded={refreshData}/>
           ))}
+          {filteredSubProjects.length === 0 && (
+            <div className="col-span-full py-20 text-center text-muted-foreground">
+              查無符合條件的專案。
+            </div>
+          )}
         </div>
       ) : (
-        <TableView groupedProjects={fullProjects} onEditProject={handleEditProjectClick} onSubProjectClick={handleSubProjectClick} />
+        <TableView groupedProjects={filteredFullProjects} onEditProject={handleEditProjectClick} onSubProjectClick={handleSubProjectClick} />
       )}
 
       {selectedSubProject && (
@@ -149,6 +171,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       <DeleteProjectDialog isOpen={isDeleteProjectOpen} setIsOpen={setIsDeleteProjectOpen} projects={fullProjects} onProjectDeleted={onOperationSuccess} />
       <OnHoldDialog isOpen={isOnHoldProjectOpen} setIsOpen={setIsOnHoldProjectOpen} projects={fullProjects} onSuccess={onOperationSuccess} />
       <ResumeProjectDialog isOpen={isResumeProjectOpen} setIsOpen={setIsResumeProjectOpen} projects={fullProjects} onSuccess={onOperationSuccess} />
-    </>
+    </div>
   );
 }
