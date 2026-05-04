@@ -1,3 +1,4 @@
+
 'use client';
 import Image from 'next/image';
 import { LogOut, User, Users, HelpCircle, Book, Route } from 'lucide-react';
@@ -107,30 +108,19 @@ export function Header() {
 
   const handleDownload = async () => {
     try {
-      // Fetch the file from the public directory
       const response = await fetch('/manual.pdf');
       if (!response.ok) {
         throw new Error('找不到檔案或網路錯誤');
       }
 
-      // Get the file content as a Blob
       const blob = await response.blob();
-
-      // Create a temporary URL for the Blob
       const url = window.URL.createObjectURL(blob);
-      
-      // Create a temporary anchor element
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      // Specify the desired file name for the download
       a.download = '操作手冊.pdf';
-      
-      // Append the anchor to the body, trigger the click, and then remove it
       document.body.appendChild(a);
       a.click();
-      
-      // Clean up by revoking the temporary URL and removing the anchor
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
@@ -147,7 +137,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between">
+      <div className="w-full px-4 flex h-16 items-center justify-between">
         <div className="flex items-center gap-4">
           {logo && (
             <Image
@@ -161,8 +151,8 @@ export function Header() {
           )}
         </div>
 
-        <div className="flex-1 flex justify-center">
-            <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap">
+        <div className="flex-1 flex justify-center px-4">
+            <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap overflow-hidden text-ellipsis">
                 燁輝智慧製造執行方案進度管制表
             </Link>
         </div>

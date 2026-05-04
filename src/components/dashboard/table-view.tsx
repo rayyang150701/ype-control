@@ -77,7 +77,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
   };
   
-  const renderCollapsibleText = (content: string | null | undefined, id: string, emptyText: string = '尚未填寫') => {
+  const renderCollapsibleText = (content: string | null | undefined, id: string, emptyText: string = '') => {
     const key = `collapsible-${id}`;
     const isExpanded = expandedCells[key];
     const needsExpand = content && (content.length > 80 || content.includes('\n')); 
@@ -258,10 +258,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       </div>
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                      {renderCollapsibleText(sp.latestLog?.executionSummary, `${sp.id}-summary`, '無')}
+                      {renderCollapsibleText(sp.latestLog?.executionSummary, `${sp.id}-summary`, '')}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                      {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '無')}
+                      {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '')}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm break-words align-middle", getCellBgColor(project, sp, false))}>
                     {sp.latestLog?.roadblocks ? (
@@ -269,7 +269,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                         {sp.latestLog.roadblocks}
                       </span>
                     ) : (
-                      <span className="text-gray-400">無</span>
+                      <span className="text-gray-400"></span>
                     )}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm text-left text-gray-800 align-middle", getCellBgColor(project, sp, false))}>{sp.latestLog?.completionPercentage ?? 0}%</td>

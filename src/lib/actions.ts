@@ -5,11 +5,10 @@ import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase-admin';
 import type { User, ProgressLog, FullProject, SubProjectWithLatestLog } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
-import { subDays } from 'date-fns';
+import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 /**
  * 安全時間轉換器：處理 Firestore Timestamp、ISO 字串或 Date 物件
- * 全部轉為毫秒數 (number) 以利精準比較
  */
 const getSafeTime = (date: any): number => {
     if (!date) return 0;
@@ -28,7 +27,7 @@ const getSafeTime = (date: any): number => {
 };
 
 /**
- * 格式化為 ISO 字串，確保傳遞給 Client Component 的資料是純物件
+ * 格式化為 ISO 字串
  */
 const formatISO = (date: any): string => {
     const time = getSafeTime(date);
@@ -38,6 +37,16 @@ const formatISO = (date: any): string => {
 const formatISOOptional = (date: any): string | undefined => {
     const time = getSafeTime(date);
     return time > 0 ? new Date(time).toISOString() : undefined;
+};
+
+/**
+ * 計算當前的週報區間字串 (格式: YYYY/MM/DD - MM/DD)
+ */
+const getCurrentReportingPeriod = () => {
+    const now = new Date();
+    const monday = startOfWeek(now, { weekStartsOn: 1 });
+    const sunday = endOfWeek(now, { weekStartsOn: 1 });
+    return `${format(monday, 'yyyy/MM/dd')} - ${format(sunday, 'MM/dd')}`;
 };
 
 // --- 成員管理 ---
@@ -294,6 +303,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 
 /**
  * 核心資料組合與去重邏輯
+ * 加入「非本週則清空文字」的顯示判斷
  */
 async function getOptimizedProjectData() {
     const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
@@ -304,8 +314,9 @@ async function getOptimizedProjectData() {
     ]);
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
+    const currentPeriod = getCurrentReportingPeriod();
 
-    // 1. 主專案去重：以「案號」為 Key，只保留最新建立的文檔
+    // 1. 主專案去重：以案號為 Key
     const projectsMap = new Map<string, FullProject>();
     const caseNumberProcessed = new Set<string>();
 
@@ -331,7 +342,7 @@ async function getOptimizedProjectData() {
         } as any);
     });
 
-    // 2. 最新週報判定：完全依照「最後更新時間 (updatedAt)」
+    // 2. 最新週報判定：依照更新時間 (updatedAt)
     const latestLogsMap = new Map<string, ProgressLog>();
     logsSnap.docs.forEach(doc => {
         const data = doc.data();
@@ -360,14 +371,23 @@ async function getOptimizedProjectData() {
         }
     });
 
-    // 3. 子專案組合與淨化
+    // 3. 子專案組合與「本週更新」邏輯判斷
     const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnap.docs.forEach(doc => {
         const data = doc.data();
         const project = projectsMap.get(data.projectId);
-        if (!project) return; // 跳過被去重掉的「孤兒主專案」
+        if (!project) return;
 
-        const latestLog = latestLogsMap.get(doc.id) || null;
+        const rawLatestLog = latestLogsMap.get(doc.id) || null;
+        
+        // 核心邏輯：如果最新週報不是本週的，則在首頁顯示時清空文字內容，方便一眼辨識
+        const latestLog = rawLatestLog ? {
+            ...rawLatestLog,
+            executionSummary: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.executionSummary : '',
+            nextWeekPlan: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.nextWeekPlan : '',
+            roadblocks: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.roadblocks : '',
+        } : null;
+
         const sp: SubProjectWithLatestLog = {
             id: doc.id,
             projectId: project.id,
@@ -395,7 +415,7 @@ async function getOptimizedProjectData() {
         project.subProjects.push(sp);
     });
 
-    // 4. 排序邏輯優化：案號由大到小排序
+    // 4. 排序：案號由大到小
     const sortByKey = (a: string, b: string) => b.localeCompare(a, undefined, { numeric: true });
 
     const sortedAllSubProjects = allSubProjects.sort((a, b) => sortByKey(a.projectCaseNumber || '', b.projectCaseNumber || ''));
@@ -418,8 +438,7 @@ export const getFullProjectById = async (id: string) => {
 };
 
 /**
- * 取得單一子專案的所有歷史週報
- * 排序基準：完全依照更新時間 (updatedAt) 由新到舊
+ * 取得單一子專案的所有歷史週報 (保留完整資料)
  */
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
     const snap = await db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).get();

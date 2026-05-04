@@ -30,8 +30,7 @@ export default function RootLayout({
       >
         <FirebaseClientProvider>
             <Header />
-            {/* 優化：大幅縮減左右留白，改為寬視角佈局，最大寬度提升 */}
-            <main className="w-full px-2 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
+            <main className="w-full px-2 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
                 {children}
             </main>
             <Toaster />

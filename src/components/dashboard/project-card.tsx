@@ -1,3 +1,4 @@
+
 'use client';
 import { format, differenceInDays } from 'date-fns';
 import { PlusCircle, PauseCircle } from 'lucide-react';
@@ -78,11 +79,11 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
             isDelayed={delayDays > 0}
             delayText={`延遲 ${delayDays} 天`}
           />
-          <InfoSection label="本週摘要" content={latestLog?.executionSummary || '尚未回報'} maxLines={3} />
-          <InfoSection label="下週計畫" content={latestLog?.nextWeekPlan || '尚未回報'} maxLines={2} />
+          <InfoSection label="本週摘要" content={latestLog?.executionSummary || ''} maxLines={3} />
+          <InfoSection label="下週計畫" content={latestLog?.nextWeekPlan || ''} maxLines={2} />
           <InfoSection
             label="問題"
-            content={latestLog?.roadblocks || '無'}
+            content={latestLog?.roadblocks || ''}
             highlight={!!latestLog?.roadblocks}
           />
         </CardContent>
@@ -130,11 +131,11 @@ const InfoRow = ({ label, value, isDelayed, delayText }: { label: string; value:
 );
 
 const InfoSection = ({ label, content, maxLines, highlight }: { label:string, content: string; maxLines?: number, highlight?: boolean }) => (
-    <div>
+    <div className="min-h-[1.25rem]">
         <h4 className="mb-1 text-xs text-muted-foreground">{label}</h4>
         <p className={cn(
-            'text-sm text-foreground',
-            highlight && 'rounded-sm bg-destructive/10 p-1',
+            'text-sm text-foreground min-h-[1em]',
+            highlight && content && 'rounded-sm bg-destructive/10 p-1',
             maxLines === 2 && 'line-clamp-2',
             maxLines === 3 && 'line-clamp-3',
         )}>
