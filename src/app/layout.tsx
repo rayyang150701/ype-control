@@ -30,7 +30,7 @@ export default function RootLayout({
       >
         <FirebaseClientProvider>
             <Header />
-            <main className="w-full px-2 py-4 sm:py-6 lg:py-8 mx-auto">
+            <main className="w-full px-4 py-4 sm:py-6 lg:py-8">
                 {children}
             </main>
             <Toaster />

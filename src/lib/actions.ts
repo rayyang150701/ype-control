@@ -28,11 +28,9 @@ const getSafeTime = (date: any): number => {
 
 /**
  * 從週報區間字串解析出日期數值 (YYYY/MM/DD)
- * 用於歷史週報的絕對時間排序
  */
 const getSafeTimeFromPeriod = (period: string): number => {
     if (!period || period === 'Excel 匯入') return 0;
-    // 使用 Regex 抓取第一個出現的 YYYY/MM/DD 或 YYYY-MM-DD
     const match = period.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
     if (match) {
         return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3])).getTime();
@@ -316,7 +314,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 }
 
 /**
- * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序
+ * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序、子項目 1,2,3 排序
  */
 async function getOptimizedProjectData() {
     const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
@@ -414,7 +412,6 @@ async function getOptimizedProjectData() {
     });
 
     // 3. 組合與「本週空白」顯示轉換
-    const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnap.docs.forEach(doc => {
         const data = doc.data();
         const project = projectsMap.get(data.projectId);
@@ -454,17 +451,25 @@ async function getOptimizedProjectData() {
             sp.isOverdue = lastUpdateTime < sevenDaysAgo;
         }
 
-        allSubProjects.push(sp);
         project.subProjects.push(sp);
     });
 
-    // 4. 排序：案號由大到小 (例如 37, 36, 35...)
+    // 4. 排序引擎：案號由大到小，子專案依照 1,2,3 或 一,二,三 排序
     const sortByKey = (a: string, b: string) => b.localeCompare(a, undefined, { numeric: true });
 
-    const sortedAllSubProjects = allSubProjects.sort((a, b) => sortByKey(a.projectCaseNumber || '', b.projectCaseNumber || ''));
     const sortedFullProjects = Array.from(projectsMap.values())
         .filter(p => p.subProjects.length > 0)
-        .sort((a, b) => sortByKey(a.caseNumber, b.caseNumber));
+        .sort((a, b) => sortByKey(a.caseNumber, b.caseNumber))
+        .map(project => {
+            // 關鍵修正：對同一個專案底下的子項目進行排序 (一、二、三 或 1, 2, 3)
+            project.subProjects.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW', { numeric: true }));
+            return project;
+        });
+
+    const sortedAllSubProjects: SubProjectWithLatestLog[] = [];
+    sortedFullProjects.forEach(p => {
+        sortedAllSubProjects.push(...p.subProjects);
+    });
 
     return { 
         allSubProjects: sortedAllSubProjects, 
@@ -500,11 +505,9 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
         })
         .filter(l => l.reportingPeriod !== 'Excel 匯入')
         .sort((a, b) => {
-            // 第一優先：比對週報日期 (5/4 > 4/27)
             const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
             const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
             if (timeA !== timeB) return timeB - timeA;
-            // 第二優先：比對最後更新時間
             return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
         });
 };
