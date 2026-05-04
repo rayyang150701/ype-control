@@ -16,6 +16,7 @@ type TableViewProps = {
 
 export function TableView({ groupedProjects, onEditProject, onSubProjectClick }: TableViewProps) {
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
+  const [weekRange, setWeekRange] = useState('');
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -41,6 +42,27 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     }
   }, [groupedProjects]);
 
+  // 在客戶端計算週別區間，避免 Hydration 錯誤
+  useEffect(() => {
+    const getWeekRangeStr = () => {
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const formatShort = (date: Date) => {
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${m}/${d}`;
+      };
+
+      return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
+    };
+    setWeekRange(getWeekRangeStr());
+  }, []);
+
 
   const toggleExpand = (key: string) => {
     setExpandedCells(prev => ({
@@ -59,23 +81,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     return format(new Date(dateString), 'yyyy/MM/dd');
   };
 
-  const getWeekRange = () => {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    const monday = new Date(today.setDate(diff));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    const formatShort = (date: Date) => {
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${m}/${d}`;
-    };
-
-    return `${formatShort(monday)} ~ ${formatShort(sunday)}`;
-  };
-  
   const renderCollapsibleText = (content: string | null | undefined, id: string, emptyText: string = '') => {
     const key = `collapsible-${id}`;
     const isExpanded = expandedCells[key];
@@ -155,7 +160,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">TPM窗口</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">億威電子</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">子專案名稱</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">本週摘要 ({getWeekRange()})</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">本週摘要 {weekRange && `(${weekRange})`}</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">下週計畫</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">問題與風險</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">進度</th>

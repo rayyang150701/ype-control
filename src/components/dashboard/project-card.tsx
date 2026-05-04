@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { NewLogDialog } from './new-log-dialog';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { formatInTimeZone } from 'date-fns-tz';
 
 
@@ -27,9 +27,16 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
   const isEffectivelyOnHold = subProject.isOnHold || subProject.isParentOnHold;
   const isCompleted = completionPercentage === 100;
 
-  const delayDays = expectedDate && completionPercentage < 100 && !isEffectivelyOnHold ? differenceInDays(new Date(), expectedDate) : 0;
-
+  // 使用 State 管理延遲天數，避免 Hydration 錯誤
+  const [delayDays, setDelayDays] = useState(0);
   const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (expectedDate && completionPercentage < 100 && !isEffectivelyOnHold) {
+      const days = differenceInDays(new Date(), expectedDate);
+      if (days > 0) setDelayDays(days);
+    }
+  }, [expectedDate, completionPercentage, isEffectivelyOnHold]);
 
   const getProgressColor = () => {
     if (isEffectivelyOnHold) return 'bg-amber-500';
