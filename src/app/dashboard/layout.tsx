@@ -2,11 +2,13 @@
 
 import { useAuth } from '@/components/auth-provider';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { ChangePasswordDialog } from '@/components/change-password-dialog';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, signOut, isDemo } = useAuth();
   const router = useRouter();
+  const [pwdDialogOpen, setPwdDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -62,6 +64,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </button>
               )}
               <button
+                onClick={() => setPwdDialogOpen(true)}
+                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                🔑 更改密碼
+              </button>
+              <button
                 onClick={signOut}
                 className="text-sm text-muted-foreground hover:text-destructive transition-colors"
               >
@@ -74,6 +82,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main Content */}
       <main>{children}</main>
+
+      <ChangePasswordDialog open={pwdDialogOpen} onOpenChange={setPwdDialogOpen} />
     </div>
   );
 }
