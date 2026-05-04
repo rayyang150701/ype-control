@@ -8,7 +8,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { subDays } from 'date-fns';
 
 /**
- * 格式化 Firestore 的日期格式為 ISO 字串
+ * 格式化 Firestore 的日期格式為 ISO 字串，確保序列化安全
  */
 const formatFirestoreDate = (date: any): string => {
     if (!date) return new Date().toISOString();
@@ -38,28 +38,31 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
 };
 
 /**
- * 從提報區間字串（如 "2025/12/08 - 12/14"）解析出起始日期物件
+ * 從提報區間字串解析出起始日期，並返回安全的毫秒數值
  */
-export const getStartDateFromPeriod = (period: string): Date | null => {
-    if (!period || typeof period !== 'string') return null;
+export const getSafeTimeFromPeriod = (period: string): number => {
+    if (!period || typeof period !== 'string') return 0;
     try {
         const parts = period.split(' - ');
-        if (parts.length < 1) return null;
-        const dateString = parts[0].trim();
-        const date = new Date(dateString);
-        return isNaN(date.getTime()) ? null : date;
+        if (parts.length < 1) return 0;
+        const date = new Date(parts[0].trim().replace(/\//g, '-'));
+        const time = date.getTime();
+        return isNaN(time) ? 0 : time;
     } catch { 
-        return null; 
+        return 0; 
     }
 };
 
 /**
  * 安全地取得日期的毫秒數值
  */
-const getSafeTime = (date: Date | null | undefined): number => {
+const getSafeTime = (date: any): number => {
     if (!date) return 0;
     try {
-        const time = date.getTime();
+        if (date.toDate && typeof date.toDate === 'function') {
+            return date.toDate().getTime();
+        }
+        const time = new Date(date).getTime();
         return isNaN(time) ? 0 : time;
     } catch {
         return 0;
@@ -67,7 +70,6 @@ const getSafeTime = (date: Date | null | undefined): number => {
 };
 
 // --- 表單驗證 Schema ---
-
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
     owner: z.string().min(1, '必須選擇一位負責人'),
@@ -169,7 +171,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
     const newProjectRef = db.collection('projects').doc();
     const newProjectData = {
         name: data.name,
-        caseNumber: data.caseNumber,
+        caseNumber: String(data.caseNumber),
         status: 'active',
         createdBy: userId,
         createdAt: FieldValue.serverTimestamp(),
@@ -212,7 +214,7 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
             const projectRef = db.collection('projects').doc(projectId);
 
             transaction.update(projectRef, {
-                caseNumber: data.caseNumber,
+                caseNumber: String(data.caseNumber),
                 name: data.name,
                 projectPurpose: data.projectPurpose ?? '',
                 currentStatusAndIssues: data.currentStatusAndIssues ?? '',
@@ -428,7 +430,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 }
 
 /**
- * 核心：高效能資料取得與組合邏輯（去重與最新週報判定）
+ * 核心高效能資料組合邏輯：強力去重、最新週報判定
  */
 async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
@@ -440,49 +442,49 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     
-    // 主專案去重：以案號 (caseNumber) 為主，同一案號只保留最新的
+    // 1. 主專案強力去重：以案號 (caseNumber) 為主，同一案號只保留最新的文檔
     const projectsMap = new Map<string, FullProject>();
     const caseNumberToProjectId = new Map<string, string>();
 
     projectsSnapshot.docs.forEach(doc => {
         const data = doc.data();
-        const caseNumber = data.caseNumber || 'Unknown';
+        const caseNumber = String(data.caseNumber || '').trim();
+        if (!caseNumber) return;
         
+        // 案號去重機制：因為已依 createdAt 降序排列，所以第一個遇到的就是最新的案號文檔
         if (caseNumberToProjectId.has(caseNumber)) return;
         caseNumberToProjectId.set(caseNumber, doc.id);
 
         projectsMap.set(doc.id, {
             id: doc.id,
-            caseNumber: data.caseNumber,
-            name: data.name,
-            status: data.status,
-            createdBy: data.createdBy,
-            projectPurpose: data.projectPurpose,
-            currentStatusAndIssues: data.currentStatusAndIssues,
-            yiehPhuiProjectManager: data.yiehPhuiProjectManager,
-            tpmOfficeContact: data.tpmOfficeContact,
-            egigaContact: data.egigaContact,
-            isOnHold: data.isOnHold ?? false,
-            onHoldReason: data.onHoldReason,
+            caseNumber: caseNumber,
+            name: String(data.name || ''),
+            status: String(data.status || 'active'),
+            createdBy: String(data.createdBy || ''),
+            projectPurpose: String(data.projectPurpose || ''),
+            currentStatusAndIssues: String(data.currentStatusAndIssues || ''),
+            yiehPhuiProjectManager: String(data.yiehPhuiProjectManager || ''),
+            tpmOfficeContact: String(data.tpmOfficeContact || ''),
+            egigaContact: String(data.egigaContact || ''),
+            isOnHold: data.isOnHold === true,
+            onHoldReason: data.onHoldReason || '',
             onHoldStartDate: formatFirestoreDateOptional(data.onHoldStartDate),
             onHoldEndDate: formatFirestoreDateOptional(data.onHoldEndDate),
-            onHoldNotes: data.onHoldNotes,
+            onHoldNotes: data.onHoldNotes || '',
             createdAt: formatFirestoreDate(data.createdAt),
             subProjects: [],
         } as FullProject);
     });
 
-    // 最新週報去重：以子專案 ID 為 Key，依據提報區間日期最晚者勝出
+    // 2. 最新週報判定邏輯：精準找出每個子專案日期最晚且更新最晚的一筆
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        // 如果是子集合，路徑中會有 subProjectId
+        // 優先從父路徑取得子專案 ID
         const subProjectId = doc.ref.parent.parent?.id || logData.subProjectId;
-
         if (!subProjectId || !logData.reportingPeriod) return;
 
-        const currentLogDate = getStartDateFromPeriod(logData.reportingPeriod);
-        const currentTime = getSafeTime(currentLogDate);
+        const currentTime = getSafeTimeFromPeriod(logData.reportingPeriod);
         if (currentTime === 0) return;
 
         const existingLog = latestLogsMap.get(subProjectId);
@@ -491,15 +493,13 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         if (!existingLog) {
             shouldReplace = true;
         } else {
-            const existingLogDate = getStartDateFromPeriod(existingLog.reportingPeriod);
-            const existingTime = getSafeTime(existingLogDate);
-
+            const existingTime = getSafeTimeFromPeriod(existingLog.reportingPeriod);
             if (currentTime > existingTime) {
                 shouldReplace = true;
             } else if (currentTime === existingTime) {
-                // 如果週報區間相同，比較資料更新時間
-                const currentUpdated = (logData.updatedAt as FirebaseFirestore.Timestamp)?.toDate()?.getTime() || 0;
-                const existingUpdated = new Date(existingLog.updatedAt as string).getTime();
+                // 週別相同，比較寫入時間
+                const currentUpdated = getSafeTime(logData.updatedAt);
+                const existingUpdated = getSafeTime(existingLog.updatedAt);
                 if (currentUpdated > existingUpdated) shouldReplace = true;
             }
         }
@@ -508,35 +508,36 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             latestLogsMap.set(subProjectId, {
                 id: doc.id,
                 subProjectId,
-                reportingPeriod: logData.reportingPeriod,
-                executionSummary: logData.executionSummary,
-                nextWeekPlan: logData.nextWeekPlan,
-                roadblocks: logData.roadblocks,
-                completionPercentage: logData.completionPercentage,
-                createdBy: logData.createdBy,
+                reportingPeriod: String(logData.reportingPeriod),
+                executionSummary: String(logData.executionSummary || ''),
+                nextWeekPlan: String(logData.nextWeekPlan || ''),
+                roadblocks: String(logData.roadblocks || ''),
+                completionPercentage: Number(logData.completionPercentage || 0),
+                createdBy: String(logData.createdBy || ''),
                 updatedAt: formatFirestoreDate(logData.updatedAt),
-                createdByName: userMap.get(logData.createdBy),
+                createdByName: userMap.get(logData.createdBy) || '未知',
             } as ProgressLog);
         }
     });
 
+    // 3. 組合子專案，並自動過濾重複的子專案 ID
     const allSubProjects: SubProjectWithLatestLog[] = [];
     const processedSubProjectIds = new Set<string>();
 
-    // 處理子專案：過濾重複 ID，並關聯主專案
     subProjectsSnapshot.docs.forEach(subProjectDoc => {
+        // 子專案 ID 去重
         if (processedSubProjectIds.has(subProjectDoc.id)) return;
         
         const subProjectData = subProjectDoc.data();
         const project = projectsMap.get(subProjectData.projectId);
-        if (!project) return; 
+        if (!project) return; // 如果主專案被去重過濾了，其下的子專案也跟著過濾
 
         processedSubProjectIds.add(subProjectDoc.id);
 
         const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
-        const isEffectivelyOnHold = (subProjectData.isOnHold || project.isOnHold);
+        const isEffectivelyOnHold = (subProjectData.isOnHold === true || project.isOnHold === true);
 
-        // 逾期判斷：進行中專案若超過 7 天未更新最新進度則為逾期
+        // 逾期判定
         let isOverdue = false;
         if (!isEffectivelyOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
             const sevenDaysAgo = subDays(new Date(), 7);
@@ -547,12 +548,12 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         const subProjectWithLog: SubProjectWithLatestLog = {
             id: subProjectDoc.id,
             projectId: project.id,
-            name: subProjectData.name,
-            owner: subProjectData.owner,
+            name: String(subProjectData.name || ''),
+            owner: String(subProjectData.owner || ''),
             expectedCompletionDate: formatFirestoreDate(subProjectData.expectedCompletionDate),
             actualCompletionDate: formatFirestoreDateOptional(subProjectData.actualCompletionDate),
             createdAt: formatFirestoreDate(subProjectData.createdAt),
-            isOnHold: subProjectData.isOnHold ?? false,
+            isOnHold: subProjectData.isOnHold === true,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
             projectPurpose: project.projectPurpose,
@@ -560,21 +561,21 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             yiehPhuiProjectManager: project.yiehPhuiProjectManager,
             tpmOfficeContact: project.tpmOfficeContact,
             egigaContact: project.egigaContact,
-            ownerName: userMap.get(subProjectData.owner),
+            ownerName: userMap.get(subProjectData.owner) || '未知',
             latestLog,
             isOverdue,
-            isParentOnHold: project.isOnHold ?? false,
+            isParentOnHold: project.isOnHold === true,
         };
         
         allSubProjects.push(subProjectWithLog);
         project.subProjects.push(subProjectWithLog);
     });
 
-    // 最後過濾：只傳回有子專案的專案
+    // 最後過濾：只回傳有子專案的專案文檔，徹底清除重複或空的幽靈專案
     const finalFullProjects = Array.from(projectsMap.values())
         .filter(p => p.subProjects.length > 0)
         .map(p => {
-            p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+            p.subProjects.sort((a,b) => getSafeTime(a.createdAt) - getSafeTime(b.createdAt));
             return p;
         });
 
@@ -599,13 +600,10 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         if (!logs.empty) {
             const sortedLogs = logs.docs.map(d => ({ id: d.id, ...d.data() }) as any)
                 .sort((a, b) => {
-                    const timeA = getSafeTime(getStartDateFromPeriod(a.reportingPeriod));
-                    const timeB = getSafeTime(getStartDateFromPeriod(b.reportingPeriod));
+                    const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
+                    const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
                     if (timeB !== timeA) return timeB - timeA;
-                    
-                    const updateA = (a.updatedAt as any)?.toDate?.()?.getTime() || 0;
-                    const updateB = (b.updatedAt as any)?.toDate?.()?.getTime() || 0;
-                    return updateB - updateA;
+                    return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
                 });
             
             const l = sortedLogs[0];
@@ -699,15 +697,9 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
     });
 
     return logs.sort((a, b) => {
-        const timeA = getSafeTime(getStartDateFromPeriod(a.reportingPeriod));
-        const timeB = getSafeTime(getStartDateFromPeriod(b.reportingPeriod));
-        
-        if (timeB !== timeA) {
-            return timeB - timeA;
-        }
-        
-        const updateA = new Date(a.updatedAt as string).getTime();
-        const updateB = new Date(b.updatedAt as string).getTime();
-        return updateB - updateA;
+        const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
+        const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
+        if (timeB !== timeA) return timeB - timeA;
+        return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
     });
 };
