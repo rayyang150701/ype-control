@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Pencil, PauseCircle } from 'lucide-react';
+import { Pencil, PauseCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Badge } from '../ui/badge';
@@ -100,24 +100,22 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
 
   const getCellBgColor = (project: FullProject, sp: SubProjectWithLatestLog, isSharedCell: boolean) => {
     const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
-    if (!isEffectivelyOnHold) {
-      return project.subProjects.indexOf(sp) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
-    }
-  
-    if (project.subProjects.length === 1) {
-      return 'bg-amber-50';
-    }
-  
+    const isCompleted = (sp.latestLog?.completionPercentage ?? 0) === 100;
+
+    // 共用儲存格 (專案資訊) 只顯示斑馬紋，不顯示完成色
     if (isSharedCell) {
        return project.subProjects.indexOf(sp) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
-    } else {
-      return 'bg-amber-50';
     }
+    
+    // 子項目特定儲存格
+    if (isCompleted) return 'bg-emerald-50/60';
+    if (isEffectivelyOnHold) return 'bg-amber-50';
+    
+    return project.subProjects.indexOf(sp) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
   };
 
   return (
     <div className="space-y-2 w-full">
-      {/* Top scrollbar */}
       <div
         ref={topScrollRef}
         onScroll={handleTopScroll}
@@ -170,85 +168,102 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
               groupedProjects.map((project) => {
                 if (project.subProjects.length === 0) return null;
 
-                return project.subProjects.map((sp, subProjectIndex) => (
-                  <tr
-                    key={sp.id}
-                    className={cn(
-                      'hover:bg-blue-50/50 transition-colors',
-                      (sp.isOnHold || sp.isParentOnHold) && project.subProjects.length > 1 && 'hover:bg-amber-100/50'
-                    )}
-                  >
-                    {subProjectIndex === 0 && (
-                      <>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
-                          <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)} className="h-8 w-8">
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
-                          <div className='flex flex-col gap-1'>
-                            <span className="font-semibold leading-tight">{project.name}</span>
-                            {project.isOnHold && (
-                               <Badge className="bg-amber-500 text-white flex items-center gap-1 w-fit scale-90 origin-left">
-                                  <PauseCircle className="h-3 w-3" />
-                                  暫緩
-                               </Badge>
+                return project.subProjects.map((sp, subProjectIndex) => {
+                  const isCompleted = (sp.latestLog?.completionPercentage ?? 0) === 100;
+                  
+                  return (
+                    <tr
+                      key={sp.id}
+                      className={cn(
+                        'hover:bg-blue-50/50 transition-colors',
+                        isCompleted && 'hover:bg-emerald-100/50',
+                        (sp.isOnHold || sp.isParentOnHold) && project.subProjects.length > 1 && 'hover:bg-amber-100/50'
+                      )}
+                    >
+                      {subProjectIndex === 0 && (
+                        <>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
+                            <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)} className="h-8 w-8">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
+                            <div className='flex flex-col gap-1'>
+                              <span className="font-semibold leading-tight">{project.name}</span>
+                              {project.isOnHold && (
+                                 <Badge className="bg-amber-500 text-white flex items-center gap-1 w-fit scale-90 origin-left">
+                                    <PauseCircle className="h-3 w-3" />
+                                    暫緩
+                                 </Badge>
+                              )}
+                            </div>
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
+                            {renderCollapsibleText(project.projectPurpose, `${project.id}-purpose`)}
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
+                            {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
+                            {project.yiehPhuiProjectManager}
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
+                            {project.tpmOfficeContact}
+                          </td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
+                            {project.egigaContact}
+                          </td>
+                        </>
+                      )}
+                      <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
+                         <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onSubProjectClick(sp)}
+                              className={cn(
+                                "underline bg-transparent border-none p-0 cursor-pointer text-left font-medium leading-tight",
+                                isCompleted ? "text-emerald-700 hover:text-emerald-900" : "text-blue-600 hover:text-blue-800"
+                              )}
+                            >
+                              {sp.name}
+                            </button>
+                            {isCompleted && (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                            )}
+                            {sp.isOnHold && !isCompleted && (
+                              <Badge className="bg-amber-500 text-white flex items-center gap-1 scale-75 origin-left shrink-0">
+                                <PauseCircle className="h-3 w-3" />
+                                暫緩
+                              </Badge>
                             )}
                           </div>
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                          {renderCollapsibleText(project.projectPurpose, `${project.id}-purpose`)}
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                          {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                          {project.yiehPhuiProjectManager}
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                          {project.tpmOfficeContact}
-                        </td>
-                        <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                          {project.egigaContact}
-                        </td>
-                      </>
-                    )}
-                    <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                       <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onSubProjectClick(sp)}
-                            className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left font-medium leading-tight"
-                          >
-                            {sp.name}
-                          </button>
-                          {sp.isOnHold && (
-                            <Badge className="bg-amber-500 text-white flex items-center gap-1 scale-75 origin-left shrink-0">
-                              <PauseCircle className="h-3 w-3" />
-                              暫緩
-                            </Badge>
-                          )}
-                        </div>
-                    </td>
-                    <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                        {renderCollapsibleText(sp.latestLog?.executionSummary, `${sp.id}-summary`, '')}
-                    </td>
-                    <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
-                        {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '')}
-                    </td>
-                    <td className={cn("border-b px-3 py-2 text-sm break-words align-middle", getCellBgColor(project, sp, false))}>
-                      {sp.latestLog?.roadblocks && (
-                        <span className="rounded bg-red-100 px-2 py-1 text-red-700 font-medium text-xs">
-                          {sp.latestLog.roadblocks}
-                        </span>
-                      )}
-                    </td>
-                    <td className={cn("border-b px-3 py-2 text-sm text-left text-gray-800 align-middle font-bold", getCellBgColor(project, sp, false))}>{sp.latestLog?.completionPercentage ?? 0}%</td>
-                    <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.expectedCompletionDate, 'expected')}</td>
-                    <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate, 'actual')}</td>
-                  </tr>
-                ))
+                      </td>
+                      <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
+                          {renderCollapsibleText(sp.latestLog?.executionSummary, `${sp.id}-summary`, '')}
+                      </td>
+                      <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>
+                          {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '')}
+                      </td>
+                      <td className={cn("border-b px-3 py-2 text-sm break-words align-middle", getCellBgColor(project, sp, false))}>
+                        {sp.latestLog?.roadblocks && (
+                          <span className="rounded bg-red-100 px-2 py-1 text-red-700 font-medium text-xs">
+                            {sp.latestLog.roadblocks}
+                          </span>
+                        )}
+                      </td>
+                      <td className={cn(
+                        "border-b px-3 py-2 text-sm text-left align-middle font-bold", 
+                        getCellBgColor(project, sp, false),
+                        isCompleted ? "text-emerald-700" : "text-gray-800"
+                      )}>
+                        {sp.latestLog?.completionPercentage ?? 0}%
+                      </td>
+                      <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.expectedCompletionDate, 'expected')}</td>
+                      <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate, 'actual')}</td>
+                    </tr>
+                  )
+                })
               })
             ) : (
               <tr>

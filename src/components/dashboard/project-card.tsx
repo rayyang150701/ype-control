@@ -1,7 +1,6 @@
-
 'use client';
 import { format, differenceInDays } from 'date-fns';
-import { PlusCircle, PauseCircle } from 'lucide-react';
+import { PlusCircle, PauseCircle, CheckCircle2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +25,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = subProject.expectedCompletionDate ? new Date(subProject.expectedCompletionDate as string) : null;
   const isEffectivelyOnHold = subProject.isOnHold || subProject.isParentOnHold;
+  const isCompleted = completionPercentage === 100;
 
   const delayDays = expectedDate && completionPercentage < 100 && !isEffectivelyOnHold ? differenceInDays(new Date(), expectedDate) : 0;
 
@@ -35,7 +35,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
     if (isEffectivelyOnHold) return 'bg-amber-500';
     if (delayDays > 7 || isOverdue) return 'bg-destructive';
     if (delayDays > 0) return 'bg-yellow-500';
-    if (completionPercentage === 100) return 'bg-green-500';
+    if (isCompleted) return 'bg-emerald-500';
     return 'bg-primary';
   };
 
@@ -50,19 +50,26 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
       <Card
         className={cn(
           'flex cursor-pointer flex-col transition-all hover:shadow-lg hover:-translate-y-1',
-          isOverdue && !isEffectivelyOnHold && 'border-destructive border-2',
-          isEffectivelyOnHold && 'border-amber-400 border-2 bg-amber-50'
+          isCompleted && 'border-emerald-500 border-2 bg-emerald-50 shadow-sm',
+          !isCompleted && isOverdue && !isEffectivelyOnHold && 'border-destructive border-2',
+          !isCompleted && isEffectivelyOnHold && 'border-amber-400 border-2 bg-amber-50'
         )}
         onClick={() => onCardClick(subProject)}
       >
         <CardHeader className="relative pb-2">
-           {isEffectivelyOnHold && (
+           {isCompleted && (
+            <Badge className="absolute -top-2 -right-2 bg-emerald-600 text-white flex items-center gap-1 z-10 shadow-md">
+              <CheckCircle2 className="h-3 w-3" />
+              已完成
+            </Badge>
+          )}
+           {!isCompleted && isEffectivelyOnHold && (
             <Badge className="absolute -top-2 -right-2 bg-amber-500 text-white flex items-center gap-1 z-10">
               <PauseCircle className="h-3 w-3" />
               {subProject.isOnHold ? '子專案暫緩中' : '主專案暫緩中'}
             </Badge>
           )}
-          {isOverdue && !isEffectivelyOnHold && (
+          {!isCompleted && isOverdue && !isEffectivelyOnHold && (
             <Badge variant="destructive" className="absolute -top-2 -right-2 z-10">
               逾期未報
             </Badge>
@@ -76,7 +83,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           <InfoRow 
             label="預計完成日" 
             value={expectedDate ? formatInTimeZone(expectedDate, 'UTC', 'yyyy/MM/dd') : '未設定'}
-            isDelayed={delayDays > 0}
+            isDelayed={delayDays > 0 && !isCompleted}
             delayText={`延遲 ${delayDays} 天`}
           />
           <InfoSection label="本週摘要" content={latestLog?.executionSummary || ''} maxLines={3} />
@@ -89,8 +96,8 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
         </CardContent>
         <CardFooter className="flex flex-col items-start gap-2 pt-4">
             <div className='w-full flex justify-between items-center text-xs text-muted-foreground'>
-                <span>進度</span>
-                <span>{completionPercentage}%</span>
+                <span className={cn(isCompleted && "text-emerald-700 font-bold")}>進度</span>
+                <span className={cn(isCompleted && "text-emerald-700 font-bold")}>{completionPercentage}%</span>
             </div>
             <TooltipProvider>
                 <Tooltip>
