@@ -38,19 +38,18 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
 };
 
 /**
- * 從提報區間字串解析出起始日期，並返回安全的毫秒數值
- * 使用正規表示法，精準提取第一個日期 (YYYY/MM/DD)
+ * 強力日期提取器：從提報區間字串中精準抓取第一個日期 (YYYY/MM/DD)
+ * 不受空格、連字號、全形半形字元影響
  */
 export const getSafeTimeFromPeriod = (period: string): number => {
     if (!period || typeof period !== 'string' || period === 'Excel 匯入') return 0;
     try {
-        // 使用正則表達式尋找第一個日期格式 (YYYY/MM/DD 或 YYYY-MM-DD)
+        // 使用正則表達式尋找日期格式 YYYY/MM/DD 或 YYYY-MM-DD
         const match = period.match(/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
         if (match) {
-            const datePart = match[1].replace(/\//g, '-');
-            const date = new Date(datePart);
-            const time = date.getTime();
-            return isNaN(time) ? 0 : time;
+            const dateStr = match[1].replace(/\//g, '-');
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? 0 : date.getTime();
         }
     } catch { 
         return 0; 
@@ -59,7 +58,7 @@ export const getSafeTimeFromPeriod = (period: string): number => {
 };
 
 /**
- * 安全地取得日期的毫秒數值
+ * 安全地取得任何日期格式的毫秒數值
  */
 const getSafeTime = (date: any): number => {
     if (!date) return 0;
@@ -435,7 +434,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 }
 
 /**
- * 核心高效能資料組合邏輯：強力去重、最新週報判定
+ * 核心優化邏輯：嚴格去重（案號、子專案 ID）、精準判定最新週報（解析日期優先）
  */
 async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
@@ -447,19 +446,16 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     
-    // 1. 主專案強力去重 (以案號為準，避免資料庫多個案號文檔重複顯示)
+    // 1. 主專案去重：以「案號」為準，排除資料庫中的重複文檔
     const projectsMap = new Map<string, FullProject>();
     const caseNumberToProjectId = new Map<string, string>();
 
     projectsSnapshot.docs.forEach(doc => {
         const data = doc.data();
         const caseNumber = String(data.caseNumber || '').trim();
-        if (!caseNumber) return;
+        if (!caseNumber || caseNumberToProjectId.has(caseNumber)) return;
         
-        // 如果案號重複，只保留最新建立的那一個專案文檔
-        if (caseNumberToProjectId.has(caseNumber)) return;
         caseNumberToProjectId.set(caseNumber, doc.id);
-
         projectsMap.set(doc.id, {
             id: doc.id,
             caseNumber: caseNumber,
@@ -481,15 +477,14 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } as FullProject);
     });
 
-    // 2. 最新週報判定邏輯 (以提報日期優先，相同日期則比對最後更新時間)
+    // 2. 週報去重與判定：解析週報區間日期，確保 5/4 永遠排在 4/27 之上
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        // 強制移除 Excel 匯入
-        if (logData.reportingPeriod === 'Excel 匯入') return;
+        if (logData.reportingPeriod === 'Excel 匯入') return; // 徹底移除
 
-        const subProjectId = doc.ref.parent.parent?.id || logData.subProjectId;
-        if (!subProjectId || !logData.reportingPeriod) return;
+        const subProjectId = doc.ref.parent.parent?.id;
+        if (!subProjectId) return;
 
         const currentTime = getSafeTimeFromPeriod(logData.reportingPeriod);
         if (currentTime === 0) return;
@@ -502,13 +497,12 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } else {
             const existingTime = getSafeTimeFromPeriod(existingLog.reportingPeriod);
             if (currentTime > existingTime) {
-                // 如果目前的日期比地圖中的更晚，替換
                 shouldReplace = true;
             } else if (currentTime === existingTime) {
-                // 如果日期相同，比對更新時間
-                const currentUpdated = getSafeTime(logData.updatedAt);
-                const existingUpdated = getSafeTime(existingLog.updatedAt);
-                if (currentUpdated > existingUpdated) shouldReplace = true;
+                // 如果週別相同，則比對最後更新時間
+                if (getSafeTime(logData.updatedAt) > getSafeTime(existingLog.updatedAt)) {
+                    shouldReplace = true;
+                }
             }
         }
 
@@ -528,22 +522,21 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         }
     });
 
-    // 3. 組合子專案
+    // 3. 組合子專案，並排除隸屬於重複專案的子專案
     const allSubProjects: SubProjectWithLatestLog[] = [];
-    const processedSubProjectIds = new Set<string>();
+    const subProjectIdsProcessed = new Set<string>();
 
     subProjectsSnapshot.docs.forEach(subProjectDoc => {
-        if (processedSubProjectIds.has(subProjectDoc.id)) return;
+        if (subProjectIdsProcessed.has(subProjectDoc.id)) return;
         
         const subProjectData = subProjectDoc.data();
         const project = projectsMap.get(subProjectData.projectId);
-        if (!project) return;
+        if (!project) return; // 排除隸屬於已被過濾（案號重複）的專案
 
-        processedSubProjectIds.add(subProjectDoc.id);
+        subProjectIdsProcessed.add(subProjectDoc.id);
         const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
         const isEffectivelyOnHold = (subProjectData.isOnHold === true || project.isOnHold === true);
 
-        // 逾期判斷：如果不是完成且不是暫緩，超過 7 天沒更新算逾期
         let isOverdue = false;
         if (!isEffectivelyOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
             const sevenDaysAgo = subDays(new Date(), 7);
@@ -577,14 +570,10 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
-    // 4. 清理並排序：移除沒有子專案的空主專案
+    // 4. 清理排序，移除空的幽靈專案
     const finalFullProjects = Array.from(projectsMap.values())
         .filter(p => p.subProjects.length > 0)
-        .map(p => {
-            // 對子專案按建立時間排序
-            p.subProjects.sort((a,b) => getSafeTime(a.createdAt) - getSafeTime(b.createdAt));
-            return p;
-        });
+        .sort((a,b) => getSafeTime(b.createdAt) - getSafeTime(a.createdAt));
 
     return { allSubProjects, fullProjects: finalFullProjects };
 }
@@ -605,13 +594,11 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         let latestLog: ProgressLog | null = null;
         if (!logsSnapshot.empty) {
-            // 過濾 Excel 匯入並找尋最新的一筆
             const filteredLogs = logsSnapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }) as any)
                 .filter(l => l.reportingPeriod !== 'Excel 匯入');
 
             if (filteredLogs.length > 0) {
-                // 依照提報日期從新到舊排序
                 const sortedLogs = filteredLogs.sort((a, b) => {
                     const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
                     const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
@@ -715,11 +702,9 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
     return logs.sort((a, b) => {
         const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
         const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
-        
-        // 核心邏輯：日期越晚 (最新) 的排越前面
+        // 日期由新到舊排序
         if (timeB !== timeA) return timeB - timeA;
-        
-        // 日期相同，則比對更新時間
+        // 同一週則比對更新時間
         return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
     });
 };
