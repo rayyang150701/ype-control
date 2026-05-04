@@ -6,7 +6,6 @@ import './globals.css';
 import { Header } from '@/components/header';
 import { FirebaseClientProvider } from '@/firebase';
 
-// 確保歷史資料顯示邏輯已更新
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
   description: 'Project Progress Tracking System for YC-ICT',
@@ -31,8 +30,8 @@ export default function RootLayout({
       >
         <FirebaseClientProvider>
             <Header />
-            {/* 這裡調整為廣視角佈局：寬度 100%, 減少左右邊距 */}
-            <main className="w-full px-4 sm:px-6 lg:px-12 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
+            {/* 優化：大幅縮減左右留白，改為寬視角佈局，最大寬度提升 */}
+            <main className="w-full px-2 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
                 {children}
             </main>
             <Toaster />

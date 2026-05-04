@@ -14,15 +14,12 @@ import { subDays } from 'date-fns';
 const getSafeTime = (date: any): number => {
     if (!date) return 0;
     try {
-        // 如果是 Firestore Timestamp 物件
         if (typeof date === 'object' && date !== null && 'seconds' in date) {
             return date.seconds * 1000 + (Math.floor(date.nanoseconds / 1000000));
         }
-        // 如果有 toDate 方法 (Firebase SDK 特性)
         if (typeof date.toDate === 'function') {
             return date.toDate().getTime();
         }
-        // 如果是 ISO 字串或 Date 物件
         const time = new Date(date).getTime();
         return isNaN(time) ? 0 : time;
     } catch {
@@ -296,10 +293,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 }
 
 /**
- * 核心優化邏輯：
- * 1. 案號絕對去重：以案號為 Key，只保留最新建立的專案，徹底消除「分身」。
- * 2. 最新進度判定：完全以「最後修改時間 (updatedAt)」為準。手動儲存即可強制更新進度。
- * 3. 徹底移除 Excel 匯入：在資料源頭直接過濾。
+ * 核心資料組合與去重邏輯
  */
 async function getOptimizedProjectData() {
     const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
@@ -311,82 +305,74 @@ async function getOptimizedProjectData() {
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
-    // 1. 案號強力去重：確保每個案號只有一個主專案 ID
+    // 1. 主專案去重：以「案號」為 Key，只保留最新建立的文檔
     const projectsMap = new Map<string, FullProject>();
-    const caseNumberToProjectId = new Map<string, string>();
+    const caseNumberProcessed = new Set<string>();
 
     projectsSnap.docs.forEach(doc => {
         const data = doc.data();
         const caseNumber = String(data.caseNumber || '').trim();
-        if (!caseNumber) return;
+        if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
 
-        // 因為已經依照 createdAt desc 排序，第一個遇到的案號就是最新的
-        if (!caseNumberToProjectId.has(caseNumber)) {
-            caseNumberToProjectId.set(caseNumber, doc.id);
-            projectsMap.set(doc.id, {
-                id: doc.id,
-                caseNumber,
-                name: data.name,
-                status: data.status,
-                projectPurpose: data.projectPurpose || '',
-                currentStatusAndIssues: data.currentStatusAndIssues || '',
-                yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
-                tpmOfficeContact: data.tpmOfficeContact || '',
-                egigaContact: data.egigaContact || '',
-                isOnHold: !!data.isOnHold,
-                createdAt: formatISO(data.createdAt),
-                subProjects: [],
-            } as any);
-        }
+        caseNumberProcessed.add(caseNumber);
+        projectsMap.set(doc.id, {
+            id: doc.id,
+            caseNumber,
+            name: data.name || '',
+            status: data.status || 'active',
+            projectPurpose: data.projectPurpose || '',
+            currentStatusAndIssues: data.currentStatusAndIssues || '',
+            yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
+            tpmOfficeContact: data.tpmOfficeContact || '',
+            egigaContact: data.egigaContact || '',
+            isOnHold: !!data.isOnHold,
+            createdAt: formatISO(data.createdAt),
+            subProjects: [],
+        } as any);
     });
 
-    // 2. 最新週報判定：依照「最後更新時間 (updatedAt)」決定誰是卡片上的最新內容
+    // 2. 最新週報判定：完全依照「最後更新時間 (updatedAt)」
     const latestLogsMap = new Map<string, ProgressLog>();
     logsSnap.docs.forEach(doc => {
         const data = doc.data();
         if (data.reportingPeriod === 'Excel 匯入') return;
 
-        // 優先從 data 拿，其次從路徑拿
         const spId = data.subProjectId || doc.ref.parent.parent?.id;
         if (!spId) return;
 
-        const curUpdatedTime = getSafeTime(data.updatedAt);
+        const curTime = getSafeTime(data.updatedAt);
         const existing = latestLogsMap.get(spId);
-        const existingUpdatedTime = existing ? getSafeTime(existing.updatedAt) : 0;
-        
-        // 誰的修改時間比較晚，誰就是最新
-        if (!existing || curUpdatedTime > existingUpdatedTime) {
+        const existingTime = existing ? getSafeTime(existing.updatedAt) : 0;
+
+        if (!existing || curTime > existingTime) {
             latestLogsMap.set(spId, {
                 id: doc.id,
                 subProjectId: spId,
-                reportingPeriod: data.reportingPeriod,
-                executionSummary: data.executionSummary,
-                nextWeekPlan: data.nextWeekPlan,
-                roadblocks: data.roadblocks,
-                completionPercentage: data.completionPercentage,
+                reportingPeriod: data.reportingPeriod || '',
+                executionSummary: data.executionSummary || '',
+                nextWeekPlan: data.nextWeekPlan || '',
+                roadblocks: data.roadblocks || '',
+                completionPercentage: data.completionPercentage || 0,
                 updatedAt: formatISO(data.updatedAt),
-                createdBy: data.createdBy,
+                createdBy: data.createdBy || '',
                 createdByName: userMap.get(data.createdBy) || '未知',
             } as any);
         }
     });
 
-    // 3. 組合與淨化
+    // 3. 子專案組合與淨化
     const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnap.docs.forEach(doc => {
         const data = doc.data();
-        // 檢查該子專案隸屬的父專案是否被案號去重掉了
-        const targetProjectId = projectsMap.get(data.projectId) ? data.projectId : null;
-        if (!targetProjectId) return;
+        const project = projectsMap.get(data.projectId);
+        if (!project) return; // 跳過被去重掉的「孤兒主專案」
 
-        const project = projectsMap.get(targetProjectId)!;
         const latestLog = latestLogsMap.get(doc.id) || null;
-        
         const sp: SubProjectWithLatestLog = {
             id: doc.id,
             projectId: project.id,
-            name: data.name,
-            owner: data.owner,
+            name: data.name || '',
+            owner: data.owner || '',
             ownerName: userMap.get(data.owner) || '未知',
             expectedCompletionDate: formatISO(data.expectedCompletionDate),
             actualCompletionDate: formatISOOptional(data.actualCompletionDate),
@@ -396,10 +382,9 @@ async function getOptimizedProjectData() {
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
             tpmOfficeContact: project.tpmOfficeContact,
-            isOverdue: false, 
+            isOverdue: false,
         } as any;
 
-        // 計算逾期 (非暫緩且進度未達 100 且 7天未報)
         if (!sp.isOnHold && !sp.isParentOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
             const lastUpdateTime = latestLog ? getSafeTime(latestLog.updatedAt) : 0;
             const sevenDaysAgo = subDays(new Date(), 7).getTime();
@@ -410,10 +395,17 @@ async function getOptimizedProjectData() {
         project.subProjects.push(sp);
     });
 
-    // 最後回傳排序後的列表
+    // 4. 排序邏輯優化：案號由大到小排序
+    const sortByKey = (a: string, b: string) => b.localeCompare(a, undefined, { numeric: true });
+
+    const sortedAllSubProjects = allSubProjects.sort((a, b) => sortByKey(a.projectCaseNumber || '', b.projectCaseNumber || ''));
+    const sortedFullProjects = Array.from(projectsMap.values())
+        .filter(p => p.subProjects.length > 0)
+        .sort((a, b) => sortByKey(a.caseNumber, b.caseNumber));
+
     return { 
-        allSubProjects, 
-        fullProjects: Array.from(projectsMap.values()).filter(p => p.subProjects.length > 0)
+        allSubProjects: sortedAllSubProjects, 
+        fullProjects: sortedFullProjects 
     };
 }
 
