@@ -1,3 +1,4 @@
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
@@ -296,8 +297,8 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 
 /**
  * 核心優化邏輯：
- * 1. 案號絕對去重：以案號為 Key，只保留最新建立的專案。
- * 2. 最新進度判定：完全以「最後修改時間 (updatedAt)」為準，解決補登資料權重問題。
+ * 1. 案號絕對去重：以案號為 Key，只保留最新建立的專案，徹底消除「分身」。
+ * 2. 最新進度判定：完全以「最後修改時間 (updatedAt)」為準。手動儲存即可強制更新進度。
  * 3. 徹底移除 Excel 匯入：在資料源頭直接過濾。
  */
 async function getOptimizedProjectData() {
@@ -310,49 +311,54 @@ async function getOptimizedProjectData() {
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
-    // 1. 案號強力去重：只保留最新的一個案號文檔
+    // 1. 案號強力去重：確保每個案號只有一個主專案 ID
     const projectsMap = new Map<string, FullProject>();
-    const caseNumberProcessed = new Set<string>();
+    const caseNumberToProjectId = new Map<string, string>();
 
     projectsSnap.docs.forEach(doc => {
         const data = doc.data();
         const caseNumber = String(data.caseNumber || '').trim();
-        if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
-        
-        caseNumberProcessed.add(caseNumber);
-        projectsMap.set(doc.id, {
-            id: doc.id,
-            caseNumber,
-            name: data.name,
-            status: data.status,
-            projectPurpose: data.projectPurpose || '',
-            currentStatusAndIssues: data.currentStatusAndIssues || '',
-            yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
-            tpmOfficeContact: data.tpmOfficeContact || '',
-            egigaContact: data.egigaContact || '',
-            isOnHold: !!data.isOnHold,
-            createdAt: formatISO(data.createdAt),
-            subProjects: [],
-        } as FullProject);
+        if (!caseNumber) return;
+
+        // 因為已經依照 createdAt desc 排序，第一個遇到的案號就是最新的
+        if (!caseNumberToProjectId.has(caseNumber)) {
+            caseNumberToProjectId.set(caseNumber, doc.id);
+            projectsMap.set(doc.id, {
+                id: doc.id,
+                caseNumber,
+                name: data.name,
+                status: data.status,
+                projectPurpose: data.projectPurpose || '',
+                currentStatusAndIssues: data.currentStatusAndIssues || '',
+                yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
+                tpmOfficeContact: data.tpmOfficeContact || '',
+                egigaContact: data.egigaContact || '',
+                isOnHold: !!data.isOnHold,
+                createdAt: formatISO(data.createdAt),
+                subProjects: [],
+            } as any);
+        }
     });
 
-    // 2. 最新週報判定：依照更新時間 (updatedAt) 決定誰是「最新」
+    // 2. 最新週報判定：依照「最後更新時間 (updatedAt)」決定誰是卡片上的最新內容
     const latestLogsMap = new Map<string, ProgressLog>();
     logsSnap.docs.forEach(doc => {
         const data = doc.data();
-        // 徹底移除 Excel 匯入紀錄
         if (data.reportingPeriod === 'Excel 匯入') return;
 
-        const spId = doc.ref.parent.parent?.id;
+        // 優先從 data 拿，其次從路徑拿
+        const spId = data.subProjectId || doc.ref.parent.parent?.id;
         if (!spId) return;
 
         const curUpdatedTime = getSafeTime(data.updatedAt);
         const existing = latestLogsMap.get(spId);
+        const existingUpdatedTime = existing ? getSafeTime(existing.updatedAt) : 0;
         
-        if (!existing || curUpdatedTime > getSafeTime(existing.updatedAt)) {
+        // 誰的修改時間比較晚，誰就是最新
+        if (!existing || curUpdatedTime > existingUpdatedTime) {
             latestLogsMap.set(spId, {
                 id: doc.id,
-                subProjectId: data.subProjectId,
+                subProjectId: spId,
                 reportingPeriod: data.reportingPeriod,
                 executionSummary: data.executionSummary,
                 nextWeekPlan: data.nextWeekPlan,
@@ -369,11 +375,13 @@ async function getOptimizedProjectData() {
     const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnap.docs.forEach(doc => {
         const data = doc.data();
-        const project = projectsMap.get(data.projectId);
-        // 如果主專案因為案號重複被去重掉了，其下的子專案也不應該出現
-        if (!project) return;
+        // 檢查該子專案隸屬的父專案是否被案號去重掉了
+        const targetProjectId = projectsMap.get(data.projectId) ? data.projectId : null;
+        if (!targetProjectId) return;
 
+        const project = projectsMap.get(targetProjectId)!;
         const latestLog = latestLogsMap.get(doc.id) || null;
+        
         const sp: SubProjectWithLatestLog = {
             id: doc.id,
             projectId: project.id,
@@ -402,6 +410,7 @@ async function getOptimizedProjectData() {
         project.subProjects.push(sp);
     });
 
+    // 最後回傳排序後的列表
     return { 
         allSubProjects, 
         fullProjects: Array.from(projectsMap.values()).filter(p => p.subProjects.length > 0)

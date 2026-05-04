@@ -26,14 +26,15 @@ export default function RootLayout({
       </head>
       <body
         className={cn(
-          'min-h-screen bg-background font-body antialiased'
+          'min-h-screen bg-background font-body antialiased overflow-x-hidden'
         )}
       >
         <FirebaseClientProvider>
             <Header />
-            <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+            {/* 這裡調整為廣視角佈局：寬度 100%, 減少左右邊距 */}
+            <main className="w-full px-4 sm:px-6 lg:px-12 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
                 {children}
-            </div>
+            </main>
             <Toaster />
         </FirebaseClientProvider>
       </body>
