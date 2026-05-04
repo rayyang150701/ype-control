@@ -4,8 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "genkit:dev": "echo 'Genkit dev server disabled'",
-    "genkit:watch": "echo 'Genkit dev server disabled'",
     "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "next lint",

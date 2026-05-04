@@ -5,6 +5,7 @@ import './globals.css';
 import { Header } from '@/components/header';
 import { FirebaseClientProvider } from '@/firebase';
 
+// Force chunk re-generation by adding a small comment
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
   description: 'Project Progress Tracking System for YC-ICT',
@@ -16,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-TW" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
