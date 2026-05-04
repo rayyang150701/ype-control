@@ -27,6 +27,20 @@ const getSafeTime = (date: any): number => {
 };
 
 /**
+ * 從週報區間字串解析出日期數值 (YYYY/MM/DD)
+ * 用於歷史週報的絕對時間排序
+ */
+const getSafeTimeFromPeriod = (period: string): number => {
+    if (!period || period === 'Excel 匯入') return 0;
+    // 使用 Regex 抓取第一個出現的 YYYY/MM/DD 或 YYYY-MM-DD
+    const match = period.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+    if (match) {
+        return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3])).getTime();
+    }
+    return 0;
+};
+
+/**
  * 格式化為 ISO 字串
  */
 const formatISO = (date: any): string => {
@@ -302,8 +316,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
 }
 
 /**
- * 核心資料組合與去重邏輯
- * 加入「非本週則清空文字」的顯示判斷
+ * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序
  */
 async function getOptimizedProjectData() {
     const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
@@ -316,7 +329,7 @@ async function getOptimizedProjectData() {
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     const currentPeriod = getCurrentReportingPeriod();
 
-    // 1. 主專案去重：以案號為 Key
+    // 1. 主專案去重：以案號為唯一識別
     const projectsMap = new Map<string, FullProject>();
     const caseNumberProcessed = new Set<string>();
 
@@ -342,7 +355,7 @@ async function getOptimizedProjectData() {
         } as any);
     });
 
-    // 2. 最新週報判定：依照更新時間 (updatedAt)
+    // 2. 最新週報判定：[本週優先] + [最後更新時間]
     const latestLogsMap = new Map<string, ProgressLog>();
     logsSnap.docs.forEach(doc => {
         const data = doc.data();
@@ -351,11 +364,40 @@ async function getOptimizedProjectData() {
         const spId = data.subProjectId || doc.ref.parent.parent?.id;
         if (!spId) return;
 
-        const curTime = getSafeTime(data.updatedAt);
-        const existing = latestLogsMap.get(spId);
-        const existingTime = existing ? getSafeTime(existing.updatedAt) : 0;
+        const curUpdatedTime = getSafeTime(data.updatedAt);
+        const isCurrentWeek = data.reportingPeriod === currentPeriod;
 
-        if (!existing || curTime > existingTime) {
+        const existing = latestLogsMap.get(spId);
+        if (!existing) {
+            latestLogsMap.set(spId, {
+                id: doc.id,
+                subProjectId: spId,
+                reportingPeriod: data.reportingPeriod || '',
+                executionSummary: data.executionSummary || '',
+                nextWeekPlan: data.nextWeekPlan || '',
+                roadblocks: data.roadblocks || '',
+                completionPercentage: data.completionPercentage || 0,
+                updatedAt: formatISO(data.updatedAt),
+                createdBy: data.createdBy || '',
+                createdByName: userMap.get(data.createdBy) || '未知',
+            } as any);
+            return;
+        }
+
+        const existingUpdatedTime = getSafeTime(existing.updatedAt);
+        const existingIsCurrent = existing.reportingPeriod === currentPeriod;
+
+        // 判定權重：本週週報 > 非本週週報；如果同類別，則最後更新時間晚的勝出
+        let shouldReplace = false;
+        if (isCurrentWeek && !existingIsCurrent) {
+            shouldReplace = true;
+        } else if (isCurrentWeek === existingIsCurrent) {
+            if (curUpdatedTime > existingUpdatedTime) {
+                shouldReplace = true;
+            }
+        }
+
+        if (shouldReplace) {
             latestLogsMap.set(spId, {
                 id: doc.id,
                 subProjectId: spId,
@@ -371,7 +413,7 @@ async function getOptimizedProjectData() {
         }
     });
 
-    // 3. 子專案組合與「本週更新」邏輯判斷
+    // 3. 組合與「本週空白」顯示轉換
     const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnap.docs.forEach(doc => {
         const data = doc.data();
@@ -380,7 +422,7 @@ async function getOptimizedProjectData() {
 
         const rawLatestLog = latestLogsMap.get(doc.id) || null;
         
-        // 核心邏輯：如果最新週報不是本週的，則在首頁顯示時清空文字內容，方便一眼辨識
+        // 核心邏輯：如果最新週報不是本週的，儀表板顯示時清空內容，但保留進度
         const latestLog = rawLatestLog ? {
             ...rawLatestLog,
             executionSummary: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.executionSummary : '',
@@ -405,6 +447,7 @@ async function getOptimizedProjectData() {
             isOverdue: false,
         } as any;
 
+        // 逾期判定：非暫緩且進度未達 100%，且超過 7 天沒更新
         if (!sp.isOnHold && !sp.isParentOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
             const lastUpdateTime = latestLog ? getSafeTime(latestLog.updatedAt) : 0;
             const sevenDaysAgo = subDays(new Date(), 7).getTime();
@@ -415,7 +458,7 @@ async function getOptimizedProjectData() {
         project.subProjects.push(sp);
     });
 
-    // 4. 排序：案號由大到小
+    // 4. 排序：案號由大到小 (例如 37, 36, 35...)
     const sortByKey = (a: string, b: string) => b.localeCompare(a, undefined, { numeric: true });
 
     const sortedAllSubProjects = allSubProjects.sort((a, b) => sortByKey(a.projectCaseNumber || '', b.projectCaseNumber || ''));
@@ -438,7 +481,7 @@ export const getFullProjectById = async (id: string) => {
 };
 
 /**
- * 取得單一子專案的所有歷史週報 (保留完整資料)
+ * 取得單一子專案的所有歷史週報 (保留完整資料，依照週報日期絕對排序)
  */
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
     const snap = await db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).get();
@@ -456,5 +499,12 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
             } as any;
         })
         .filter(l => l.reportingPeriod !== 'Excel 匯入')
-        .sort((a, b) => getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt));
+        .sort((a, b) => {
+            // 第一優先：比對週報日期 (5/4 > 4/27)
+            const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
+            const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
+            if (timeA !== timeB) return timeB - timeA;
+            // 第二優先：比對最後更新時間
+            return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
+        });
 };

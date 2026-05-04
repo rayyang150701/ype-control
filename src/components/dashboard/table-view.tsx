@@ -136,65 +136,25 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
           <thead className="sticky top-0 z-30">
             <tr>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-0 z-40">操作</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[60px] z-40">主專案案號</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[60px] z-40">案號</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700 sticky left-[124px] z-40">主專案名稱</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">專案目的</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">現況/問題點</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">燁輝專案負責主管與分機</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM管理室窗口</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">燁輝負責主管</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">TPM窗口</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">億威電子</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">子專案名稱</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週執行摘要 ({getWeekRange()})</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">下週工作計畫</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">遭遇問題及風險</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">總體完成度</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">預計完成日</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">實際完成日</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">本週摘要 ({getWeekRange()})</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">下週計畫</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">問題與風險</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">進度</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">預計完成</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-sm font-semibold text-gray-700">實際完成</th>
             </tr>
           </thead>
           <tbody>
             {groupedProjects.map((project) => {
-              if (project.subProjects.length === 0) {
-                return (
-                  <tr key={project.id}>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20 bg-white">
-                      <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20 bg-white">{project.caseNumber}</td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20 bg-white">
-                      <div className='flex items-center gap-2'>
-                        <span>{project.name}</span>
-                        {project.isOnHold && (
-                           <Badge className="bg-amber-500 text-white flex items-center gap-1">
-                              <PauseCircle className="h-3 w-3" />
-                              主專案暫緩中
-                           </Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
-                      {renderCollapsibleText(project.projectPurpose, `${project.id}-purpose`)}
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
-                      {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
-                      {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
-                      {project.tpmOfficeContact || <span className="text-gray-400 italic">尚未填寫</span>}
-                    </td>
-                    <td className="border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words">
-                      {project.egigaContact || <span className="text-gray-400 italic">尚未填寫</span>}
-                    </td>
-                    <td colSpan={7} className="border-b px-3 py-2 text-center text-sm text-gray-500 italic">
-                        此專案下沒有符合目前篩選條件的子專案
-                    </td>
-                  </tr>
-                );
-              }
+              if (project.subProjects.length === 0) return null;
 
               return project.subProjects.map((sp, subProjectIndex) => (
                 <tr
@@ -214,11 +174,11 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
                         <div className='flex items-center gap-2'>
-                          <span>{project.name}</span>
+                          <span className="font-semibold">{project.name}</span>
                           {project.isOnHold && (
                              <Badge className="bg-amber-500 text-white flex items-center gap-1">
                                 <PauseCircle className="h-3 w-3" />
-                                主專案暫緩中
+                                暫緩
                              </Badge>
                           )}
                         </div>
@@ -230,13 +190,13 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                         {renderCollapsibleText(project.currentStatusAndIssues, `${project.id}-status`)}
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                        {project.yiehPhuiProjectManager || <span className="text-gray-400 italic">尚未填寫</span>}
+                        {project.yiehPhuiProjectManager}
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                        {project.tpmOfficeContact || <span className="text-gray-400 italic">尚未填寫</span>}
+                        {project.tpmOfficeContact}
                       </td>
                       <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>
-                        {project.egigaContact || <span className="text-gray-400 italic">尚未填寫</span>}
+                        {project.egigaContact}
                       </td>
                     </>
                   )}
@@ -245,14 +205,14 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                         <button
                           type="button"
                           onClick={() => onSubProjectClick(sp)}
-                          className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left"
+                          className="text-blue-600 underline hover:text-blue-800 bg-transparent border-none p-0 cursor-pointer text-left font-medium"
                         >
                           {sp.name}
                         </button>
                         {sp.isOnHold && (
-                          <Badge className="bg-amber-500 text-white flex items-center gap-1">
+                          <Badge className="bg-amber-500 text-white flex items-center gap-1 scale-75 origin-left">
                             <PauseCircle className="h-3 w-3" />
-                            暫緩中
+                            暫緩
                           </Badge>
                         )}
                       </div>
@@ -264,15 +224,13 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                       {renderCollapsibleText(sp.latestLog?.nextWeekPlan, `${sp.id}-plan`, '')}
                   </td>
                   <td className={cn("border-b px-3 py-2 text-sm break-words align-middle", getCellBgColor(project, sp, false))}>
-                    {sp.latestLog?.roadblocks ? (
-                      <span className="rounded bg-red-100 px-2 py-1 text-red-700">
+                    {sp.latestLog?.roadblocks && (
+                      <span className="rounded bg-red-100 px-2 py-1 text-red-700 font-medium">
                         {sp.latestLog.roadblocks}
                       </span>
-                    ) : (
-                      <span className="text-gray-400"></span>
                     )}
                   </td>
-                  <td className={cn("border-b px-3 py-2 text-sm text-left text-gray-800 align-middle", getCellBgColor(project, sp, false))}>{sp.latestLog?.completionPercentage ?? 0}%</td>
+                  <td className={cn("border-b px-3 py-2 text-sm text-left text-gray-800 align-middle font-bold", getCellBgColor(project, sp, false))}>{sp.latestLog?.completionPercentage ?? 0}%</td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.expectedCompletionDate, 'expected')}</td>
                   <td className={cn("border-b px-3 py-2 text-sm text-gray-800 break-words align-middle", getCellBgColor(project, sp, false))}>{formatDate(sp.actualCompletionDate, 'actual')}</td>
                 </tr>
