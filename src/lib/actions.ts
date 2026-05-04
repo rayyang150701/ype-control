@@ -39,13 +39,16 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
 
 /**
  * 從提報區間字串解析出起始日期，並返回安全的毫秒數值
- * 支援格式: "2025/12/08 - 12/14" 或 "2025-12-08"
+ * 使用正則表達式，支援多種分隔符號 (2025/12/08 或 2025-12-08)
  */
 export const getSafeTimeFromPeriod = (period: string): number => {
     if (!period || typeof period !== 'string' || period === 'Excel 匯入') return 0;
     try {
-        const parts = period.split(' - ');
-        const datePart = parts[0].trim().replace(/\//g, '-');
+        // 使用正則表達式尋找第一個日期格式 (YYYY/MM/DD 或 YYYY-MM-DD)
+        const match = period.match(/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
+        if (!match) return 0;
+        
+        const datePart = match[1].replace(/\//g, '-');
         const date = new Date(datePart);
         const time = date.getTime();
         return isNaN(time) ? 0 : time;
@@ -476,11 +479,11 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } as FullProject);
     });
 
-    // 2. 最新週報判定邏輯：精準找出每個子專案日期最晚者，並排除 "Excel 匯入"
+    // 2. 最新週報判定邏輯
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        if (logData.reportingPeriod === 'Excel 匯入') return; // 強力排除 Excel 匯入紀錄
+        if (logData.reportingPeriod === 'Excel 匯入') return;
 
         const subProjectId = doc.ref.parent.parent?.id || logData.subProjectId;
         if (!subProjectId || !logData.reportingPeriod) return;
@@ -594,7 +597,6 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         let latestLog: ProgressLog | null = null;
         if (!logsSnapshot.empty) {
-            // 過濾掉 Excel 匯入
             const filteredLogs = logsSnapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }) as any)
                 .filter(l => l.reportingPeriod !== 'Excel 匯入');
@@ -698,13 +700,13 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
                 createdByName: userMap.get(data.createdBy)
             } as ProgressLog;
         })
-        .filter(l => l.reportingPeriod !== 'Excel 匯入'); // 徹底過濾歷史 Excel 匯入紀錄
+        .filter(l => l.reportingPeriod !== 'Excel 匯入');
 
     return logs.sort((a, b) => {
         const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
         const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
         
-        // 核心邏輯：日期越晚的排越前面
+        // 核心邏輯：日期越晚 (最新) 的排越前面
         if (timeB !== timeA) return timeB - timeA;
         
         // 日期相同，則比對更新時間
