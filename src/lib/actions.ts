@@ -39,22 +39,23 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
 
 /**
  * 從提報區間字串解析出起始日期，並返回安全的毫秒數值
- * 使用正則表達式，支援多種分隔符號 (2025/12/08 或 2025-12-08)
+ * 使用正規表示法，精準提取第一個日期 (YYYY/MM/DD)
  */
 export const getSafeTimeFromPeriod = (period: string): number => {
     if (!period || typeof period !== 'string' || period === 'Excel 匯入') return 0;
     try {
         // 使用正則表達式尋找第一個日期格式 (YYYY/MM/DD 或 YYYY-MM-DD)
         const match = period.match(/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
-        if (!match) return 0;
-        
-        const datePart = match[1].replace(/\//g, '-');
-        const date = new Date(datePart);
-        const time = date.getTime();
-        return isNaN(time) ? 0 : time;
+        if (match) {
+            const datePart = match[1].replace(/\//g, '-');
+            const date = new Date(datePart);
+            const time = date.getTime();
+            return isNaN(time) ? 0 : time;
+        }
     } catch { 
         return 0; 
     }
+    return 0;
 };
 
 /**
@@ -446,7 +447,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     
-    // 1. 主專案強力去重
+    // 1. 主專案強力去重 (以案號為準，避免資料庫多個案號文檔重複顯示)
     const projectsMap = new Map<string, FullProject>();
     const caseNumberToProjectId = new Map<string, string>();
 
@@ -455,6 +456,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         const caseNumber = String(data.caseNumber || '').trim();
         if (!caseNumber) return;
         
+        // 如果案號重複，只保留最新建立的那一個專案文檔
         if (caseNumberToProjectId.has(caseNumber)) return;
         caseNumberToProjectId.set(caseNumber, doc.id);
 
@@ -479,10 +481,11 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } as FullProject);
     });
 
-    // 2. 最新週報判定邏輯
+    // 2. 最新週報判定邏輯 (以提報日期優先，相同日期則比對最後更新時間)
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
+        // 強制移除 Excel 匯入
         if (logData.reportingPeriod === 'Excel 匯入') return;
 
         const subProjectId = doc.ref.parent.parent?.id || logData.subProjectId;
@@ -499,8 +502,10 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } else {
             const existingTime = getSafeTimeFromPeriod(existingLog.reportingPeriod);
             if (currentTime > existingTime) {
+                // 如果目前的日期比地圖中的更晚，替換
                 shouldReplace = true;
             } else if (currentTime === existingTime) {
+                // 如果日期相同，比對更新時間
                 const currentUpdated = getSafeTime(logData.updatedAt);
                 const existingUpdated = getSafeTime(existingLog.updatedAt);
                 if (currentUpdated > existingUpdated) shouldReplace = true;
@@ -538,6 +543,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
         const isEffectivelyOnHold = (subProjectData.isOnHold === true || project.isOnHold === true);
 
+        // 逾期判斷：如果不是完成且不是暫緩，超過 7 天沒更新算逾期
         let isOverdue = false;
         if (!isEffectivelyOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
             const sevenDaysAgo = subDays(new Date(), 7);
@@ -571,9 +577,11 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
+    // 4. 清理並排序：移除沒有子專案的空主專案
     const finalFullProjects = Array.from(projectsMap.values())
         .filter(p => p.subProjects.length > 0)
         .map(p => {
+            // 對子專案按建立時間排序
             p.subProjects.sort((a,b) => getSafeTime(a.createdAt) - getSafeTime(b.createdAt));
             return p;
         });
@@ -597,11 +605,13 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         
         let latestLog: ProgressLog | null = null;
         if (!logsSnapshot.empty) {
+            // 過濾 Excel 匯入並找尋最新的一筆
             const filteredLogs = logsSnapshot.docs
                 .map(d => ({ id: d.id, ...d.data() }) as any)
                 .filter(l => l.reportingPeriod !== 'Excel 匯入');
 
             if (filteredLogs.length > 0) {
+                // 依照提報日期從新到舊排序
                 const sortedLogs = filteredLogs.sort((a, b) => {
                     const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
                     const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
