@@ -45,7 +45,9 @@ export const getSafeTimeFromPeriod = (period: string): number => {
     try {
         const parts = period.split(' - ');
         if (parts.length < 1) return 0;
-        const date = new Date(parts[0].trim().replace(/\//g, '-'));
+        // 處理格式如 2026/05/04
+        const dateStr = parts[0].trim().replace(/\//g, '-');
+        const date = new Date(dateStr);
         const time = date.getTime();
         return isNaN(time) ? 0 : time;
     } catch { 
