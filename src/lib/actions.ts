@@ -3,9 +3,34 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/lib/firebase-admin';
-import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, UserRole, UserStatus, SubProject } from '@/types';
+import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, SubProject } from '@/types';
 import { FieldValue } from 'firebase-admin/firestore';
-import { format, differenceInDays, subDays } from 'date-fns';
+import { subDays } from 'date-fns';
+
+// 輔助函式：確保日期格式可以安全地序列化傳遞給客戶端
+const formatFirestoreDate = (date: any): string => {
+    if (!date) return new Date().toISOString();
+    if (typeof date === 'string') return date;
+    if (date.toDate && typeof date.toDate === 'function') {
+        return date.toDate().toISOString();
+    }
+    if (date instanceof Date) {
+        return date.toISOString();
+    }
+    return new Date().toISOString();
+};
+
+const formatFirestoreDateOptional = (date: any): string | undefined => {
+    if (!date) return undefined;
+    if (typeof date === 'string') return date;
+    if (date.toDate && typeof date.toDate === 'function') {
+        return date.toDate().toISOString();
+    }
+    if (date instanceof Date) {
+        return date.toISOString();
+    }
+    return undefined;
+};
 
 // Schema definitions
 const subProjectSchema = z.object({
@@ -223,9 +248,9 @@ export async function updateProgressLog(
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
     return {
-      id: logRef.id,
       ...data,
-      updatedAt: (data.updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+      id: logRef.id,
+      updatedAt: formatFirestoreDate(data.updatedAt),
       createdByName: userMap.get(data.createdBy),
     } as ProgressLog;
 }
@@ -247,8 +272,8 @@ export async function addProgressLog (
     
     revalidatePath('/dashboard');
     return {
-        id: newLogRef.id,
         ...logData,
+        id: newLogRef.id,
         subProjectId,
         createdBy: userId,
         updatedAt: new Date().toISOString(), 
@@ -353,7 +378,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
         db.collectionGroup('sub_projects').get(),
-        db.collectionGroup('progress_logs').get(), // 獲取所有日誌進行手動去重
+        db.collectionGroup('progress_logs').get(), 
         getUsers()
     ]);
 
@@ -364,8 +389,21 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         const data = doc.data();
         projectsMap.set(doc.id, {
             id: doc.id,
-            ...data,
-            createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+            caseNumber: data.caseNumber,
+            name: data.name,
+            status: data.status,
+            createdBy: data.createdBy,
+            projectPurpose: data.projectPurpose,
+            currentStatusAndIssues: data.currentStatusAndIssues,
+            yiehPhuiProjectManager: data.yiehPhuiProjectManager,
+            tpmOfficeContact: data.tpmOfficeContact,
+            egigaContact: data.egigaContact,
+            isOnHold: data.isOnHold ?? false,
+            onHoldReason: data.onHoldReason,
+            onHoldStartDate: formatFirestoreDateOptional(data.onHoldStartDate),
+            onHoldEndDate: formatFirestoreDateOptional(data.onHoldEndDate),
+            onHoldNotes: data.onHoldNotes,
+            createdAt: formatFirestoreDate(data.createdAt),
             subProjects: [],
         } as FullProject);
     });
@@ -382,7 +420,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        // 優先從路徑提取真正所屬的 SID，確保不會張冠李戴
         const sidFromPath = doc.ref.parent.parent?.id;
         const subProjectId = sidFromPath || logData.subProjectId;
 
@@ -401,7 +438,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             if (existingLogDate && currentLogDate > existingLogDate) {
                 shouldReplace = true;
             } else if (existingLogDate && currentLogDate.getTime() === existingLogDate.getTime()) {
-                // 如果週別相同，比對編輯時間
                 const currentUpdated = (logData.updatedAt as FirebaseFirestore.Timestamp)?.toDate() || new Date(0);
                 const existingUpdated = new Date(existingLog.updatedAt as string);
                 if (currentUpdated > existingUpdated) shouldReplace = true;
@@ -410,10 +446,15 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
 
         if (shouldReplace) {
             latestLogsMap.set(subProjectId, {
-                ...logData,
                 id: doc.id,
                 subProjectId,
-                updatedAt: (logData.updatedAt as FirebaseFirestore.Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                reportingPeriod: logData.reportingPeriod,
+                executionSummary: logData.executionSummary,
+                nextWeekPlan: logData.nextWeekPlan,
+                roadblocks: logData.roadblocks,
+                completionPercentage: logData.completionPercentage,
+                createdBy: logData.createdBy,
+                updatedAt: formatFirestoreDate(logData.updatedAt),
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog);
         }
@@ -424,7 +465,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         const subProjectData = subProjectDoc.data();
         const project = projectsMap.get(subProjectData.projectId);
         
-        if (!project) return; // 過濾掉孤兒資料
+        if (!project) return; 
 
         const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
         const isEffectivelyOnHold = (subProjectData.isOnHold || project.isOnHold);
@@ -436,12 +477,18 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         }
 
         const subProjectWithLog: SubProjectWithLatestLog = {
-            ...subProjectData,
             id: subProjectDoc.id,
-            expectedCompletionDate: subProjectData.expectedCompletionDate ? (subProjectData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
-            actualCompletionDate: subProjectData.actualCompletionDate ? (subProjectData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
-            createdAt: subProjectData.createdAt ? (subProjectData.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString() : new Date().toISOString(),
             projectId: project.id,
+            name: subProjectData.name,
+            owner: subProjectData.owner,
+            expectedCompletionDate: formatFirestoreDate(subProjectData.expectedCompletionDate),
+            actualCompletionDate: formatFirestoreDateOptional(subProjectData.actualCompletionDate),
+            createdAt: formatFirestoreDate(subProjectData.createdAt),
+            isOnHold: subProjectData.isOnHold ?? false,
+            onHoldReason: subProjectData.onHoldReason,
+            onHoldStartDate: formatFirestoreDateOptional(subProjectData.onHoldStartDate),
+            onHoldEndDate: formatFirestoreDateOptional(subProjectData.onHoldEndDate),
+            onHoldNotes: subProjectData.onHoldNotes,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
             projectPurpose: project.projectPurpose,
@@ -452,7 +499,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             ownerName: userMap.get(subProjectData.owner),
             latestLog,
             isOverdue,
-            isOnHold: subProjectData.isOnHold ?? false,
             isParentOnHold: project.isOnHold ?? false,
         };
         
@@ -460,7 +506,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
-    // 排序
     projectsMap.forEach(p => p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()));
 
     return { allSubProjects, fullProjects: Array.from(projectsMap.values()) };
@@ -482,15 +527,18 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         const latestLog = !logs.empty ? {
             ...logs.docs[0].data(),
             id: logs.docs[0].id,
-            updatedAt: (logs.docs[0].data().updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+            updatedAt: formatFirestoreDate(logs.docs[0].data().updatedAt),
             createdByName: userMap.get(logs.docs[0].data().createdBy)
         } as ProgressLog : null;
 
         return {
             ...spData,
             id: doc.id,
-            expectedCompletionDate: spData.expectedCompletionDate ? (spData.expectedCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
-            actualCompletionDate: spData.actualCompletionDate ? (spData.actualCompletionDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+            expectedCompletionDate: formatFirestoreDate(spData.expectedCompletionDate),
+            actualCompletionDate: formatFirestoreDateOptional(spData.actualCompletionDate),
+            createdAt: formatFirestoreDate(spData.createdAt),
+            onHoldStartDate: formatFirestoreDateOptional(spData.onHoldStartDate),
+            onHoldEndDate: formatFirestoreDateOptional(spData.onHoldEndDate),
             projectId,
             latestLog,
             isOnHold: spData.isOnHold ?? false,
@@ -501,29 +549,42 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
     return {
         id: projectDoc.id,
         ...projectData,
+        createdAt: formatFirestoreDate(projectData.createdAt),
+        onHoldStartDate: formatFirestoreDateOptional(projectData.onHoldStartDate),
+        onHoldEndDate: formatFirestoreDateOptional(projectData.onHoldEndDate),
         subProjects,
     } as FullProject;
 };
 
 export const getFullProjects = async () => (await getOptimizedProjectData()).fullProjects;
 export const getSubProjectsWithLatestLogs = async () => (await getOptimizedProjectData()).allSubProjects;
+
 export const getUsers = async (): Promise<User[]> => {
     const snap = await db.collection('users').get();
-    return snap.docs.map(doc => ({
-        uid: doc.id,
-        ...doc.data(),
-        createdAt: (doc.data().createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString() || new Date().toISOString()
-    } as User));
+    return snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+            uid: doc.id,
+            email: data.email,
+            displayName: data.displayName,
+            role: data.role,
+            status: data.status,
+            createdAt: formatFirestoreDate(data.createdAt)
+        } as User;
+    });
 };
 
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
     const snap = await db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).orderBy('updatedAt', 'desc').get();
     const users = await getUsers();
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-    return snap.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        updatedAt: (doc.data().updatedAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
-        createdByName: userMap.get(doc.data().createdBy)
-    } as ProgressLog));
+    return snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+            ...data,
+            id: doc.id,
+            updatedAt: formatFirestoreDate(data.updatedAt),
+            createdByName: userMap.get(data.createdBy)
+        } as ProgressLog;
+    });
 };
