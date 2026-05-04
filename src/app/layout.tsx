@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
@@ -5,7 +6,7 @@ import './globals.css';
 import { Header } from '@/components/header';
 import { FirebaseClientProvider } from '@/firebase';
 
-// Force chunk re-generation by adding a small comment
+// 確保歷史資料顯示邏輯已更新
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
   description: 'Project Progress Tracking System for YC-ICT',

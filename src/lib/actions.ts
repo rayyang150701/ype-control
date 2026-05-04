@@ -1,5 +1,4 @@
 
-
 'use server';
 
 import { revalidatePath } from 'next/cache';
@@ -88,8 +87,6 @@ export async function updateUser(uid: string, data: z.infer<typeof userSchema>) 
 
 export async function deleteUser(uid: string) {
     try {
-        // Here you might want to add logic to check if the user is an owner of any sub-projects
-        // before allowing deletion. For now, we'll proceed with deletion.
         const userRef = db.collection('users').doc(uid);
         await userRef.delete();
         revalidatePath('/users');
@@ -194,7 +191,6 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
         });
         
         revalidatePath('/dashboard');
-        revalidatePath('/projects'); // Assuming a project detail page might exist
         return { success: true, message: '專案已成功更新！' };
     } catch (error) {
         console.error("Error updating project:", error);
@@ -305,11 +301,9 @@ export async function deleteSubProjects(projectId: string, subProjectIds: string
         for (const subProjectId of subProjectIds) {
             const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
             
-            // Delete all progress logs for the sub-project
             const progressLogsSnapshot = await subProjectRef.collection('progress_logs').get();
             progressLogsSnapshot.docs.forEach(logDoc => transaction.delete(logDoc.ref));
             
-            // Delete the sub-project itself
             transaction.delete(subProjectRef);
         }
     });
@@ -406,13 +400,11 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
         onHoldEndDate: new Date(),
       };
   
-      // Resume parent projects
       projectIds.forEach(pid => {
         const projectRef = db.collection('projects').doc(pid);
         batch.update(projectRef, { ...resumeUpdate, status: 'active' });
       });
   
-      // Resume sub-projects
       for (const projectId in subProjectsByProject) {
         const spIds = subProjectsByProject[projectId];
         spIds.forEach(spId => {
@@ -482,7 +474,6 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 
 // HELPER FOR EFFICIENT DATA LOADING
 async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
-    // 1. Fetch all data in parallel using collection group queries
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
         db.collectionGroup('sub_projects').get(),
@@ -490,7 +481,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         getUsers()
     ]);
 
-    // 2. Process data into maps for efficient lookup
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     
     const projectsMap = new Map<string, FullProject>();
@@ -522,9 +512,14 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        if (!logData.subProjectId || !logData.reportingPeriod) return;
+        
+        // 核心修正：如果文件內容缺少 subProjectId 欄位，則嘗試從父路徑中提取 SID
+        // 路徑結構為 projects/{pid}/sub_projects/{sid}/progress_logs/{lid}
+        const sidFromPath = doc.ref.parent.parent?.id;
+        const subProjectId = logData.subProjectId || sidFromPath;
 
-        const subProjectId = logData.subProjectId;
+        if (!subProjectId || !logData.reportingPeriod) return;
+
         const existingLog = latestLogsMap.get(subProjectId);
         
         const currentLogDate = getStartDateFromPeriod(logData.reportingPeriod);
@@ -538,7 +533,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             if (existingLogDate && currentLogDate > existingLogDate) {
                 shouldUpdate = true;
             } else if (existingLogDate && currentLogDate.getTime() === existingLogDate.getTime()) {
-                // If reporting periods are the same, use the most recent edit
                 const currentUpdatedAt = (logData.updatedAt as FirebaseFirestore.Timestamp).toDate();
                 const existingUpdatedAt = new Date(existingLog.updatedAt as string);
                 if (currentUpdatedAt > existingUpdatedAt) {
@@ -552,13 +546,13 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             latestLogsMap.set(subProjectId, {
                 ...logData,
                 id: doc.id,
+                subProjectId, // 確保回傳的物件中有 ID
                 updatedAt: updatedAt.toDate().toISOString(),
                 createdByName: userMap.get(logData.createdBy),
             } as ProgressLog);
         }
     });
 
-    // 3. Assemble sub-projects and link them to parent projects
     const allSubProjects: SubProjectWithLatestLog[] = [];
     subProjectsSnapshot.docs.forEach(subProjectDoc => {
         const subProjectData = subProjectDoc.data();
@@ -615,7 +609,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
-    // Sort sub-projects within each project by creation date
     projectsMap.forEach(p => {
         p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime())
     });
@@ -643,7 +636,6 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
     const latestLogsMap = new Map<string, ProgressLog>();
 
     if (subProjectIds.length > 0) {
-        // This is more robust than a single 'in' query which is limited to 30 items.
         const logPromises = subProjectIds.map(id => 
             db.collection(`projects/${projectId}/sub_projects/${id}/progress_logs`)
               .orderBy('updatedAt', 'desc')
@@ -736,5 +728,3 @@ export const getSubProjectsWithLatestLogs = async (): Promise<SubProjectWithLate
 
     return allSubProjects;
 };
-
-
