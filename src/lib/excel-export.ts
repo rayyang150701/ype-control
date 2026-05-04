@@ -63,11 +63,11 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
 };
 
 export const exportAllProjectsSummary = (projects: FullProject[], users: User[]) => {
-  // 1. 強力過濾：只匯出有子專案的專案，並且依照案號去重
-  const uniqueProjects = projects
+  // 1. 強力過濾與排序：案號從大到小 (例如 37, 36, 35...)
+  const sortedProjects = [...projects]
     .filter(p => p.subProjects && p.subProjects.length > 0)
     .sort((a, b) => 
-      (a.caseNumber ?? '').localeCompare(b.caseNumber ?? '', undefined, { numeric: true })
+      (b.caseNumber ?? '').localeCompare(a.caseNumber ?? '', undefined, { numeric: true })
     );
 
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
@@ -95,7 +95,7 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
     headers
   ];
 
-  uniqueProjects.forEach(project => {
+  sortedProjects.forEach(project => {
     project.subProjects.forEach((sp, index) => {
       const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
@@ -104,39 +104,22 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
       
       const currentStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
 
-      const row = index === 0 
-        ? [
-            { v: project.caseNumber, s: currentStyle },
-            { v: project.name, s: currentStyle },
-            { v: project.projectPurpose || '尚未填寫', s: currentStyle },
-            { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
-            { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
-            { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
-            { v: project.egigaContact || '尚未填寫', s: currentStyle },
-            { v: sp.name, s: currentStyle },
-            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: currentStyle },
-            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: currentStyle },
-            { v: sp.latestLog?.roadblocks || '無', s: currentStyle },
-            { v: completionPercentage, s: currentStyle },
-            { v: expectedDate, s: currentStyle },
-            { v: actualDate, s: currentStyle }
-          ]
-        : [
-            { v: project.caseNumber, s: currentStyle },
-            { v: project.name, s: currentStyle },
-            { v: project.projectPurpose || '尚未填寫', s: currentStyle },
-            { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
-            { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
-            { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
-            { v: project.egigaContact || '尚未填寫', s: currentStyle },
-            { v: sp.name, s: currentStyle },
-            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: currentStyle },
-            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: currentStyle },
-            { v: sp.latestLog?.roadblocks || '無', s: currentStyle },
-            { v: completionPercentage, s: currentStyle },
-            { v: expectedDate, s: currentStyle },
-            { v: actualDate, s: currentStyle }
-          ];
+      const row = [
+        { v: project.caseNumber, s: currentStyle },
+        { v: project.name, s: currentStyle },
+        { v: project.projectPurpose || '尚未填寫', s: currentStyle },
+        { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
+        { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
+        { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
+        { v: project.egigaContact || '尚未填寫', s: currentStyle },
+        { v: sp.name, s: currentStyle },
+        { v: sp.latestLog?.executionSummary ?? '', s: currentStyle },
+        { v: sp.latestLog?.nextWeekPlan ?? '', s: currentStyle },
+        { v: sp.latestLog?.roadblocks || '', s: currentStyle },
+        { v: completionPercentage, s: currentStyle },
+        { v: expectedDate, s: currentStyle },
+        { v: actualDate, s: currentStyle }
+      ];
       data.push(row);
     });
   });
@@ -148,7 +131,7 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
   ];
 
   let currentRow = 4; 
-  uniqueProjects.forEach(project => {
+  sortedProjects.forEach(project => {
     const subProjectCount = project.subProjects.length;
     if (subProjectCount > 1) {
       for(let i=0; i < 7; i++){

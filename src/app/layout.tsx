@@ -1,4 +1,3 @@
-
 import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
@@ -30,7 +29,7 @@ export default function RootLayout({
       >
         <FirebaseClientProvider>
             <Header />
-            <main className="w-full px-2 py-4 sm:py-6 lg:py-8 mx-auto max-w-[1920px]">
+            <main className="w-full px-4 py-4 sm:py-6 lg:py-8 mx-auto">
                 {children}
             </main>
             <Toaster />
