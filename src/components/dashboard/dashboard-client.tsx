@@ -1,10 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import type { SubProjectWithLatestLog, ProgressLog, FullProject } from '@/types';
 import { ProjectCard } from './project-card';
-import { EmptyState } from '@/components/shared/empty-state';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
 import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
@@ -15,7 +13,6 @@ import { TableView } from './table-view';
 import { DeleteProjectDialog } from './delete-project-dialog';
 import { OnHoldDialog } from './on-hold-dialog';
 import { ResumeProjectDialog } from './resume-project-dialog';
-import { useToast } from '@/hooks/use-toast';
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
@@ -40,17 +37,16 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
   const [isResumeProjectOpen, setIsResumeProjectOpen] = useState(false);
-  
-  const { toast } = useToast();
-  const router = useRouter();
 
-  // 核心：全域刷新資料，確保無重複
+  // 核心：全域刷新，徹底替換狀態，避免前端殘留重複資料
   const refreshData = async () => {
     try {
-      const updatedSubProjects = await getSubProjectsWithLatestLogs();
-      setSubProjects(updatedSubProjects);
-      const updatedFullProjects = await getFullProjects();
-      setFullProjects(updatedFullProjects);
+      const [updatedSubs, updatedFulls] = await Promise.all([
+        getSubProjectsWithLatestLogs(),
+        getFullProjects()
+      ]);
+      setSubProjects(updatedSubs);
+      setFullProjects(updatedFulls);
     } catch (error) {
       console.error("Refresh failed", error);
     }
@@ -77,35 +73,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       });
   }, [subProjects, searchQuery, filter]);
 
-  const filteredFullProjects = useMemo(() => {
-    const query = searchQuery.toLowerCase();
-    return fullProjects
-      .map(project => {
-        const filteredSubs = project.subProjects.filter(sp => {
-          const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
-          if (filter === 'overdue') return sp.isOverdue && !isEffectivelyOnHold;
-          if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-          if (filter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
-          if (filter === 'on-hold') return isEffectivelyOnHold;
-          return true;
-        });
-
-        if (filteredSubs.length === 0 && filter !== 'all') {
-           if (query && (project.name.toLowerCase().includes(query) || project.caseNumber.toLowerCase().includes(query))) {
-             return { ...project, subProjects: [] };
-           }
-           return null;
-        }
-
-        if (query) {
-          const matches = project.name.toLowerCase().includes(query) || project.caseNumber.toLowerCase().includes(query) || filteredSubs.some(s => s.name.toLowerCase().includes(query));
-          return matches ? { ...project, subProjects: filteredSubs } : null;
-        }
-        return { ...project, subProjects: filteredSubs };
-      })
-      .filter((p): p is FullProject => p !== null);
-  }, [fullProjects, searchQuery, filter]);
-
   const handleSubProjectClick = async (subProject: SubProjectWithLatestLog) => {
     setSelectedSubProject(subProject);
     setIsTimelineOpen(true);
@@ -129,13 +96,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     }
   };
 
-  // 成功後統一只執行 refreshData
   const onOperationSuccess = () => {
     setIsNewProjectOpen(false);
     setIsEditProjectOpen(false);
     setIsDeleteProjectOpen(false);
-    setIsOnHoldProjectOpen(false);
-    setIsResumeProjectOpen(false);
+    isOnHoldProjectOpen && setIsOnHoldProjectOpen(false);
+    isResumeProjectOpen && setIsResumeProjectOpen(false);
     refreshData();
   };
 
@@ -146,7 +112,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setSearchQuery={setSearchQuery}
         filter={filter}
         setFilter={setFilter}
-        onExportAll={() => exportAllProjectsSummary(filteredFullProjects, [])}
+        onExportAll={() => exportAllProjectsSummary(fullProjects, [])}
         onAddNewProject={() => setIsNewProjectOpen(true)}
         onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
         onDeleteProject={() => setIsDeleteProjectOpen(true)}
@@ -158,11 +124,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredSubProjects.map(sp => (
-            <ProjectCard key={sp.id} subProject={sp} onCardClick={handleSubProjectClick} onLogAdded={refreshData}/>
+            <ProjectCard key={`${sp.projectId}-${sp.id}`} subProject={sp} onCardClick={handleSubProjectClick} onLogAdded={refreshData}/>
           ))}
         </div>
       ) : (
-        <TableView groupedProjects={filteredFullProjects} onEditProject={handleEditProjectClick} onSubProjectClick={handleSubProjectClick} />
+        <TableView groupedProjects={fullProjects} onEditProject={handleEditProjectClick} onSubProjectClick={handleSubProjectClick} />
       )}
 
       {selectedSubProject && (

@@ -8,7 +8,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { subDays } from 'date-fns';
 
 /**
- * 格式化 Firestore 的日期格式為 ISO 字串，確保序列化安全
+ * 格式化 Firestore 的日期格式為 ISO 字串
  */
 const formatFirestoreDate = (date: any): string => {
     if (!date) return new Date().toISOString();
@@ -22,9 +22,6 @@ const formatFirestoreDate = (date: any): string => {
     return new Date().toISOString();
 };
 
-/**
- * 格式化可選的 Firestore 日期格式
- */
 const formatFirestoreDateOptional = (date: any): string | undefined => {
     if (!date) return undefined;
     if (typeof date === 'string') return date;
@@ -38,13 +35,12 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
 };
 
 /**
- * 強力日期提取器：從提報區間字串中精準抓取第一個日期 (YYYY/MM/DD)
- * 不受空格、連字號、全形半形字元影響
+ * 強力日期提取器：從週報字串中抓取第一個 YYYY/MM/DD
+ * 確保 5/04 永遠排在 4/27 之前，不受補登（更新時間）影響
  */
 export const getSafeTimeFromPeriod = (period: string): number => {
     if (!period || typeof period !== 'string' || period === 'Excel 匯入') return 0;
     try {
-        // 使用正則表達式尋找日期格式 YYYY/MM/DD 或 YYYY-MM-DD
         const match = period.match(/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
         if (match) {
             const dateStr = match[1].replace(/\//g, '-');
@@ -57,9 +53,6 @@ export const getSafeTimeFromPeriod = (period: string): number => {
     return 0;
 };
 
-/**
- * 安全地取得任何日期格式的毫秒數值
- */
 const getSafeTime = (date: any): number => {
     if (!date) return 0;
     try {
@@ -73,7 +66,7 @@ const getSafeTime = (date: any): number => {
     }
 };
 
-// --- 表單驗證 Schema ---
+// --- 表單驗證 ---
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
     owner: z.string().min(1, '必須選擇一位負責人'),
@@ -92,14 +85,6 @@ const projectSchema = z.object({
   subProjects: z.array(subProjectSchema).min(1, '至少需要一個子專案'),
 });
 
-const editSubProjectSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().min(1, '必須選擇一位負責人'),
-  expectedCompletionDate: z.date().optional(),
-  actualCompletionDate: z.date().optional(),
-});
-
 const editProjectSchema = z.object({
   caseNumber: z.string().min(1, '主專案案號為必填'),
   name: z.string().min(1, '主專案名稱為必填'),
@@ -108,74 +93,60 @@ const editProjectSchema = z.object({
   yiehPhuiProjectManager: z.string().optional(),
   tpmOfficeContact: z.string().optional(),
   egigaContact: z.string().optional(),
-  subProjects: z.array(editSubProjectSchema).min(1, '至少需要一個子專案'),
+  subProjects: z.array(z.object({
+    id: z.string().optional(),
+    name: z.string().min(1, '子專案名稱為必填'),
+    owner: z.string().min(1, '必須選擇一位負責人'),
+    expectedCompletionDate: z.date().optional(),
+    actualCompletionDate: z.date().optional(),
+  })).min(1, '至少需要一個子專案'),
 });
 
-const userSchema = z.object({
-  displayName: z.string().min(1, '姓名為必填'),
-  email: z.string().email('請輸入有效的 Email'),
-  role: z.enum(['admin', 'editor', 'viewer']),
-  status: z.enum(['active', 'pending']),
-});
+// --- Actions ---
 
-// --- Server Actions ---
-
-export async function createUser(data: z.infer<typeof userSchema>) {
+export async function createUser(data: any) {
   try {
     const newUserRef = db.collection('users').doc();
     await newUserRef.set({
       uid: newUserRef.id,
-      displayName: data.displayName,
-      email: data.email,
-      role: data.role,
-      status: data.status,
+      ...data,
       createdAt: FieldValue.serverTimestamp(),
     });
     revalidatePath('/users');
     return { success: true, message: '成員已成功建立！' };
   } catch (error) {
-    console.error("Error creating user:", error);
     return { success: false, message: '建立成員時發生錯誤。' };
   }
 }
 
-export async function updateUser(uid: string, data: z.infer<typeof userSchema>) {
+export async function updateUser(uid: string, data: any) {
   try {
-    const userRef = db.collection('users').doc(uid);
-    await userRef.update({
-      displayName: data.displayName,
-      email: data.email,
-      role: data.role,
-      status: data.status,
-    });
+    await db.collection('users').doc(uid).update(data);
     revalidatePath('/users');
     return { success: true, message: '成員已成功更新！' };
   } catch (error) {
-    console.error("Error updating user:", error);
     return { success: false, message: '更新成員時發生錯誤。' };
   }
 }
 
 export async function deleteUser(uid: string) {
     try {
-        const userRef = db.collection('users').doc(uid);
-        await userRef.delete();
+        await db.collection('users').doc(uid).delete();
         revalidatePath('/users');
         return { success: true, message: '成員已成功刪除！' };
     } catch (error) {
-        console.error("Error deleting user:", error);
         return { success: false, message: '刪除成員時發生錯誤。' };
     }
 }
 
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const batch = db.batch();
-    const userId = 'user-3'; 
+    const userId = 'admin-user'; 
 
     const newProjectRef = db.collection('projects').doc();
-    const newProjectData = {
+    batch.set(newProjectRef, {
         name: data.name,
-        caseNumber: String(data.caseNumber),
+        caseNumber: String(data.caseNumber).trim(),
         status: 'active',
         createdBy: userId,
         createdAt: FieldValue.serverTimestamp(),
@@ -185,21 +156,19 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         tpmOfficeContact: data.tpmOfficeContact ?? '',
         egigaContact: data.egigaContact ?? '',
         isOnHold: false,
-    };
-    batch.set(newProjectRef, newProjectData);
+    });
 
-    data.subProjects.forEach(subProject => {
-        const newSubProjectRef = db.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
-        const newSubProjectData = {
-            name: subProject.name,
-            owner: subProject.owner,
-            expectedCompletionDate: subProject.expectedCompletionDate ?? null,
-            actualCompletionDate: subProject.actualCompletionDate ?? null,
+    data.subProjects.forEach(sp => {
+        const spRef = db.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
+        batch.set(spRef, {
+            name: sp.name,
+            owner: sp.owner,
+            expectedCompletionDate: sp.expectedCompletionDate ?? null,
+            actualCompletionDate: sp.actualCompletionDate ?? null,
             projectId: newProjectRef.id,
             createdAt: FieldValue.serverTimestamp(),
             isOnHold: false,
-        };
-        batch.set(newSubProjectRef, newSubProjectData);
+        });
     });
 
     try {
@@ -207,8 +176,7 @@ export async function createProject(data: z.infer<typeof projectSchema>) {
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功建立！' };
     } catch (error) {
-        console.error("Error creating project:", error);
-        return { success: false, message: '建立專案時發生錯誤。' };
+        return { success: false, message: '建立專案失敗' };
     }
 }
 
@@ -216,9 +184,8 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
     try {
         await db.runTransaction(async (transaction) => {
             const projectRef = db.collection('projects').doc(projectId);
-
             transaction.update(projectRef, {
-                caseNumber: String(data.caseNumber),
+                caseNumber: String(data.caseNumber).trim(),
                 name: data.name,
                 projectPurpose: data.projectPurpose ?? '',
                 currentStatusAndIssues: data.currentStatusAndIssues ?? '',
@@ -227,484 +194,303 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                 egigaContact: data.egigaContact ?? '',
             });
 
-            const currentSubProjectIds = data.subProjects.map(sp => sp.id).filter(id => id) as string[];
+            const currentSubProjectIds = data.subProjects.map(sp => sp.id).filter(Boolean) as string[];
             const subProjectsToDelete = originalSubProjectIds.filter(id => !currentSubProjectIds.includes(id));
             
-            for (const subProjectId of subProjectsToDelete) {
-                const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
-                transaction.delete(subProjectRef);
-            }
+            subProjectsToDelete.forEach(id => {
+                transaction.delete(projectRef.collection('sub_projects').doc(id));
+            });
 
-            for (const subProjectData of data.subProjects) {
-                const subProjectRef = subProjectData.id 
-                    ? projectRef.collection('sub_projects').doc(subProjectData.id)
+            data.subProjects.forEach(spData => {
+                const spRef = spData.id 
+                    ? projectRef.collection('sub_projects').doc(spData.id)
                     : projectRef.collection('sub_projects').doc();
 
-                if (subProjectData.id) {
-                     transaction.update(subProjectRef, {
-                        name: subProjectData.name,
-                        owner: subProjectData.owner,
-                        expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
-                        actualCompletionDate: subProjectData.actualCompletionDate ?? null,
-                     });
+                const payload = {
+                    name: spData.name,
+                    owner: spData.owner,
+                    expectedCompletionDate: spData.expectedCompletionDate ?? null,
+                    actualCompletionDate: spData.actualCompletionDate ?? null,
+                    projectId: projectId,
+                    isOnHold: false,
+                };
+
+                if (spData.id) {
+                    transaction.update(spRef, payload);
                 } else {
-                    transaction.set(subProjectRef, {
-                        name: subProjectData.name,
-                        owner: subProjectData.owner,
-                        expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
-                        actualCompletionDate: subProjectData.actualCompletionDate ?? null,
-                        projectId: projectId,
-                        createdAt: FieldValue.serverTimestamp(),
-                        isOnHold: false,
-                    });
+                    transaction.set(spRef, { ...payload, createdAt: FieldValue.serverTimestamp() });
                 }
-            }
+            });
         });
         
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功更新！' };
     } catch (error) {
-        console.error("Error updating project:", error);
-        return { success: false, message: '更新專案時發生錯誤。' };
+        return { success: false, message: '更新失敗' };
     }
 }
 
-export async function updateProgressLog(
-    logId: string,
-    projectId: string,
-    subProjectId: string,
-    logData: Omit<ProgressLog, 'id' | 'updatedAt' | 'createdBy' | 'createdByName' | 'reportingPeriod'>
-  ): Promise<ProgressLog> {
+export async function addProgressLog(projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
+    const userId = 'admin-user'; 
+    const logRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
     
-    if (!projectId) {
-        throw new Error(`Project ID missing for sub-project: ${subProjectId}`);
-    }
-  
-    const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
-  
-    await logRef.update({
-      executionSummary: logData.executionSummary,
-      nextWeekPlan: logData.nextWeekPlan,
-      roadblocks: logData.roadblocks,
-      completionPercentage: logData.completionPercentage,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  
-    revalidatePath('/dashboard');
-    const updatedLogDoc = await logRef.get();
-    const data = updatedLogDoc.data()!;
-    const users = await getUsers();
-    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-
-    return {
-      id: logRef.id,
-      subProjectId: data.subProjectId,
-      reportingPeriod: data.reportingPeriod,
-      executionSummary: data.executionSummary,
-      nextWeekPlan: data.nextWeekPlan,
-      roadblocks: data.roadblocks,
-      completionPercentage: data.completionPercentage,
-      createdBy: data.createdBy,
-      updatedAt: formatFirestoreDate(data.updatedAt),
-      createdByName: userMap.get(data.createdBy),
-    } as ProgressLog;
-}
-
-export async function addProgressLog (
-    projectId: string,
-    subProjectId: string, 
-    logData: Omit<ProgressLog, 'id' | 'subProjectId' | 'updatedAt' | 'createdBy' | 'createdByName'>
-): Promise<ProgressLog> {
-    const userId = 'user-1'; 
-
-    const newLogRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
-    await newLogRef.set({
-        reportingPeriod: logData.reportingPeriod,
-        executionSummary: logData.executionSummary,
-        nextWeekPlan: logData.nextWeekPlan,
-        roadblocks: logData.roadblocks,
-        completionPercentage: logData.completionPercentage,
+    const payload = {
+        ...logData,
         subProjectId,
         createdBy: userId,
         updatedAt: FieldValue.serverTimestamp(),
-    });
-    
+    };
+
+    await logRef.set(payload);
     revalidatePath('/dashboard');
+    
     return {
-        id: newLogRef.id,
+        id: logRef.id,
+        ...logData,
         subProjectId,
-        reportingPeriod: logData.reportingPeriod,
-        executionSummary: logData.executionSummary,
-        nextWeekPlan: logData.nextWeekPlan,
-        roadblocks: logData.roadblocks,
-        completionPercentage: logData.completionPercentage,
         createdBy: userId,
-        updatedAt: new Date().toISOString(), 
+        updatedAt: new Date().toISOString(),
     } as ProgressLog;
-};
+}
+
+export async function updateProgressLog(logId: string, projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
+    const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
+    await logRef.update({
+        ...logData,
+        updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    revalidatePath('/dashboard');
+    const doc = await logRef.get();
+    const data = doc.data()!;
+    return {
+        id: logId,
+        ...data,
+        updatedAt: formatFirestoreDate(data.updatedAt),
+    } as ProgressLog;
+}
 
 export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {
     const projectRef = db.collection('projects').doc(projectId);
     await db.runTransaction(async (transaction) => {
-        for (const subProjectId of subProjectIds) {
-            const subProjectRef = projectRef.collection('sub_projects').doc(subProjectId);
-            const logs = await subProjectRef.collection('progress_logs').get();
+        for (const spId of subProjectIds) {
+            const spRef = projectRef.collection('sub_projects').doc(spId);
+            const logs = await spRef.collection('progress_logs').get();
             logs.docs.forEach(log => transaction.delete(log.ref));
-            transaction.delete(subProjectRef);
+            transaction.delete(spRef);
         }
     });
     revalidatePath('/dashboard');
 }
 
-export async function setProjectOnHold(
-  projectId: string,
-  subProjectIds: string[],
-  onHoldData: {
-    reason: string;
-    startDate: Date;
-    endDate?: Date;
-    notes?: string;
-  }
-) {
-  try {
-    const projectRef = db.collection('projects').doc(projectId);
-    const subProjectsCol = projectRef.collection('sub_projects');
-    const subProjectsSnapshot = await subProjectsCol.get();
+export async function setProjectOnHold(projectId: string, subProjectIds: string[], onHoldData: any) {
+    try {
+        const batch = db.batch();
+        const projectRef = db.collection('projects').doc(projectId);
+        const onHoldPayload = {
+            isOnHold: true,
+            onHoldReason: onHoldData.reason,
+            onHoldStartDate: onHoldData.startDate,
+            onHoldEndDate: onHoldData.endDate ?? null,
+            onHoldNotes: onHoldData.notes ?? '',
+        };
 
-    const allSubProjectIdsInProject = subProjectsSnapshot.docs.map(doc => doc.id);
-    const isAllSelected = subProjectIds.length === allSubProjectIdsInProject.length && allSubProjectIdsInProject.every(id => subProjectIds.includes(id));
-    
-    const onHoldPayload = {
-        isOnHold: true,
-        onHoldReason: onHoldData.reason,
-        onHoldStartDate: onHoldData.startDate,
-        onHoldEndDate: onHoldData.endDate ?? null,
-        onHoldNotes: onHoldData.notes ?? '',
-    };
+        const subProjectsSnapshot = await projectRef.collection('sub_projects').get();
+        if (subProjectIds.length === subProjectsSnapshot.size) {
+            batch.update(projectRef, { ...onHoldPayload, status: 'on-hold' });
+        }
 
-    if (isAllSelected) {
-      await projectRef.update({ ...onHoldPayload, status: 'on-hold' });
+        subProjectIds.forEach(id => {
+            batch.update(projectRef.collection('sub_projects').doc(id), onHoldPayload);
+        });
+
+        await batch.commit();
+        revalidatePath('/dashboard');
+        return { success: true };
+    } catch (e) {
+        return { success: false, message: '設定失敗' };
     }
-
-    const batch = db.batch();
-    subProjectIds.forEach(id => {
-      batch.update(subProjectsCol.doc(id), onHoldPayload);
-    });
-    await batch.commit();
-    
-    revalidatePath('/dashboard');
-    return { success: true, message: '專案/子專案已設為暫緩' };
-  } catch (error) {
-    return { success: false, message: error instanceof Error ? error.message : '發生未知錯誤' };
-  }
 }
 
 export async function resumeProject(projectId: string, subProjectId?: string) {
-  try {
     const projectRef = db.collection('projects').doc(projectId);
     if (subProjectId) {
-      await projectRef.collection('sub_projects').doc(subProjectId).update({ isOnHold: false });
+        await projectRef.collection('sub_projects').doc(subProjectId).update({ isOnHold: false });
     } else {
-      await projectRef.update({ status: 'active', isOnHold: false });
+        await projectRef.update({ status: 'active', isOnHold: false });
     }
     revalidatePath('/dashboard');
-    return { success: true, message: '專案已恢復' };
-  } catch (error) {
-    return { success: false, message: '恢復失敗' };
-  }
+    return { success: true };
 }
 
-export async function resumeProjects(projectIds: string[], subProjectsByProject: Record<string, string[]>) {
-    try {
-      const batch = db.batch();
-      projectIds.forEach(pid => {
-        batch.update(db.collection('projects').doc(pid), { isOnHold: false, status: 'active' });
-      });
-      for (const projectId in subProjectsByProject) {
-        subProjectsByProject[projectId].forEach(spId => {
-          batch.update(db.collection('projects').doc(projectId).collection('sub_projects').doc(spId), { isOnHold: false });
+export async function resumeProjects(projectIds: string[], subProjectsByProject: any) {
+    const batch = db.batch();
+    projectIds.forEach(id => batch.update(db.collection('projects').doc(id), { isOnHold: false, status: 'active' }));
+    for (const pid in subProjectsByProject) {
+        subProjectsByProject[pid].forEach((spid: string) => {
+            batch.update(db.collection('projects').doc(pid).collection('sub_projects').doc(spid), { isOnHold: false });
         });
-      }
-      await batch.commit();
-      revalidatePath('/dashboard');
-      return { success: true, message: '所選項目已恢復' };
-    } catch (error) {
-      return { success: false, message: '恢復失敗' };
     }
+    await batch.commit();
+    revalidatePath('/dashboard');
+    return { success: true };
 }
 
 /**
- * 核心優化邏輯：嚴格去重（案號、子專案 ID）、精準判定最新週報（解析日期優先）
+ * 核心淨化邏輯：
+ * 1. 案號去重：只保留最新的案號文檔
+ * 2. 週報判定：優先解析日期，補登資料不干擾排序
+ * 3. 徹底移除 Excel 匯入
  */
-async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
-    const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
+async function getOptimizedProjectData() {
+    const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
         db.collectionGroup('sub_projects').get(),
-        db.collectionGroup('progress_logs').get(), 
+        db.collectionGroup('progress_logs').get(),
         getUsers()
     ]);
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-    
-    // 1. 主專案去重：以「案號」為準，排除資料庫中的重複文檔
-    const projectsMap = new Map<string, FullProject>();
-    const caseNumberToProjectId = new Map<string, string>();
 
-    projectsSnapshot.docs.forEach(doc => {
+    // 1. 案號強力去重
+    const projectsMap = new Map<string, FullProject>();
+    const caseNumberProcessed = new Set<string>();
+
+    projectsSnap.docs.forEach(doc => {
         const data = doc.data();
         const caseNumber = String(data.caseNumber || '').trim();
-        if (!caseNumber || caseNumberToProjectId.has(caseNumber)) return;
+        if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
         
-        caseNumberToProjectId.set(caseNumber, doc.id);
+        caseNumberProcessed.add(caseNumber);
         projectsMap.set(doc.id, {
             id: doc.id,
-            caseNumber: caseNumber,
-            name: String(data.name || ''),
-            status: String(data.status || 'active'),
-            createdBy: String(data.createdBy || ''),
-            projectPurpose: String(data.projectPurpose || ''),
-            currentStatusAndIssues: String(data.currentStatusAndIssues || ''),
-            yiehPhuiProjectManager: String(data.yiehPhuiProjectManager || ''),
-            tpmOfficeContact: String(data.tpmOfficeContact || ''),
-            egigaContact: String(data.egigaContact || ''),
-            isOnHold: data.isOnHold === true,
-            onHoldReason: data.onHoldReason || '',
-            onHoldStartDate: formatFirestoreDateOptional(data.onHoldStartDate),
-            onHoldEndDate: formatFirestoreDateOptional(data.onHoldEndDate),
-            onHoldNotes: data.onHoldNotes || '',
+            caseNumber,
+            name: data.name,
+            status: data.status,
+            projectPurpose: data.projectPurpose || '',
+            currentStatusAndIssues: data.currentStatusAndIssues || '',
+            yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
+            tpmOfficeContact: data.tpmOfficeContact || '',
+            egigaContact: data.egigaContact || '',
+            isOnHold: !!data.isOnHold,
             createdAt: formatFirestoreDate(data.createdAt),
             subProjects: [],
         } as FullProject);
     });
 
-    // 2. 週報去重與判定：解析週報區間日期，確保 5/4 永遠排在 4/27 之上
+    // 2. 週報判定與去重
     const latestLogsMap = new Map<string, ProgressLog>();
-    progressLogsSnapshot.docs.forEach(doc => {
-        const logData = doc.data();
-        if (logData.reportingPeriod === 'Excel 匯入') return; // 徹底移除
+    logsSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.reportingPeriod === 'Excel 匯入') return;
 
-        const subProjectId = doc.ref.parent.parent?.id;
-        if (!subProjectId) return;
+        const spId = doc.ref.parent.parent?.id;
+        if (!spId) return;
 
-        const currentTime = getSafeTimeFromPeriod(logData.reportingPeriod);
-        if (currentTime === 0) return;
+        const curPeriodTime = getSafeTimeFromPeriod(data.reportingPeriod);
+        if (curPeriodTime === 0) return;
 
-        const existingLog = latestLogsMap.get(subProjectId);
-        let shouldReplace = false;
+        const existing = latestLogsMap.get(spId);
+        let replace = false;
 
-        if (!existingLog) {
-            shouldReplace = true;
+        if (!existing) {
+            replace = true;
         } else {
-            const existingTime = getSafeTimeFromPeriod(existingLog.reportingPeriod);
-            if (currentTime > existingTime) {
-                shouldReplace = true;
-            } else if (currentTime === existingTime) {
-                // 如果週別相同，則比對最後更新時間
-                if (getSafeTime(logData.updatedAt) > getSafeTime(existingLog.updatedAt)) {
-                    shouldReplace = true;
+            const exPeriodTime = getSafeTimeFromPeriod(existing.reportingPeriod);
+            if (curPeriodTime > exPeriodTime) {
+                replace = true;
+            } else if (curPeriodTime === exPeriodTime) {
+                if (getSafeTime(data.updatedAt) > getSafeTime(existing.updatedAt)) {
+                    replace = true;
                 }
             }
         }
 
-        if (shouldReplace) {
-            latestLogsMap.set(subProjectId, {
+        if (replace) {
+            latestLogsMap.set(spId, {
                 id: doc.id,
-                subProjectId,
-                reportingPeriod: String(logData.reportingPeriod),
-                executionSummary: String(logData.executionSummary || ''),
-                nextWeekPlan: String(logData.nextWeekPlan || ''),
-                roadblocks: String(logData.roadblocks || ''),
-                completionPercentage: Number(logData.completionPercentage || 0),
-                createdBy: String(logData.createdBy || ''),
-                updatedAt: formatFirestoreDate(logData.updatedAt),
-                createdByName: userMap.get(logData.createdBy) || '未知',
-            } as ProgressLog);
+                ...data,
+                updatedAt: formatFirestoreDate(data.updatedAt),
+                createdByName: userMap.get(data.createdBy) || '未知',
+            } as any);
         }
     });
 
-    // 3. 組合子專案，並排除隸屬於重複專案的子專案
+    // 3. 組合與淨化
     const allSubProjects: SubProjectWithLatestLog[] = [];
-    const subProjectIdsProcessed = new Set<string>();
+    subProjectsSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const project = projectsMap.get(data.projectId);
+        if (!project) return;
 
-    subProjectsSnapshot.docs.forEach(subProjectDoc => {
-        if (subProjectIdsProcessed.has(subProjectDoc.id)) return;
-        
-        const subProjectData = subProjectDoc.data();
-        const project = projectsMap.get(subProjectData.projectId);
-        if (!project) return; // 排除隸屬於已被過濾（案號重複）的專案
-
-        subProjectIdsProcessed.add(subProjectDoc.id);
-        const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
-        const isEffectivelyOnHold = (subProjectData.isOnHold === true || project.isOnHold === true);
-
-        let isOverdue = false;
-        if (!isEffectivelyOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
-            const sevenDaysAgo = subDays(new Date(), 7);
-            const lastUpdateDate = latestLog?.updatedAt ? new Date(latestLog.updatedAt as string) : new Date(0);
-            isOverdue = lastUpdateDate < sevenDaysAgo;
-        }
-
-        const subProjectWithLog: SubProjectWithLatestLog = {
-            id: subProjectDoc.id,
+        const latestLog = latestLogsMap.get(doc.id) || null;
+        const sp: SubProjectWithLatestLog = {
+            id: doc.id,
             projectId: project.id,
-            name: String(subProjectData.name || ''),
-            owner: String(subProjectData.owner || ''),
-            expectedCompletionDate: formatFirestoreDate(subProjectData.expectedCompletionDate),
-            actualCompletionDate: formatFirestoreDateOptional(subProjectData.actualCompletionDate),
-            createdAt: formatFirestoreDate(subProjectData.createdAt),
-            isOnHold: subProjectData.isOnHold === true,
+            name: data.name,
+            owner: data.owner,
+            ownerName: userMap.get(data.owner) || '未知',
+            expectedCompletionDate: formatFirestoreDate(data.expectedCompletionDate),
+            actualCompletionDate: formatFirestoreDateOptional(data.actualCompletionDate),
+            isOnHold: !!data.isOnHold,
+            isParentOnHold: project.isOnHold,
+            latestLog,
             projectName: project.name,
             projectCaseNumber: project.caseNumber,
-            projectPurpose: project.projectPurpose,
-            currentStatusAndIssues: project.currentStatusAndIssues,
-            yiehPhuiProjectManager: project.yiehPhuiProjectManager,
             tpmOfficeContact: project.tpmOfficeContact,
-            egigaContact: project.egigaContact,
-            ownerName: userMap.get(subProjectData.owner) || '未知',
-            latestLog,
-            isOverdue,
-            isParentOnHold: project.isOnHold === true,
-        };
-        
-        allSubProjects.push(subProjectWithLog);
-        project.subProjects.push(subProjectWithLog);
-    });
+            isOverdue: false, // 暫不計算
+        } as any;
 
-    // 4. 清理排序，移除空的幽靈專案
-    const finalFullProjects = Array.from(projectsMap.values())
-        .filter(p => p.subProjects.length > 0)
-        .sort((a,b) => getSafeTime(b.createdAt) - getSafeTime(a.createdAt));
-
-    return { allSubProjects, fullProjects: finalFullProjects };
-}
-
-export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
-    const projectDoc = await db.collection('projects').doc(projectId).get();
-    if (!projectDoc.exists) return null;
-    const projectData = projectDoc.data()!;
-    const [subProjectsSnapshot, users] = await Promise.all([
-        projectDoc.ref.collection('sub_projects').orderBy('createdAt', 'asc').get(),
-        getUsers()
-    ]);
-    const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-
-    const subProjects: SubProjectWithLatestLog[] = await Promise.all(subProjectsSnapshot.docs.map(async doc => {
-        const spData = doc.data();
-        const logsSnapshot = await doc.ref.collection('progress_logs').get();
-        
-        let latestLog: ProgressLog | null = null;
-        if (!logsSnapshot.empty) {
-            const filteredLogs = logsSnapshot.docs
-                .map(d => ({ id: d.id, ...d.data() }) as any)
-                .filter(l => l.reportingPeriod !== 'Excel 匯入');
-
-            if (filteredLogs.length > 0) {
-                const sortedLogs = filteredLogs.sort((a, b) => {
-                    const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
-                    const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
-                    if (timeB !== timeA) return timeB - timeA;
-                    return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
-                });
-                
-                const l = sortedLogs[0];
-                latestLog = {
-                    id: l.id,
-                    subProjectId: l.subProjectId,
-                    reportingPeriod: l.reportingPeriod,
-                    executionSummary: l.executionSummary,
-                    nextWeekPlan: l.nextWeekPlan,
-                    roadblocks: l.roadblocks,
-                    completionPercentage: l.completionPercentage,
-                    createdBy: l.createdBy,
-                    updatedAt: formatFirestoreDate(l.updatedAt),
-                    createdByName: userMap.get(l.createdBy)
-                } as ProgressLog;
-            }
+        // 計算逾期 (非暫緩且進度未達 100 且 7天未報)
+        if (!sp.isOnHold && !sp.isParentOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
+            const lastUpdate = latestLog ? new Date(latestLog.updatedAt as string) : new Date(0);
+            sp.isOverdue = lastUpdate < subDays(new Date(), 7);
         }
 
-        return {
-            id: doc.id,
-            projectId,
-            name: spData.name,
-            owner: spData.owner,
-            expectedCompletionDate: formatFirestoreDate(spData.expectedCompletionDate),
-            actualCompletionDate: formatFirestoreDateOptional(spData.actualCompletionDate),
-            createdAt: formatFirestoreDate(spData.createdAt),
-            isOnHold: spData.isOnHold ?? false,
-            latestLog,
-            isParentOnHold: projectData.isOnHold ?? false,
-            isOverdue: false,
-        } as SubProjectWithLatestLog;
-    }));
+        allSubProjects.push(sp);
+        project.subProjects.push(sp);
+    });
 
-    return {
-        id: projectDoc.id,
-        caseNumber: projectData.caseNumber,
-        name: projectData.name,
-        status: projectData.status,
-        createdBy: projectData.createdBy,
-        projectPurpose: projectData.projectPurpose,
-        currentStatusAndIssues: projectData.currentStatusAndIssues,
-        yiehPhuiProjectManager: projectData.yiehPhuiProjectManager,
-        tpmOfficeContact: projectData.tpmOfficeContact,
-        egigaContact: projectData.egigaContact,
-        isOnHold: projectData.isOnHold ?? false,
-        onHoldReason: projectData.onHoldReason,
-        onHoldStartDate: formatFirestoreDateOptional(projectData.onHoldStartDate),
-        onHoldEndDate: formatFirestoreDateOptional(projectData.onHoldEndDate),
-        onHoldNotes: projectData.onHoldNotes,
-        createdAt: formatFirestoreDate(projectData.createdAt),
-        subProjects,
-    } as FullProject;
-};
+    return { 
+        allSubProjects, 
+        fullProjects: Array.from(projectsMap.values()).filter(p => p.subProjects.length > 0)
+    };
+}
 
-export const getFullProjects = async () => (await getOptimizedProjectData()).fullProjects;
 export const getSubProjectsWithLatestLogs = async () => (await getOptimizedProjectData()).allSubProjects;
+export const getFullProjects = async () => (await getOptimizedProjectData()).fullProjects;
+
+export const getFullProjectById = async (id: string) => {
+    const projects = await getFullProjects();
+    return projects.find(p => p.id === id) || null;
+};
 
 export const getUsers = async (): Promise<User[]> => {
     const snap = await db.collection('users').get();
-    return snap.docs.map(doc => {
-        const data = doc.data();
-        return {
-            uid: doc.id,
-            email: data.email,
-            displayName: data.displayName,
-            role: data.role,
-            status: data.status,
-            createdAt: formatFirestoreDate(data.createdAt)
-        } as User;
-    });
+    return snap.docs.map(doc => ({
+        ...doc.data(),
+        uid: doc.id,
+        createdAt: formatFirestoreDate(doc.data().createdAt),
+    })) as any;
 };
 
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
     const snap = await db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).get();
     const users = await getUsers();
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
-    
-    const logs = snap.docs
-        .map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                subProjectId: data.subProjectId,
-                reportingPeriod: data.reportingPeriod,
-                executionSummary: data.executionSummary,
-                nextWeekPlan: data.nextWeekPlan,
-                roadblocks: data.roadblocks,
-                completionPercentage: data.completionPercentage,
-                createdBy: data.createdBy,
-                updatedAt: formatFirestoreDate(data.updatedAt),
-                createdByName: userMap.get(data.createdBy)
-            } as ProgressLog;
-        })
-        .filter(l => l.reportingPeriod !== 'Excel 匯入');
 
-    return logs.sort((a, b) => {
-        const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
-        const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
-        // 日期由新到舊排序
-        if (timeB !== timeA) return timeB - timeA;
-        // 同一週則比對更新時間
-        return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
-    });
+    return snap.docs
+        .map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            updatedAt: formatFirestoreDate(doc.data().updatedAt),
+            createdByName: userMap.get(doc.data().createdBy) || '未知',
+        } as any))
+        .filter(l => l.reportingPeriod !== 'Excel 匯入')
+        .sort((a, b) => {
+            const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
+            const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
+            if (timeB !== timeA) return timeB - timeA;
+            return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
+        });
 };
