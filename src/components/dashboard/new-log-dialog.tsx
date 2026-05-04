@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
-import { addProgressLog, getAiSuggestions } from '@/lib/actions';
+import { addProgressLog } from '@/lib/actions';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -14,8 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
-import { CalendarIcon, Sparkles } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon } from 'lucide-react';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +37,7 @@ type NewLogDialogProps = {
 export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewLogDialogProps) {
   const [isPending, startTransition] = useTransition();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const { toast } = useToast();
   const { latestLog } = subProject;
 
@@ -46,8 +46,6 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
     handleSubmit,
     reset,
     formState: { errors },
-    watch,
-    setValue,
   } = useForm<LogFormData>({
     resolver: zodResolver(logSchema),
     defaultValues: {
@@ -58,9 +56,6 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
     },
   });
 
-  const currentExecutionSummary = watch('executionSummary');
-  const currentNextWeekPlan = watch('nextWeekPlan');
-
   useEffect(() => {
     if (isOpen) {
       reset({
@@ -70,6 +65,7 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
         completionPercentage: latestLog?.completionPercentage ?? 0,
       });
       setSelectedDate(new Date());
+      setIsCalendarOpen(false);
     }
   }, [isOpen, latestLog, reset]);
   
@@ -80,26 +76,6 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
   };
 
   const reportingPeriod = useMemo(() => getReportingPeriod(selectedDate), [selectedDate]);
-
-  const handleAiSuggest = () => {
-    if (!latestLog) {
-        toast({ title: '沒有上週紀錄', description: '無法使用 AI 建議功能。', variant: 'destructive' });
-        return;
-    }
-    startTransition(async () => {
-        const result = await getAiSuggestions(
-            { roadblocks: latestLog.roadblocks, completionPercentage: latestLog.completionPercentage },
-            { executionSummary: currentExecutionSummary, nextWeekPlan: currentNextWeekPlan }
-        );
-        if (result.suggestedRoadblock !== null) {
-            setValue('roadblocks', result.suggestedRoadblock);
-        }
-        if (result.suggestedPercentage !== null) {
-            setValue('completionPercentage', result.suggestedPercentage);
-        }
-        toast({ title: 'AI 建議已填入', description: '已自動填入建議的問題與進度。' });
-    });
-  };
 
   const onSubmit = (data: LogFormData) => {
     startTransition(async () => {
@@ -120,7 +96,6 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
         console.error(e);
         toast({ title: '錯誤', description: '新增週報失敗', variant: 'destructive' });
       }
-
     });
   };
 
@@ -135,28 +110,38 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>提報週別</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !selectedDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {reportingPeriod}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CustomCalendar
-                    selected={selectedDate}
-                    onSelect={(date) => {
-                      setSelectedDate(date);
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <div className="relative">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !selectedDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {reportingPeriod}
+                </Button>
+                
+                {isCalendarOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-[110]" 
+                      onClick={() => setIsCalendarOpen(false)} 
+                    />
+                    <div className="absolute top-full left-0 mt-2 border rounded-md shadow-lg z-[120] bg-popover overflow-hidden">
+                      <CustomCalendar
+                        selected={selectedDate}
+                        onSelect={(date) => {
+                          setSelectedDate(date);
+                          setIsCalendarOpen(false);
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">點擊可選擇不同日期，系統會自動轉換為對應的提報週。</p>
             </div>
 
