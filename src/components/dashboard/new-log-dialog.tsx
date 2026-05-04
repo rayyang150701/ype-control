@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useState, useEffect, useTransition, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
@@ -14,7 +14,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
-import { Sparkles } from 'lucide-react';
+import { CalendarIcon, Sparkles } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CustomCalendar } from '@/components/shared/custom-calendar';
+import { cn } from '@/lib/utils';
 
 const logSchema = z.object({
   executionSummary: z.string().min(1, '本週摘要為必填'),
@@ -34,6 +37,7 @@ type NewLogDialogProps = {
 
 export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewLogDialogProps) {
   const [isPending, startTransition] = useTransition();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
   const { latestLog } = subProject;
 
@@ -65,6 +69,7 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
         roadblocks: '',
         completionPercentage: latestLog?.completionPercentage ?? 0,
       });
+      setSelectedDate(new Date());
     }
   }, [isOpen, latestLog, reset]);
   
@@ -73,8 +78,8 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
     const sunday = endOfWeek(date, { weekStartsOn: 1 });
     return `${format(monday, 'yyyy/MM/dd')} - ${format(sunday, 'MM/dd')}`;
   };
-  const reportingPeriod = getReportingPeriod(new Date());
 
+  const reportingPeriod = useMemo(() => getReportingPeriod(selectedDate), [selectedDate]);
 
   const handleAiSuggest = () => {
     if (!latestLog) {
@@ -124,10 +129,37 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
       <DialogContent className="sm:max-w-[600px]">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle className="font-headline">新增週報 - {subProject.name}</DialogTitle>
-            <DialogDescription>提報區間: {reportingPeriod}</DialogDescription>
+            <DialogTitle className="font-headline text-xl">新增週報 - {subProject.name}</DialogTitle>
+            <DialogDescription>請填寫本週進度，或選擇其他週別進行補報。</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>提報週別</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {reportingPeriod}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CustomCalendar
+                    selected={selectedDate}
+                    onSelect={(date) => {
+                      setSelectedDate(date);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">點擊可選擇不同日期，系統會自動轉換為對應的提報週。</p>
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="executionSummary">本週執行摘要 (自動帶入上週計畫)</Label>
               <Textarea id="executionSummary" {...register('executionSummary')} rows={4} />
@@ -149,6 +181,7 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
             </div>
           </div>
           <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>取消</Button>
             <Button type="submit" disabled={isPending}>{isPending ? '儲存中...' : '儲存週報'}</Button>
           </DialogFooter>
         </form>
