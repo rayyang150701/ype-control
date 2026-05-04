@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import * as XLSX from 'xlsx-js-style';
@@ -7,13 +5,17 @@ import { saveAs } from 'file-saver';
 import { format } from 'date-fns';
 import { SubProjectWithLatestLog, ProgressLog, User, FullProject } from '@/types';
 
-// This file contains only client-side safe code.
-
 // Common styles
 const headerStyle = {
   font: { bold: true, color: { rgb: 'FFFFFF' } },
   fill: { fgColor: { rgb: '305496' } },
   alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  border: {
+    top: { style: 'thin' },
+    bottom: { style: 'thin' },
+    left: { style: 'thin' },
+    right: { style: 'thin' }
+  }
 };
 const titleStyle = {
   font: { sz: 16, bold: true },
@@ -24,10 +26,15 @@ const defaultCellStyle = {
     wrapText: true, 
     vertical: 'center', 
     horizontal: 'left' 
-  } 
+  },
+  border: {
+    top: { style: 'thin' },
+    bottom: { style: 'thin' },
+    left: { style: 'thin' },
+    right: { style: 'thin' }
+  }
 };
 
-// Style for on-hold projects
 const onHoldStyle = {
   font: { color: { rgb: "A9A9A9" } }, // Dark Gray
   ...defaultCellStyle
@@ -43,7 +50,6 @@ const createSheetFromAOA = (data: any[][], title: string, colWidths: { wch: numb
   return ws;
 };
 
-
 const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName: string) => {
   const wb: XLSX.WorkBook = { Sheets: {}, SheetNames: [] };
   sheets.forEach(sheet => {
@@ -56,12 +62,13 @@ const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName:
   saveAs(data, fileName + fileExtension);
 };
 
-// 1. 全專案最新進度總表
 export const exportAllProjectsSummary = (projects: FullProject[], users: User[]) => {
-  // The client component already sorts projects, but we can re-sort here to be safe.
-  projects.sort((a, b) => 
-    (b.caseNumber ?? '').localeCompare(a.caseNumber ?? '', undefined, { numeric: true })
-  );
+  // 1. 強力過濾：只匯出有子專案的專案，並且依照案號去重
+  const uniqueProjects = projects
+    .filter(p => p.subProjects && p.subProjects.length > 0)
+    .sort((a, b) => 
+      (a.caseNumber ?? '').localeCompare(b.caseNumber ?? '', undefined, { numeric: true })
+    );
 
   const title = '燁輝智慧製造執行方案進度管制表 - 全專案最新進度';
   const headers = [
@@ -84,80 +91,65 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
   const data: any[][] = [
     [title],
     [`製表單位: TPM管理室`, '', '', '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
-    [], // Spacer
+    [], 
     headers
   ];
 
-  projects.forEach(project => {
-    if (!project.subProjects || project.subProjects.length === 0) {
-      const isEffectivelyOnHold = project.isOnHold;
-      const cellStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
-       const row = [
-            { v: project.caseNumber, s: cellStyle },
-            { v: project.name, s: cellStyle },
-            { v: project.projectPurpose || '尚未填寫', s: cellStyle },
-            { v: project.currentStatusAndIssues || '尚未填寫', s: cellStyle },
-            { v: project.yiehPhuiProjectManager || '尚未填寫', s: cellStyle },
-            { v: project.tpmOfficeContact || '尚未填寫', s: cellStyle },
-            { v: project.egigaContact || '尚未填寫', s: cellStyle },
-            { v: '(無子專案)', s: cellStyle },
-             ...Array(6).fill({ v: '', s: cellStyle })
-      ];
-      data.push(row);
-      return;
-    }
-
+  uniqueProjects.forEach(project => {
     project.subProjects.forEach((sp, index) => {
       const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
-      const isSingleSubProject = project.subProjects.length === 1;
-
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
       const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
       const completionPercentage = `${sp.latestLog?.completionPercentage ?? 0}%`;
       
-      const sharedCellStyle = (isEffectivelyOnHold && isSingleSubProject) ? onHoldStyle : defaultCellStyle;
-      const subProjectCellStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
+      const currentStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
 
       const row = index === 0 
         ? [
-            { v: project.caseNumber, s: sharedCellStyle },
-            { v: project.name, s: sharedCellStyle },
-            { v: project.projectPurpose || '尚未填寫', s: sharedCellStyle },
-            { v: project.currentStatusAndIssues || '尚未填寫', s: sharedCellStyle },
-            { v: project.yiehPhuiProjectManager || '尚未填寫', s: sharedCellStyle },
-            { v: project.tpmOfficeContact || '尚未填寫', s: sharedCellStyle },
-            { v: project.egigaContact || '尚未填寫', s: sharedCellStyle },
-            { v: sp.name, s: subProjectCellStyle },
-            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: subProjectCellStyle },
-            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: subProjectCellStyle },
-            { v: sp.latestLog?.roadblocks || '無', s: subProjectCellStyle },
-            { v: completionPercentage, s: subProjectCellStyle },
-            { v: expectedDate, s: subProjectCellStyle },
-            { v: actualDate, s: subProjectCellStyle }
+            { v: project.caseNumber, s: currentStyle },
+            { v: project.name, s: currentStyle },
+            { v: project.projectPurpose || '尚未填寫', s: currentStyle },
+            { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
+            { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
+            { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
+            { v: project.egigaContact || '尚未填寫', s: currentStyle },
+            { v: sp.name, s: currentStyle },
+            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: currentStyle },
+            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: currentStyle },
+            { v: sp.latestLog?.roadblocks || '無', s: currentStyle },
+            { v: completionPercentage, s: currentStyle },
+            { v: expectedDate, s: currentStyle },
+            { v: actualDate, s: currentStyle }
           ]
         : [
-            '', '', '', '', '', '', '', // Empty cells for merged rows
-            { v: sp.name, s: subProjectCellStyle },
-            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: subProjectCellStyle },
-            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: subProjectCellStyle },
-            { v: sp.latestLog?.roadblocks || '無', s: subProjectCellStyle },
-            { v: completionPercentage, s: subProjectCellStyle },
-            { v: expectedDate, s: subProjectCellStyle },
-            { v: actualDate, s: subProjectCellStyle }
+            { v: project.caseNumber, s: currentStyle },
+            { v: project.name, s: currentStyle },
+            { v: project.projectPurpose || '尚未填寫', s: currentStyle },
+            { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
+            { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
+            { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
+            { v: project.egigaContact || '尚未填寫', s: currentStyle },
+            { v: sp.name, s: currentStyle },
+            { v: sp.latestLog?.executionSummary ?? '無紀錄', s: currentStyle },
+            { v: sp.latestLog?.nextWeekPlan ?? '無紀錄', s: currentStyle },
+            { v: sp.latestLog?.roadblocks || '無', s: currentStyle },
+            { v: completionPercentage, s: currentStyle },
+            { v: expectedDate, s: currentStyle },
+            { v: actualDate, s: currentStyle }
           ];
       data.push(row);
     });
   });
 
   const merges: XLSX.Range[] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, // Title
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, // Dept
-    { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, // Date
+    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, 
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, 
+    { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, 
   ];
 
-  let currentRow = 4; // Start after headers (index-based)
-  projects.forEach(project => {
-    const subProjectCount = project.subProjects.length > 0 ? project.subProjects.length : 1;
+  let currentRow = 4; 
+  uniqueProjects.forEach(project => {
+    const subProjectCount = project.subProjects.length;
     if (subProjectCount > 1) {
       for(let i=0; i < 7; i++){
          merges.push({ s: { r: currentRow, c: i }, e: { r: currentRow + subProjectCount - 1, c: i } });
@@ -166,22 +158,19 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
     currentRow += subProjectCount;
   });
 
-
   const ws = createSheetFromAOA(
     data,
     title,
     [
-      { wch: 10 }, { wch: 20 }, { wch: 30 }, { wch: 30 }, { wch: 20 }, 
-      { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 40 }, { wch: 40 }, 
-      { wch: 30 }, { wch: 10 }, { wch: 15 }, { wch: 15 }
+      { wch: 10 }, { wch: 25 }, { wch: 35 }, { wch: 35 }, { wch: 25 }, 
+      { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 45 }, { wch: 45 }, 
+      { wch: 30 }, { wch: 12 }, { wch: 15 }, { wch: 15 }
     ],
     merges
   );
   
-  // Style Title
   if (ws['A1']) ws['A1'].s = titleStyle;
   
-  // Style Headers
   const headerRowIndex = 3;
   for (let C = 0; C < headers.length; C++) {
     const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: C });
@@ -191,7 +180,6 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
   exportToExcel([{ ws, name: '全專案總表' }], '全專案最新進度總表');
 };
 
-// 3. 單一子專案歷史週報表
 export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, logs: ProgressLog[], users: User[]) => {
     const title = `${subProject.projectCaseNumber} ${subProject.projectName} - ${subProject.name} 歷史週報`;
     const headers = ['提報區間', '本週摘要', '下週計畫', '問題', '進度%', '更新時間', '填寫人'];
@@ -206,20 +194,20 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
 
     logs.forEach(log => {
         data.push([
-            log.reportingPeriod,
-            log.executionSummary,
-            log.nextWeekPlan,
-            log.roadblocks || '無',
-            log.completionPercentage,
-            format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm'),
-            userMap.get(log.createdBy) ?? ''
+            { v: log.reportingPeriod, s: defaultCellStyle },
+            { v: log.executionSummary, s: defaultCellStyle },
+            { v: log.nextWeekPlan, s: defaultCellStyle },
+            { v: log.roadblocks || '無', s: defaultCellStyle },
+            { v: log.completionPercentage, s: defaultCellStyle },
+            { v: format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm'), s: defaultCellStyle },
+            { v: userMap.get(log.createdBy) ?? '', s: defaultCellStyle }
         ]);
     });
 
     const ws = createSheetFromAOA(
         data,
         title,
-        [{ wch: 20 }, { wch: 40 }, { wch: 40 }, { wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 15 }],
+        [{ wch: 20 }, { wch: 45 }, { wch: 45 }, { wch: 35 }, { wch: 10 }, { wch: 22 }, { wch: 15 }],
         [
             { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
             { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
@@ -227,26 +215,13 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
         ]
     );
 
-    // Style Title
     if (ws['A1']) ws['A1'].s = titleStyle;
 
-    // Style Headers
     const headerRowIndex = 3;
     for (let C = 0; C < headers.length; C++) {
         const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: C });
         if (ws[cellRef]) ws[cellRef].s = headerStyle;
     }
     
-    // Default style for data rows
-    for (let R = headerRowIndex + 1; R < data.length; ++R) {
-        for (let C = 0; C < headers.length; ++C) {
-            const cellRef = XLSX.utils.encode_cell({ r: R, c: C });
-            if (ws[cellRef]) ws[cellRef].s = defaultCellStyle;
-        }
-    }
-
-
     exportToExcel([{ ws, name: '子專案歷史' }], `${subProject.name}_歷史週報`);
 };
-
-    

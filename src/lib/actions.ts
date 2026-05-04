@@ -7,7 +7,6 @@ import type { User, ProgressLog, FullProject, Project, SubProjectWithLatestLog, 
 import { FieldValue } from 'firebase-admin/firestore';
 import { subDays } from 'date-fns';
 
-// 輔助函式：確保日期格式可以安全地序列化傳遞給客戶端
 const formatFirestoreDate = (date: any): string => {
     if (!date) return new Date().toISOString();
     if (typeof date === 'string') return date;
@@ -32,18 +31,15 @@ const formatFirestoreDateOptional = (date: any): string | undefined => {
     return undefined;
 };
 
-// 輔助函式：從提報區間字串中解析起始日期 (格式: "2025/12/08 - 12/14")
-const getStartDateFromPeriod = (period: string): Date | null => {
+export const getStartDateFromPeriod = (period: string): Date | null => {
     if (!period) return null;
     try {
-        // 取得 " - " 之前的字串
         const dateString = period.split(' - ')[0].trim();
         const date = new Date(dateString);
         return isNaN(date.getTime()) ? null : date;
     } catch { return null; }
 };
 
-// Schema definitions
 const subProjectSchema = z.object({
     name: z.string().min(1, '子專案名稱為必填'),
     owner: z.string().min(1, '必須選擇一位負責人'),
@@ -88,7 +84,6 @@ const userSchema = z.object({
   status: z.enum(['active', 'pending']),
 });
 
-// User Management Actions
 export async function createUser(data: z.infer<typeof userSchema>) {
   try {
     const newUserRef = db.collection('users').doc();
@@ -137,11 +132,9 @@ export async function deleteUser(uid: string) {
     }
 }
 
-
-// Project and Progress Log Actions
 export async function createProject(data: z.infer<typeof projectSchema>) {
     const batch = db.batch();
-    const userId = 'user-3'; // Placeholder
+    const userId = 'user-3'; 
 
     const newProjectRef = db.collection('projects').doc();
     const newProjectData = {
@@ -286,7 +279,7 @@ export async function addProgressLog (
     subProjectId: string, 
     logData: Omit<ProgressLog, 'id' | 'subProjectId' | 'updatedAt' | 'createdBy' | 'createdByName'>
 ): Promise<ProgressLog> {
-    const userId = 'user-1'; // Placeholder
+    const userId = 'user-1'; 
 
     const newLogRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
     await newLogRef.set({
@@ -404,10 +397,6 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
     }
 }
 
-// -------------------------------------------------------------------------
-// DATA FETCHING & DEDUPLICATION (The "Fix")
-// -------------------------------------------------------------------------
-
 async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWithLatestLog[], fullProjects: FullProject[] }> {
     const [projectsSnapshot, subProjectsSnapshot, progressLogsSnapshot, users] = await Promise.all([
         db.collection('projects').orderBy('createdAt', 'desc').get(),
@@ -419,8 +408,17 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     
     const projectsMap = new Map<string, FullProject>();
+    const caseNumberToProjectId = new Map<string, string>();
+
     projectsSnapshot.docs.forEach(doc => {
         const data = doc.data();
+        const caseNumber = data.caseNumber || 'Unknown';
+        
+        if (caseNumberToProjectId.has(caseNumber)) {
+            return;
+        }
+        caseNumberToProjectId.set(caseNumber, doc.id);
+
         projectsMap.set(doc.id, {
             id: doc.id,
             caseNumber: data.caseNumber,
@@ -442,7 +440,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         } as FullProject);
     });
 
-    // 嚴格去重：每個子專案 ID 只保留一筆「日期最晚」的週報
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
@@ -463,7 +460,6 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             if (existingLogDate && currentLogDate > existingLogDate) {
                 shouldReplace = true;
             } else if (existingLogDate && currentLogDate.getTime() === existingLogDate.getTime()) {
-                // 如果週別相同，則看編輯時間
                 const currentUpdated = (logData.updatedAt as FirebaseFirestore.Timestamp)?.toDate() || new Date(0);
                 const existingUpdated = new Date(existingLog.updatedAt as string);
                 if (currentUpdated > existingUpdated) shouldReplace = true;
@@ -486,11 +482,9 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         }
     });
 
-    // 核心去重：確保每個子專案 ID 只會出現一次
     const processedSubProjectIds = new Set<string>();
     const allSubProjects: SubProjectWithLatestLog[] = [];
 
-    // 先根據 ID 排序子專案，確保如果有重複文檔，處理順序一致
     const sortedSubProjectDocs = [...subProjectsSnapshot.docs].sort((a, b) => {
         const aCreatedAt = (a.data().createdAt as any)?.seconds || 0;
         const bCreatedAt = (b.data().createdAt as any)?.seconds || 0;
@@ -546,9 +540,14 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
-    projectsMap.forEach(p => p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()));
+    const finalFullProjects = Array.from(projectsMap.values())
+        .filter(p => p.subProjects.length > 0)
+        .map(p => {
+            p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime());
+            return p;
+        });
 
-    return { allSubProjects, fullProjects: Array.from(projectsMap.values()) };
+    return { allSubProjects, fullProjects: finalFullProjects };
 }
 
 export const getFullProjectById = async (projectId: string): Promise<FullProject | null> => {
@@ -563,19 +562,31 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
 
     const subProjects: SubProjectWithLatestLog[] = await Promise.all(subProjectsSnapshot.docs.map(async doc => {
         const spData = doc.data();
-        const logs = await doc.ref.collection('progress_logs').orderBy('updatedAt', 'desc').limit(1).get();
-        const latestLog = !logs.empty ? {
-            id: logs.docs[0].id,
-            subProjectId: logs.docs[0].data().subProjectId,
-            reportingPeriod: logs.docs[0].data().reportingPeriod,
-            executionSummary: logs.docs[0].data().executionSummary,
-            nextWeekPlan: logs.docs[0].data().nextWeekPlan,
-            roadblocks: logs.docs[0].data().roadblocks,
-            completionPercentage: logs.docs[0].data().completionPercentage,
-            createdBy: logs.docs[0].data().createdBy,
-            updatedAt: formatFirestoreDate(logs.docs[0].data().updatedAt),
-            createdByName: userMap.get(logs.docs[0].data().createdBy)
-        } as ProgressLog : null;
+        const logs = await doc.ref.collection('progress_logs').get();
+        
+        let latestLog: ProgressLog | null = null;
+        if (!logs.empty) {
+            const sortedLogs = logs.docs.map(d => ({ id: d.id, ...d.data() }) as any)
+                .sort((a, b) => {
+                    const dateA = getStartDateFromPeriod(a.reportingPeriod) || new Date(0);
+                    const dateB = getStartDateFromPeriod(b.reportingPeriod) || new Date(0);
+                    return dateB.getTime() - dateA.getTime();
+                });
+            
+            const l = sortedLogs[0];
+            latestLog = {
+                id: l.id,
+                subProjectId: l.subProjectId,
+                reportingPeriod: l.reportingPeriod,
+                executionSummary: l.executionSummary,
+                nextWeekPlan: l.nextWeekPlan,
+                roadblocks: l.roadblocks,
+                completionPercentage: l.completionPercentage,
+                createdBy: l.createdBy,
+                updatedAt: formatFirestoreDate(l.updatedAt),
+                createdByName: userMap.get(l.createdBy)
+            } as ProgressLog;
+        }
 
         return {
             id: doc.id,
@@ -656,7 +667,6 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
         } as ProgressLog;
     });
 
-    // 核心邏輯修正：優先以「提報週別起始日期」降序排列，同日期則以「更新時間」降序排列
     return logs.sort((a, b) => {
         const dateA = getStartDateFromPeriod(a.reportingPeriod) || new Date(0);
         const dateB = getStartDateFromPeriod(b.reportingPeriod) || new Date(0);
