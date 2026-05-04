@@ -82,8 +82,11 @@ export async function createUser(data: z.infer<typeof userSchema>) {
   try {
     const newUserRef = db.collection('users').doc();
     await newUserRef.set({
-      ...data,
       uid: newUserRef.id,
+      displayName: data.displayName,
+      email: data.email,
+      role: data.role,
+      status: data.status,
       createdAt: FieldValue.serverTimestamp(),
     });
     revalidatePath('/users');
@@ -98,7 +101,10 @@ export async function updateUser(uid: string, data: z.infer<typeof userSchema>) 
   try {
     const userRef = db.collection('users').doc(uid);
     await userRef.update({
-      ...data,
+      displayName: data.displayName,
+      email: data.email,
+      role: data.role,
+      status: data.status,
     });
     revalidatePath('/users');
     return { success: true, message: '成員已成功更新！' };
@@ -203,7 +209,7 @@ export async function updateProject(projectId: string, data: z.infer<typeof edit
                      });
                 } else {
                     transaction.set(subProjectRef, {
-                         name: subProjectData.name,
+                        name: subProjectData.name,
                         owner: subProjectData.owner,
                         expectedCompletionDate: subProjectData.expectedCompletionDate ?? null,
                         actualCompletionDate: subProjectData.actualCompletionDate ?? null,
@@ -237,7 +243,10 @@ export async function updateProgressLog(
     const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
   
     await logRef.update({
-      ...logData,
+      executionSummary: logData.executionSummary,
+      nextWeekPlan: logData.nextWeekPlan,
+      roadblocks: logData.roadblocks,
+      completionPercentage: logData.completionPercentage,
       updatedAt: FieldValue.serverTimestamp(),
     });
   
@@ -248,8 +257,14 @@ export async function updateProgressLog(
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
     return {
-      ...data,
       id: logRef.id,
+      subProjectId: data.subProjectId,
+      reportingPeriod: data.reportingPeriod,
+      executionSummary: data.executionSummary,
+      nextWeekPlan: data.nextWeekPlan,
+      roadblocks: data.roadblocks,
+      completionPercentage: data.completionPercentage,
+      createdBy: data.createdBy,
       updatedAt: formatFirestoreDate(data.updatedAt),
       createdByName: userMap.get(data.createdBy),
     } as ProgressLog;
@@ -264,7 +279,11 @@ export async function addProgressLog (
 
     const newLogRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
     await newLogRef.set({
-        ...logData,
+        reportingPeriod: logData.reportingPeriod,
+        executionSummary: logData.executionSummary,
+        nextWeekPlan: logData.nextWeekPlan,
+        roadblocks: logData.roadblocks,
+        completionPercentage: logData.completionPercentage,
         subProjectId,
         createdBy: userId,
         updatedAt: FieldValue.serverTimestamp(),
@@ -272,9 +291,13 @@ export async function addProgressLog (
     
     revalidatePath('/dashboard');
     return {
-        ...logData,
         id: newLogRef.id,
         subProjectId,
+        reportingPeriod: logData.reportingPeriod,
+        executionSummary: logData.executionSummary,
+        nextWeekPlan: logData.nextWeekPlan,
+        roadblocks: logData.roadblocks,
+        completionPercentage: logData.completionPercentage,
         createdBy: userId,
         updatedAt: new Date().toISOString(), 
     } as ProgressLog;
@@ -409,19 +432,20 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
     });
 
     const getStartDateFromPeriod = (period: string): Date | null => {
+        if (!period) return null;
         try {
-            const dateString = period.split(' - ')[0];
+            const dateString = period.split(' - ')[0].trim();
             const date = new Date(dateString);
             return isNaN(date.getTime()) ? null : date;
         } catch { return null; }
     };
     
-    // 嚴格去重：每個子專案只保留一筆「最新週報」
+    // 嚴格去重：每個子專案 ID 只保留一筆「最晚提報週」的週報
     const latestLogsMap = new Map<string, ProgressLog>();
     progressLogsSnapshot.docs.forEach(doc => {
         const logData = doc.data();
-        const sidFromPath = doc.ref.parent.parent?.id;
-        const subProjectId = sidFromPath || logData.subProjectId;
+        // 優先從路徑獲取 SubProjectId 以防遺漏
+        const subProjectId = doc.ref.parent.parent?.id || logData.subProjectId;
 
         if (!subProjectId || !logData.reportingPeriod) return;
 
@@ -438,6 +462,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
             if (existingLogDate && currentLogDate > existingLogDate) {
                 shouldReplace = true;
             } else if (existingLogDate && currentLogDate.getTime() === existingLogDate.getTime()) {
+                // 如果週別相同，則看編輯時間
                 const currentUpdated = (logData.updatedAt as FirebaseFirestore.Timestamp)?.toDate() || new Date(0);
                 const existingUpdated = new Date(existingLog.updatedAt as string);
                 if (currentUpdated > existingUpdated) shouldReplace = true;
@@ -460,12 +485,26 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         }
     });
 
+    // 核心去重：確保每個子專案 ID 只會出現一次
+    const processedSubProjectIds = new Set<string>();
     const allSubProjects: SubProjectWithLatestLog[] = [];
-    subProjectsSnapshot.docs.forEach(subProjectDoc => {
+
+    // 先根據 ID 排序子專案，確保如果有重複文檔，處理順序一致
+    const sortedSubProjectDocs = [...subProjectsSnapshot.docs].sort((a, b) => {
+        const aCreatedAt = (a.data().createdAt as any)?.seconds || 0;
+        const bCreatedAt = (b.data().createdAt as any)?.seconds || 0;
+        return bCreatedAt - aCreatedAt; // 最新的文檔先處理
+    });
+
+    sortedSubProjectDocs.forEach(subProjectDoc => {
+        if (processedSubProjectIds.has(subProjectDoc.id)) return; // 跳過已處理的重複 ID
+
         const subProjectData = subProjectDoc.data();
         const project = projectsMap.get(subProjectData.projectId);
         
         if (!project) return; 
+
+        processedSubProjectIds.add(subProjectDoc.id);
 
         const latestLog = latestLogsMap.get(subProjectDoc.id) || null;
         const isEffectivelyOnHold = (subProjectData.isOnHold || project.isOnHold);
@@ -506,6 +545,7 @@ async function getOptimizedProjectData(): Promise<{ allSubProjects: SubProjectWi
         project.subProjects.push(subProjectWithLog);
     });
 
+    // 排序各專案下的子專案
     projectsMap.forEach(p => p.subProjects.sort((a,b) => new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()));
 
     return { allSubProjects, fullProjects: Array.from(projectsMap.values()) };
@@ -525,33 +565,54 @@ export const getFullProjectById = async (projectId: string): Promise<FullProject
         const spData = doc.data();
         const logs = await doc.ref.collection('progress_logs').orderBy('updatedAt', 'desc').limit(1).get();
         const latestLog = !logs.empty ? {
-            ...logs.docs[0].data(),
             id: logs.docs[0].id,
+            subProjectId: logs.docs[0].data().subProjectId,
+            reportingPeriod: logs.docs[0].data().reportingPeriod,
+            executionSummary: logs.docs[0].data().executionSummary,
+            nextWeekPlan: logs.docs[0].data().nextWeekPlan,
+            roadblocks: logs.docs[0].data().roadblocks,
+            completionPercentage: logs.docs[0].data().completionPercentage,
+            createdBy: logs.docs[0].data().createdBy,
             updatedAt: formatFirestoreDate(logs.docs[0].data().updatedAt),
             createdByName: userMap.get(logs.docs[0].data().createdBy)
         } as ProgressLog : null;
 
         return {
-            ...spData,
             id: doc.id,
+            projectId,
+            name: spData.name,
+            owner: spData.owner,
             expectedCompletionDate: formatFirestoreDate(spData.expectedCompletionDate),
             actualCompletionDate: formatFirestoreDateOptional(spData.actualCompletionDate),
             createdAt: formatFirestoreDate(spData.createdAt),
+            isOnHold: spData.isOnHold ?? false,
+            onHoldReason: spData.onHoldReason,
             onHoldStartDate: formatFirestoreDateOptional(spData.onHoldStartDate),
             onHoldEndDate: formatFirestoreDateOptional(spData.onHoldEndDate),
-            projectId,
+            onHoldNotes: spData.onHoldNotes,
             latestLog,
-            isOnHold: spData.isOnHold ?? false,
             isParentOnHold: projectData.isOnHold ?? false,
+            isOverdue: false, // 簡化處理
         } as SubProjectWithLatestLog;
     }));
 
     return {
         id: projectDoc.id,
-        ...projectData,
-        createdAt: formatFirestoreDate(projectData.createdAt),
+        caseNumber: projectData.caseNumber,
+        name: projectData.name,
+        status: projectData.status,
+        createdBy: projectData.createdBy,
+        projectPurpose: projectData.projectPurpose,
+        currentStatusAndIssues: projectData.currentStatusAndIssues,
+        yiehPhuiProjectManager: projectData.yiehPhuiProjectManager,
+        tpmOfficeContact: projectData.tpmOfficeContact,
+        egigaContact: projectData.egigaContact,
+        isOnHold: projectData.isOnHold ?? false,
+        onHoldReason: projectData.onHoldReason,
         onHoldStartDate: formatFirestoreDateOptional(projectData.onHoldStartDate),
         onHoldEndDate: formatFirestoreDateOptional(projectData.onHoldEndDate),
+        onHoldNotes: projectData.onHoldNotes,
+        createdAt: formatFirestoreDate(projectData.createdAt),
         subProjects,
     } as FullProject;
 };
@@ -581,8 +642,14 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
     return snap.docs.map(doc => {
         const data = doc.data();
         return {
-            ...data,
             id: doc.id,
+            subProjectId: data.subProjectId,
+            reportingPeriod: data.reportingPeriod,
+            executionSummary: data.executionSummary,
+            nextWeekPlan: data.nextWeekPlan,
+            roadblocks: data.roadblocks,
+            completionPercentage: data.completionPercentage,
+            createdBy: data.createdBy,
             updatedAt: formatFirestoreDate(data.updatedAt),
             createdByName: userMap.get(data.createdBy)
         } as ProgressLog;
