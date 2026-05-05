@@ -1,17 +1,20 @@
-
 'use client';
 
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Search, LayoutGrid, List, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
+import { Download, Plus, Search, LayoutGrid, List, Trash2, PauseCircle, PlayCircle, Users } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { User } from '@/types';
 
 type FilterControlsProps = {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  filter: string;
-  setFilter: (filter: string) => void;
+  statusFilter: string;
+  setStatusFilter: (filter: string) => void;
+  ownerFilter: string;
+  setOwnerFilter: (filter: string) => void;
+  owners: User[];
   onExportAll: () => void;
   onAddNewProject: () => void;
   onDeleteProject: () => void;
@@ -24,8 +27,11 @@ type FilterControlsProps = {
 export function FilterControls({
   searchQuery,
   setSearchQuery,
-  filter,
-  setFilter,
+  statusFilter,
+  setStatusFilter,
+  ownerFilter,
+  setOwnerFilter,
+  owners,
   onExportAll,
   onAddNewProject,
   onDeleteProject,
@@ -35,32 +41,56 @@ export function FilterControls({
   setViewMode,
 }: FilterControlsProps) {
   return (
-    <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="relative w-full sm:max-w-xs" data-tour="search">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="搜尋案號、專案名稱、TPM管理室窗口..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <div data-tour="filter-status">
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="篩選狀態" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">所有專案</SelectItem>
-              <SelectItem value="in_progress">所有專案 (排除已完成)</SelectItem>
-              <SelectItem value="on-hold">暫緩中</SelectItem>
-              <SelectItem value="overdue">逾期未報</SelectItem>
-              <SelectItem value="completed">已完成</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center flex-1">
+        <div className="relative w-full sm:max-w-xs" data-tour="search">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="搜尋案號、名稱、TPM窗口..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
         </div>
+        
+        <div className="flex items-center gap-2">
+          <div data-tour="filter-status">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="篩選狀態" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">所有狀態</SelectItem>
+                <SelectItem value="in_progress">進行中</SelectItem>
+                <SelectItem value="on-hold">暫緩中</SelectItem>
+                <SelectItem value="overdue">逾期未報</SelectItem>
+                <SelectItem value="completed">已完成</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
+          <div data-tour="filter-owner">
+            <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+              <SelectTrigger className="w-[180px]">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue placeholder="負責人" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">所有負責人</SelectItem>
+                {owners.map(owner => (
+                  <SelectItem key={owner.uid} value={owner.uid}>
+                    {owner.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <ToggleGroup type="single" value={viewMode} onValueChange={(value: 'grid' | 'table') => value && setViewMode(value)}>
           <ToggleGroupItem value="grid" aria-label="Grid view">
             <LayoutGrid className="h-4 w-4" />
@@ -70,21 +100,23 @@ export function FilterControls({
           </ToggleGroupItem>
         </ToggleGroup>
         
+        <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
+
         <Button onClick={onAddNewProject} variant="outline" data-tour="add-new-project">
           <Plus className="mr-2 h-4 w-4" />
-          新增專案
+          新增
         </Button>
         <Button onClick={onOnHoldProject} variant="outline" data-tour="on-hold-project">
             <PauseCircle className="mr-2 h-4 w-4" />
-            專案暫緩
+            暫緩
         </Button>
         <Button onClick={onReusmeProject} variant="outline" data-tour="resume-project">
             <PlayCircle className="mr-2 h-4 w-4" />
-            恢復專案
+            恢復
         </Button>
         <Button onClick={onDeleteProject} variant="destructive">
             <Trash2 className="mr-2 h-4 w-4" />
-            刪除專案
+            刪除
         </Button>
         <Button onClick={onExportAll} data-tour="export-all">
           <Download className="mr-2 h-4 w-4" />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import type { SubProjectWithLatestLog, ProgressLog, FullProject } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog, FullProject, User } from '@/types';
 import { ProjectCard } from './project-card';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
@@ -22,8 +22,10 @@ type DashboardClientProps = {
 export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [subProjects, setSubProjects] = useState<SubProjectWithLatestLog[]>(initialSubProjects);
   const [fullProjects, setFullProjects] = useState<FullProject[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [ownerFilter, setOwnerFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
@@ -43,12 +45,14 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
   const refreshData = async () => {
     try {
-      const [updatedSubs, updatedFulls] = await Promise.all([
+      const [updatedSubs, updatedFulls, updatedUsers] = await Promise.all([
         getSubProjectsWithLatestLogs(),
-        getFullProjects()
+        getFullProjects(),
+        getUsers()
       ]);
       setSubProjects(updatedSubs);
       setFullProjects(updatedFulls);
+      setUsers(updatedUsers);
     } catch (error) {
       console.error("Refresh failed", error);
     }
@@ -62,23 +66,36 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     return subProjects
       .filter(sp => {
         const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
-        if (filter === 'overdue') return sp.isOverdue && !isEffectivelyOnHold;
-        if (filter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
-        if (filter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
-        if (filter === 'on-hold') return isEffectivelyOnHold;
+        
+        // Status filter
+        if (statusFilter === 'overdue') {
+          if (isEffectivelyOnHold || (sp.latestLog?.completionPercentage ?? 0) === 100) return false;
+          return sp.isOverdue;
+        }
+        if (statusFilter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
+        if (statusFilter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
+        if (statusFilter === 'on-hold') return isEffectivelyOnHold;
+        
         return true;
       })
       .filter(sp => {
+        // Owner filter
+        if (ownerFilter === 'all') return true;
+        return sp.owner === ownerFilter;
+      })
+      .filter(sp => {
+        // Search query filter
         const query = searchQuery.toLowerCase();
         if (!query) return true;
         return (
           sp.name.toLowerCase().includes(query) || 
           sp.projectCaseNumber?.toLowerCase().includes(query) || 
           sp.projectName?.toLowerCase().includes(query) ||
-          sp.tpmOfficeContact?.toLowerCase().includes(query)
+          sp.tpmOfficeContact?.toLowerCase().includes(query) ||
+          sp.ownerName?.toLowerCase().includes(query)
         );
       });
-  }, [subProjects, searchQuery, filter]);
+  }, [subProjects, searchQuery, statusFilter, ownerFilter]);
 
   const filteredFullProjects = useMemo(() => {
     return fullProjects
@@ -134,9 +151,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       <FilterControls
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        filter={filter}
-        setFilter={setFilter}
-        onExportAll={() => exportAllProjectsSummary(fullProjects, [])}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        ownerFilter={ownerFilter}
+        setOwnerFilter={setOwnerFilter}
+        owners={users}
+        onExportAll={() => exportAllProjectsSummary(fullProjects, users)}
         onAddNewProject={() => setIsNewProjectOpen(true)}
         onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
         onDeleteProject={() => setIsDeleteProjectOpen(true)}
