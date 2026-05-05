@@ -23,7 +23,7 @@ type FilterControlsProps = {
   viewMode: 'grid' | 'table';
   setViewMode: (mode: 'grid' | 'table') => void;
   isAdmin: boolean;
-  setIsAdmin: (admin: boolean) => void;
+  onAdminToggle: () => void;
 };
 
 export function FilterControls({
@@ -42,7 +42,7 @@ export function FilterControls({
   viewMode,
   setViewMode,
   isAdmin,
-  setIsAdmin,
+  onAdminToggle,
 }: FilterControlsProps) {
   return (
     <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -124,14 +124,14 @@ export function FilterControls({
                 <Trash2 className="mr-2 h-4 w-4" />
                 刪除
             </Button>
-            <Button onClick={() => setIsAdmin(false)} variant="secondary" className="gap-2 border-primary/20">
+            <Button onClick={onAdminToggle} variant="secondary" className="gap-2 border-primary/20">
               <Unlock className="h-4 w-4 text-primary" />
               管理員模式 (點擊登出)
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={() => setIsAdmin(true)} variant="ghost" className="gap-2 text-muted-foreground hover:text-primary transition-colors">
+            <Button onClick={onAdminToggle} variant="ghost" className="gap-2 text-muted-foreground hover:text-primary transition-colors">
               <Lock className="h-4 w-4" />
               管理員登入
             </Button>
