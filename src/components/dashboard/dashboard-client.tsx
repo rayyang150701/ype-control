@@ -62,6 +62,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   }, []);
 
+  // 僅提取實際有負責專案的 PM 名單
+  const activeOwners = useMemo(() => {
+    const ownerIdsInProjects = new Set(subProjects.map(sp => sp.owner));
+    return users.filter(user => ownerIdsInProjects.has(user.uid));
+  }, [users, subProjects]);
+
   const filteredSubProjects = useMemo(() => {
     return subProjects
       .filter(sp => {
@@ -155,7 +161,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setStatusFilter={setStatusFilter}
         ownerFilter={ownerFilter}
         setOwnerFilter={setOwnerFilter}
-        owners={users}
+        owners={activeOwners}
         onExportAll={() => exportAllProjectsSummary(fullProjects, users)}
         onAddNewProject={() => setIsNewProjectOpen(true)}
         onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
