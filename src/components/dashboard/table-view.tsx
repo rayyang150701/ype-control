@@ -14,9 +14,10 @@ type TableViewProps = {
   onEditProject: (projectId: string) => void;
   onSubProjectClick: (subProject: SubProjectWithLatestLog) => void;
   onAddLog: (subProject: SubProjectWithLatestLog) => void;
+  isAdmin: boolean;
 };
 
-export function TableView({ groupedProjects, onEditProject, onSubProjectClick, onAddLog }: TableViewProps) {
+export function TableView({ groupedProjects, onEditProject, onSubProjectClick, onAddLog, isAdmin }: TableViewProps) {
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
   const [weekRange, setWeekRange] = useState('');
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -132,7 +133,7 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick, o
       <div ref={tableContainerRef} onScroll={handleTableScroll} className="overflow-x-auto rounded-lg border shadow-sm" style={{maxHeight: 'calc(100vh - 220px)'}}>
         <table className="min-w-full border-collapse bg-white table-auto">
            <colgroup>
-             <col style={{minWidth: '60px'}} />
+             {isAdmin && <col style={{minWidth: '60px'}} />}
              <col style={{minWidth: '64px'}} />
              <col style={{minWidth: '160px'}} />
              <col style={{minWidth: '192px'}} />
@@ -150,9 +151,9 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick, o
            </colgroup>
           <thead className="sticky top-0 z-30">
             <tr>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700 sticky left-0 z-40">操作</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700 sticky left-[60px] z-40">案號</th>
-              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700 sticky left-[124px] z-40">主專案名稱</th>
+              {isAdmin && <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700 sticky left-0 z-40">操作</th>}
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700 sticky left-0 md:sticky md:left-[0px] z-40">案號</th>
+              <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">主專案名稱</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">專案目的</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">現況/問題點</th>
               <th className="border-b bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-700">燁輝負責主管</th>
@@ -186,13 +187,15 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick, o
                     >
                       {subProjectIndex === 0 && (
                         <>
-                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
-                            <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)} className="h-8 w-8">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </td>
-                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[60px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
-                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-[124px] z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
+                          {isAdmin && (
+                            <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words sticky left-0 z-20", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
+                              <Button variant="ghost" size="icon" onClick={() => onEditProject(project.id)} className="h-8 w-8">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          )}
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
+                          <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
                             <div className='flex flex-col gap-1'>
                               <span className="font-semibold leading-tight">{project.name}</span>
                               {project.isOnHold && (
@@ -233,21 +236,23 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick, o
                               {sp.name}
                             </button>
                             
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <button 
-                                            onClick={() => onAddLog(sp)}
-                                            className="text-blue-500 hover:text-blue-700 transition-transform hover:scale-110 active:scale-95"
-                                        >
-                                            <PlusCircle className="h-4 w-4" />
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>新增週報</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
+                            {isAdmin && (
+                              <TooltipProvider>
+                                  <Tooltip>
+                                      <TooltipTrigger asChild>
+                                          <button 
+                                              onClick={() => onAddLog(sp)}
+                                              className="text-blue-500 hover:text-blue-700 transition-transform hover:scale-110 active:scale-95"
+                                          >
+                                              <PlusCircle className="h-4 w-4" />
+                                          </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                          <p>新增週報</p>
+                                      </TooltipContent>
+                                  </Tooltip>
+                              </TooltipProvider>
+                            )}
 
                             {isCompleted && (
                               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />

@@ -3,7 +3,7 @@
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Search, LayoutGrid, List, Trash2, PauseCircle, PlayCircle, Users } from 'lucide-react';
+import { Download, Plus, Search, LayoutGrid, List, Trash2, PauseCircle, PlayCircle, Users, Lock, Unlock } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { User } from '@/types';
 
@@ -22,6 +22,8 @@ type FilterControlsProps = {
   onReusmeProject: () => void;
   viewMode: 'grid' | 'table';
   setViewMode: (mode: 'grid' | 'table') => void;
+  isAdmin: boolean;
+  setIsAdmin: (admin: boolean) => void;
 };
 
 export function FilterControls({
@@ -39,6 +41,8 @@ export function FilterControls({
   onReusmeProject,
   viewMode,
   setViewMode,
+  isAdmin,
+  setIsAdmin,
 }: FilterControlsProps) {
   return (
     <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -102,22 +106,38 @@ export function FilterControls({
         
         <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
-        <Button onClick={onAddNewProject} variant="outline" data-tour="add-new-project">
-          <Plus className="mr-2 h-4 w-4" />
-          新增
-        </Button>
-        <Button onClick={onOnHoldProject} variant="outline" data-tour="on-hold-project">
-            <PauseCircle className="mr-2 h-4 w-4" />
-            暫緩
-        </Button>
-        <Button onClick={onReusmeProject} variant="outline" data-tour="resume-project">
-            <PlayCircle className="mr-2 h-4 w-4" />
-            恢復
-        </Button>
-        <Button onClick={onDeleteProject} variant="destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
-            刪除
-        </Button>
+        {isAdmin ? (
+          <>
+            <Button onClick={onAddNewProject} variant="outline" data-tour="add-new-project">
+              <Plus className="mr-2 h-4 w-4" />
+              新增
+            </Button>
+            <Button onClick={onOnHoldProject} variant="outline" data-tour="on-hold-project">
+                <PauseCircle className="mr-2 h-4 w-4" />
+                暫緩
+            </Button>
+            <Button onClick={onReusmeProject} variant="outline" data-tour="resume-project">
+                <PlayCircle className="mr-2 h-4 w-4" />
+                恢復
+            </Button>
+            <Button onClick={onDeleteProject} variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                刪除
+            </Button>
+            <Button onClick={() => setIsAdmin(false)} variant="secondary" className="gap-2 border-primary/20">
+              <Unlock className="h-4 w-4 text-primary" />
+              管理員模式 (點擊登出)
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={() => setIsAdmin(true)} variant="ghost" className="gap-2 text-muted-foreground hover:text-primary transition-colors">
+              <Lock className="h-4 w-4" />
+              管理員登入
+            </Button>
+          </>
+        )}
+
         <Button onClick={onExportAll} data-tour="export-all">
           <Download className="mr-2 h-4 w-4" />
           匯出總表

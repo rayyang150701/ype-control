@@ -17,9 +17,10 @@ type ProjectCardProps = {
   subProject: SubProjectWithLatestLog;
   onCardClick: (subProject: SubProjectWithLatestLog) => void;
   onAddLog: () => void;
+  isAdmin: boolean;
 };
 
-export function ProjectCard({ subProject, onCardClick, onAddLog }: ProjectCardProps) {
+export function ProjectCard({ subProject, onCardClick, onAddLog, isAdmin }: ProjectCardProps) {
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = subProject.expectedCompletionDate ? new Date(subProject.expectedCompletionDate as string) : null;
@@ -115,10 +116,12 @@ export function ProjectCard({ subProject, onCardClick, onAddLog }: ProjectCardPr
                 </Tooltip>
             </TooltipProvider>
 
-          <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleAddLogClick} data-tour="add-new-log">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            新增週報
-          </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleAddLogClick} data-tour="add-new-log">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              新增週報
+            </Button>
+          )}
         </CardFooter>
       </Card>
     </>

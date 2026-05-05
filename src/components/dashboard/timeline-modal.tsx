@@ -26,12 +26,14 @@ type TimelineModalProps = {
   onExport: () => void;
   onLogUpdated: (updatedLog: ProgressLog, subProjectId: string) => void;
   onEditProject: (projectId: string) => void;
+  isAdmin: boolean;
 };
 
-export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport, onLogUpdated, onEditProject }: TimelineModalProps) {
+export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, onExport, onLogUpdated, onEditProject, isAdmin }: TimelineModalProps) {
   const [editingLog, setEditingLog] = useState<ProgressLog | null>(null);
 
   const handleEditClick = (log: ProgressLog) => {
+    if (!isAdmin) return;
     setEditingLog(log);
   };
 
@@ -50,10 +52,12 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
                 {subProject.projectCaseNumber} {subProject.projectName}
               </DialogDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={() => onEditProject(subProject.projectId)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                編輯專案
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => onEditProject(subProject.projectId)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  編輯專案
+              </Button>
+            )}
           </DialogHeader>
           <div className="flex-grow min-h-0">
               <ScrollArea className="h-full pr-6">
@@ -69,6 +73,7 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
                         key={log.id} 
                         log={log} 
                         onEditClick={handleEditClick}
+                        isAdmin={isAdmin}
                       />
                       ))}
                   </div>
@@ -99,7 +104,7 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
   );
 }
 
-const TimelineItem = ({ log, onEditClick }: { log: ProgressLog; onEditClick: (log: ProgressLog) => void; }) => (
+const TimelineItem = ({ log, onEditClick, isAdmin }: { log: ProgressLog; onEditClick: (log: ProgressLog) => void; isAdmin: boolean; }) => (
     <div className="relative flex items-start">
         <div className="absolute left-[-2px] top-[5px] flex h-5 w-5 items-center justify-center rounded-full bg-primary">
         <div className="h-2 w-2 rounded-full bg-primary-foreground" />
@@ -111,9 +116,11 @@ const TimelineItem = ({ log, onEditClick }: { log: ProgressLog; onEditClick: (lo
                   <span>
                     {format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm')} by {log.createdByName}
                   </span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditClick(log)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  {isAdmin && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditClick(log)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
             </div>
             <div className="space-y-4 rounded-md border p-4">

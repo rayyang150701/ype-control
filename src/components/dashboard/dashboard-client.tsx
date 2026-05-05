@@ -28,6 +28,9 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
+  // 權限控管狀態 (模擬管理員登入)
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
   const [subProjectForNewLog, setSubProjectForNewLog] = useState<SubProjectWithLatestLog | null>(null);
@@ -62,7 +65,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   }, []);
 
-  // 僅提取實際有負責專案的 PM 名單
   const activeOwners = useMemo(() => {
     const ownerIdsInProjects = new Set(subProjects.map(sp => sp.owner));
     return users.filter(user => ownerIdsInProjects.has(user.uid));
@@ -72,8 +74,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     return subProjects
       .filter(sp => {
         const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
-        
-        // Status filter
         if (statusFilter === 'overdue') {
           if (isEffectivelyOnHold || (sp.latestLog?.completionPercentage ?? 0) === 100) return false;
           return sp.isOverdue;
@@ -81,16 +81,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         if (statusFilter === 'completed') return (sp.latestLog?.completionPercentage ?? 0) === 100;
         if (statusFilter === 'in_progress') return !isEffectivelyOnHold && (sp.latestLog?.completionPercentage ?? 0) < 100;
         if (statusFilter === 'on-hold') return isEffectivelyOnHold;
-        
         return true;
       })
       .filter(sp => {
-        // Owner filter
         if (ownerFilter === 'all') return true;
         return sp.owner === ownerFilter;
       })
       .filter(sp => {
-        // Search query filter
         const query = searchQuery.toLowerCase();
         if (!query) return true;
         return (
@@ -129,11 +126,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   };
 
   const handleAddLogClick = (subProject: SubProjectWithLatestLog) => {
+    if (!isAdmin) return;
     setSubProjectForNewLog(subProject);
     setIsNewLogOpen(true);
   };
 
   const handleEditProjectClick = async (projectId: string) => {
+    if (!isAdmin) return;
     const fullProject = await getFullProjectById(projectId);
     if (fullProject) {
       setSelectedFullProject(fullProject);
@@ -169,6 +168,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         onReusmeProject={() => setIsResumeProjectOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
+        isAdmin={isAdmin}
+        setIsAdmin={setIsAdmin}
       />
 
       {viewMode === 'grid' ? (
@@ -179,6 +180,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
                 subProject={sp} 
                 onCardClick={handleSubProjectClick} 
                 onAddLog={() => handleAddLogClick(sp)}
+                isAdmin={isAdmin}
             />
           ))}
           {filteredSubProjects.length === 0 && (
@@ -193,6 +195,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onEditProject={handleEditProjectClick} 
             onSubProjectClick={handleSubProjectClick} 
             onAddLog={handleAddLogClick}
+            isAdmin={isAdmin}
         />
       )}
 
@@ -206,6 +209,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           onExport={async () => exportSubProjectHistory(selectedSubProject, timelineLogs, await getUsers())}
           onLogUpdated={refreshData}
           onEditProject={handleEditProjectClick}
+          isAdmin={isAdmin}
         />
       )}
 
