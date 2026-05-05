@@ -13,6 +13,7 @@ import { TableView } from './table-view';
 import { DeleteProjectDialog } from './delete-project-dialog';
 import { OnHoldDialog } from './on-hold-dialog';
 import { ResumeProjectDialog } from './resume-project-dialog';
+import { NewLogDialog } from './new-log-dialog';
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
@@ -27,6 +28,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
+  const [subProjectForNewLog, setSubProjectForNewLog] = useState<SubProjectWithLatestLog | null>(null);
 
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [timelineLogs, setTimelineLogs] = useState<ProgressLog[]>([]);
@@ -37,6 +39,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
   const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
   const [isResumeProjectOpen, setIsResumeProjectOpen] = useState(false);
+  const [isNewLogOpen, setIsNewLogOpen] = useState(false);
 
   const refreshData = async () => {
     try {
@@ -55,7 +58,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     refreshData();
   }, []);
 
-  // 統一篩選與搜尋邏輯
   const filteredSubProjects = useMemo(() => {
     return subProjects
       .filter(sp => {
@@ -78,7 +80,6 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       });
   }, [subProjects, searchQuery, filter]);
 
-  // 條列式視圖專用的過濾資料：基於 filteredSubProjects 重新組合
   const filteredFullProjects = useMemo(() => {
     return fullProjects
       .map(project => ({
@@ -104,6 +105,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     }
   };
 
+  const handleAddLogClick = (subProject: SubProjectWithLatestLog) => {
+    setSubProjectForNewLog(subProject);
+    setIsNewLogOpen(true);
+  };
+
   const handleEditProjectClick = async (projectId: string) => {
     const fullProject = await getFullProjectById(projectId);
     if (fullProject) {
@@ -119,6 +125,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     setIsDeleteProjectOpen(false);
     isOnHoldProjectOpen && setIsOnHoldProjectOpen(false);
     isResumeProjectOpen && setIsResumeProjectOpen(false);
+    setIsNewLogOpen(false);
     refreshData();
   };
 
@@ -141,7 +148,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {filteredSubProjects.map(sp => (
-            <ProjectCard key={`${sp.projectId}-${sp.id}`} subProject={sp} onCardClick={handleSubProjectClick} onLogAdded={refreshData}/>
+            <ProjectCard 
+                key={`${sp.projectId}-${sp.id}`} 
+                subProject={sp} 
+                onCardClick={handleSubProjectClick} 
+                onAddLog={() => handleAddLogClick(sp)}
+            />
           ))}
           {filteredSubProjects.length === 0 && (
             <div className="col-span-full py-20 text-center text-muted-foreground">
@@ -150,7 +162,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           )}
         </div>
       ) : (
-        <TableView groupedProjects={filteredFullProjects} onEditProject={handleEditProjectClick} onSubProjectClick={handleSubProjectClick} />
+        <TableView 
+            groupedProjects={filteredFullProjects} 
+            onEditProject={handleEditProjectClick} 
+            onSubProjectClick={handleSubProjectClick} 
+            onAddLog={handleAddLogClick}
+        />
       )}
 
       {selectedSubProject && (
@@ -171,6 +188,15 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
       <DeleteProjectDialog isOpen={isDeleteProjectOpen} setIsOpen={setIsDeleteProjectOpen} projects={fullProjects} onProjectDeleted={onOperationSuccess} />
       <OnHoldDialog isOpen={isOnHoldProjectOpen} setIsOpen={setIsOnHoldProjectOpen} projects={fullProjects} onSuccess={onOperationSuccess} />
       <ResumeProjectDialog isOpen={isResumeProjectOpen} setIsOpen={setIsResumeProjectOpen} projects={fullProjects} onSuccess={onOperationSuccess} />
+      
+      {subProjectForNewLog && (
+        <NewLogDialog 
+            isOpen={isNewLogOpen} 
+            setIsOpen={setIsNewLogOpen} 
+            subProject={subProjectForNewLog} 
+            onLogAdded={onOperationSuccess} 
+        />
+      )}
     </div>
   );
 }

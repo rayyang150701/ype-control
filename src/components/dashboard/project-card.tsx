@@ -9,7 +9,6 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
-import { NewLogDialog } from './new-log-dialog';
 import { useState, useEffect } from 'react';
 import { formatInTimeZone } from 'date-fns-tz';
 
@@ -17,19 +16,17 @@ import { formatInTimeZone } from 'date-fns-tz';
 type ProjectCardProps = {
   subProject: SubProjectWithLatestLog;
   onCardClick: (subProject: SubProjectWithLatestLog) => void;
-  onLogAdded: (newLog: ProgressLog, subProjectId: string) => void;
+  onAddLog: () => void;
 };
 
-export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCardProps) {
+export function ProjectCard({ subProject, onCardClick, onAddLog }: ProjectCardProps) {
   const { latestLog, isOverdue } = subProject;
   const completionPercentage = latestLog?.completionPercentage ?? 0;
   const expectedDate = subProject.expectedCompletionDate ? new Date(subProject.expectedCompletionDate as string) : null;
   const isEffectivelyOnHold = subProject.isOnHold || subProject.isParentOnHold;
   const isCompleted = completionPercentage === 100;
 
-  // 使用 State 管理延遲天數，避免 Hydration 錯誤
   const [delayDays, setDelayDays] = useState(0);
-  const [isNewLogDialogOpen, setIsNewLogDialogOpen] = useState(false);
 
   useEffect(() => {
     if (expectedDate && completionPercentage < 100 && !isEffectivelyOnHold) {
@@ -48,7 +45,7 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
 
   const handleAddLogClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsNewLogDialogOpen(true);
+    onAddLog();
   };
 
 
@@ -124,12 +121,6 @@ export function ProjectCard({ subProject, onCardClick, onLogAdded }: ProjectCard
           </Button>
         </CardFooter>
       </Card>
-      <NewLogDialog 
-        isOpen={isNewLogDialogOpen} 
-        setIsOpen={setIsNewLogDialogOpen} 
-        subProject={subProject} 
-        onLogAdded={onLogAdded}
-      />
     </>
   );
 }

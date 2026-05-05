@@ -3,18 +3,20 @@
 import { useState, useRef, useEffect } from 'react';
 import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Pencil, PauseCircle, CheckCircle2 } from 'lucide-react';
+import { Pencil, PauseCircle, CheckCircle2, PlusCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Badge } from '../ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type TableViewProps = {
   groupedProjects: FullProject[];
   onEditProject: (projectId: string) => void;
   onSubProjectClick: (subProject: SubProjectWithLatestLog) => void;
+  onAddLog: (subProject: SubProjectWithLatestLog) => void;
 };
 
-export function TableView({ groupedProjects, onEditProject, onSubProjectClick }: TableViewProps) {
+export function TableView({ groupedProjects, onEditProject, onSubProjectClick, onAddLog }: TableViewProps) {
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
   const [weekRange, setWeekRange] = useState('');
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -42,7 +44,6 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     }
   }, [groupedProjects]);
 
-  // 在客戶端計算週別區間，避免 Hydration 錯誤
   useEffect(() => {
     const getWeekRangeStr = () => {
       const today = new Date();
@@ -107,12 +108,10 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
     const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
     const isCompleted = (sp.latestLog?.completionPercentage ?? 0) === 100;
 
-    // 共用儲存格 (專案資訊) 只顯示斑馬紋，不顯示完成色
     if (isSharedCell) {
        return project.subProjects.indexOf(sp) % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
     }
     
-    // 子項目特定儲存格
     if (isCompleted) return 'bg-emerald-50/60';
     if (isEffectivelyOnHold) return 'bg-amber-50';
     
@@ -233,6 +232,23 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick }:
                             >
                               {sp.name}
                             </button>
+                            
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button 
+                                            onClick={() => onAddLog(sp)}
+                                            className="text-blue-500 hover:text-blue-700 transition-transform hover:scale-110 active:scale-95"
+                                        >
+                                            <PlusCircle className="h-4 w-4" />
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>新增週報</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+
                             {isCompleted && (
                               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                             )}
