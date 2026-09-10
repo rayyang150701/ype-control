@@ -18,6 +18,7 @@
 
 # Misc
 .DS_Store
+*.tsbuildinfo
 *.pem
 
 # Logs
@@ -40,6 +41,8 @@ pnpm-debug.log*
 
 # General
 .idea
+.vscode/
+.agents/
 *.suo
 *.ntvs*
 *.njsproj
@@ -51,3 +54,5 @@ pnpm-debug.log*
 # Firebase
 *-debug.log
 firebase-debug.log
+
+.vercel

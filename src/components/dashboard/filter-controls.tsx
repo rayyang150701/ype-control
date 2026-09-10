@@ -23,7 +23,7 @@ type FilterControlsProps = {
   viewMode: 'grid' | 'table';
   setViewMode: (mode: 'grid' | 'table') => void;
   isAdmin: boolean;
-  onAdminToggle: () => void;
+  onAdminToggle?: () => void;
 };
 
 export function FilterControls({
@@ -67,7 +67,7 @@ export function FilterControls({
                 <SelectItem value="all">所有狀態</SelectItem>
                 <SelectItem value="in_progress">進行中</SelectItem>
                 <SelectItem value="on-hold">暫緩中</SelectItem>
-                <SelectItem value="overdue">逾期未報</SelectItem>
+                <SelectItem value="overdue">本週未更新</SelectItem>
                 <SelectItem value="completed">已完成</SelectItem>
               </SelectContent>
             </Select>
@@ -106,7 +106,7 @@ export function FilterControls({
         
         <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
-        {isAdmin ? (
+        {isAdmin && (
           <>
             <Button onClick={onAddNewProject} variant="outline" data-tour="add-new-project">
               <Plus className="mr-2 h-4 w-4" />
@@ -124,21 +124,10 @@ export function FilterControls({
                 <Trash2 className="mr-2 h-4 w-4" />
                 刪除
             </Button>
-            <Button onClick={onAdminToggle} variant="secondary" className="gap-2 border-primary/20">
-              <Unlock className="h-4 w-4 text-primary" />
-              管理員模式 (點擊登出)
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button onClick={onAdminToggle} variant="ghost" className="gap-2 text-muted-foreground hover:text-primary transition-colors">
-              <Lock className="h-4 w-4" />
-              管理員登入
-            </Button>
           </>
         )}
 
-        <Button onClick={onExportAll} data-tour="export-all">
+        <Button onClick={onExportAll} data-tour="export-all" className="bg-emerald-600 hover:bg-emerald-700 text-white">
           <Download className="mr-2 h-4 w-4" />
           匯出總表
         </Button>

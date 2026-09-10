@@ -33,24 +33,24 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarMenu>
           <SidebarMenuItem>
-            <Link href="/dashboard" legacyBehavior passHref>
+            <Link href="/dashboard" passHref>
                 <SidebarMenuButton
                     isActive={isActive('/dashboard')}
-                    icon={<Home />}
                     tooltip="儀表板"
                 >
-                    儀表板
+                    <Home className="h-4 w-4" />
+                    <span>儀表板</span>
                 </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <Link href="/users" legacyBehavior passHref>
+            <Link href="/users" passHref>
                 <SidebarMenuButton
                     isActive={isActive('/users')}
-                    icon={<Users />}
                     tooltip="成員管理"
                 >
-                    成員管理
+                    <Users className="h-4 w-4" />
+                    <span>成員管理</span>
                 </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>
@@ -59,7 +59,10 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
             <SidebarMenuItem>
-                <SidebarMenuButton icon={<LogOut />}>登出</SidebarMenuButton>
+                <SidebarMenuButton>
+                  <LogOut className="h-4 w-4" />
+                  <span>登出</span>
+                </SidebarMenuButton>
             </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

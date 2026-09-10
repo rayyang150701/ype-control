@@ -1,29 +1,23 @@
-
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase-admin';
+import { createClient } from '@/lib/supabase/server';
 import type { User, ProgressLog, FullProject, SubProjectWithLatestLog } from '@/types';
-import { FieldValue } from 'firebase-admin/firestore';
 import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 /**
- * 安全時間轉換器：處理 Firestore Timestamp、ISO 字串或 Date 物件
+ * 格式化為 ISO 字串
  */
-const getSafeTime = (date: any): number => {
-    if (!date) return 0;
-    try {
-        if (typeof date === 'object' && date !== null && 'seconds' in date) {
-            return date.seconds * 1000 + (Math.floor(date.nanoseconds / 1000000));
-        }
-        if (typeof date.toDate === 'function') {
-            return date.toDate().getTime();
-        }
-        const time = new Date(date).getTime();
-        return isNaN(time) ? 0 : time;
-    } catch {
-        return 0;
-    }
+const formatISO = (dateStr: string | null): string => {
+    if (!dateStr) return new Date().toISOString();
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+};
+
+const formatISOOptional = (dateStr: string | null): string | undefined => {
+    if (!dateStr) return undefined;
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
 };
 
 /**
@@ -39,19 +33,6 @@ const getSafeTimeFromPeriod = (period: string): number => {
 };
 
 /**
- * 格式化為 ISO 字串
- */
-const formatISO = (date: any): string => {
-    const time = getSafeTime(date);
-    return time > 0 ? new Date(time).toISOString() : new Date().toISOString();
-};
-
-const formatISOOptional = (date: any): string | undefined => {
-    const time = getSafeTime(date);
-    return time > 0 ? new Date(time).toISOString() : undefined;
-};
-
-/**
  * 計算當前的週報區間字串 (格式: YYYY/MM/DD - MM/DD)
  */
 const getCurrentReportingPeriod = () => {
@@ -64,48 +45,61 @@ const getCurrentReportingPeriod = () => {
 // --- 成員管理 ---
 
 export async function getUsers(): Promise<User[]> {
-    const snap = await db.collection('users').get();
-    return snap.docs.map(doc => {
-        const data = doc.data();
-        return {
-            uid: doc.id,
-            email: data.email || '',
-            displayName: data.displayName || '',
-            role: data.role || 'viewer',
-            status: data.status || 'active',
-            createdAt: formatISO(data.createdAt),
-        };
-    });
+    const supabase = createClient();
+    const { data, error } = await supabase.from('users').select('*');
+    if (error || !data) return [];
+
+    return data.map(doc => ({
+        uid: doc.uid,
+        email: doc.email || '',
+        displayName: doc.display_name || '',
+        role: doc.role || 'viewer',
+        status: doc.status || 'active',
+        createdAt: formatISO(doc.created_at),
+    }));
 }
 
 export async function createUser(data: any) {
-  try {
-    const newUserRef = db.collection('users').doc();
-    await newUserRef.set({
-      uid: newUserRef.id,
-      ...data,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    revalidatePath('/users');
-    return { success: true, message: '成員已成功建立！' };
-  } catch (error) {
-    return { success: false, message: '建立成員時發生錯誤。' };
-  }
+    const supabase = createClient();
+    try {
+        const { error } = await supabase.from('users').insert({
+            firebase_uid: crypto.randomUUID(), // placeholder since no longer using firebase auth
+            email: data.email,
+            display_name: data.displayName,
+            role: data.role,
+            status: data.status,
+            created_at: new Date().toISOString()
+        });
+        if (error) throw error;
+        revalidatePath('/users');
+        return { success: true, message: '成員已成功建立！' };
+    } catch (error) {
+        return { success: false, message: '建立成員時發生錯誤。' };
+    }
 }
 
 export async function updateUser(uid: string, data: any) {
-  try {
-    await db.collection('users').doc(uid).update(data);
-    revalidatePath('/users');
-    return { success: true, message: '成員已成功更新！' };
-  } catch (error) {
-    return { success: false, message: '更新成員時發生錯誤。' };
-  }
+    const supabase = createClient();
+    try {
+        const { error } = await supabase.from('users').update({
+            email: data.email,
+            display_name: data.displayName,
+            role: data.role,
+            status: data.status
+        }).eq('uid', uid);
+        if (error) throw error;
+        revalidatePath('/users');
+        return { success: true, message: '成員已成功更新！' };
+    } catch (error) {
+        return { success: false, message: '更新成員時發生錯誤。' };
+    }
 }
 
 export async function deleteUser(uid: string) {
+    const supabase = createClient();
     try {
-        await db.collection('users').doc(uid).delete();
+        const { error } = await supabase.from('users').delete().eq('uid', uid);
+        if (error) throw error;
         revalidatePath('/users');
         return { success: true, message: '成員已成功刪除！' };
     } catch (error) {
@@ -116,91 +110,109 @@ export async function deleteUser(uid: string) {
 // --- 專案管理 ---
 
 export async function createProject(data: any) {
-    const batch = db.batch();
+    const supabase = createClient();
     const userId = 'admin-user'; 
 
-    const newProjectRef = db.collection('projects').doc();
-    batch.set(newProjectRef, {
-        name: data.name,
-        caseNumber: String(data.caseNumber).trim(),
-        status: 'active',
-        createdBy: userId,
-        createdAt: FieldValue.serverTimestamp(),
-        projectPurpose: data.projectPurpose ?? '',
-        currentStatusAndIssues: data.currentStatusAndIssues ?? '',
-        yiehPhuiProjectManager: data.yiehPhuiProjectManager ?? '',
-        tpmOfficeContact: data.tpmOfficeContact ?? '',
-        egigaContact: data.egigaContact ?? '',
-        isOnHold: false,
-    });
-
-    data.subProjects.forEach((sp: any) => {
-        const spRef = db.collection(`projects/${newProjectRef.id}/sub_projects`).doc();
-        batch.set(spRef, {
-            name: sp.name,
-            owner: sp.owner,
-            expectedCompletionDate: sp.expectedCompletionDate ?? null,
-            actualCompletionDate: sp.actualCompletionDate ?? null,
-            projectId: newProjectRef.id,
-            createdAt: FieldValue.serverTimestamp(),
-            isOnHold: false,
-        });
-    });
-
     try {
-        await batch.commit();
+        const { data: newProject, error: projectError } = await supabase.from('projects').insert({
+            firebase_id: crypto.randomUUID(), // Mocking firebase_id for now
+            name: data.name,
+            case_number: String(data.caseNumber).trim(),
+            status: 'active',
+            created_by: userId,
+            project_purpose: data.projectPurpose ?? '',
+            current_status_and_issues: data.currentStatusAndIssues ?? '',
+            yieh_phui_project_manager: data.yiehPhuiProjectManager ?? '',
+            tpm_office_contact: data.tpmOfficeContact ?? '',
+            egiga_contact: data.egigaContact ?? '',
+            is_on_hold: false,
+        }).select('id').single();
+
+        if (projectError) throw projectError;
+
+        if (data.subProjects && data.subProjects.length > 0) {
+            const subProjectsToInsert = data.subProjects.map((sp: any) => ({
+                firebase_id: crypto.randomUUID(),
+                project_id: newProject.id,
+                name: sp.name,
+                owner: sp.owner,
+                expected_completion_date: sp.expectedCompletionDate ?? null,
+                actual_completion_date: sp.actualCompletionDate ?? null,
+                is_on_hold: false,
+            }));
+            const { error: spError } = await supabase.from('sub_projects').insert(subProjectsToInsert);
+            if (spError) throw spError;
+        }
+
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功建立！' };
     } catch (error) {
+        console.error(error);
         return { success: false, message: '建立專案失敗' };
     }
 }
 
 export async function updateProject(projectId: string, data: any, originalSubProjectIds: string[]) {
+    const supabase = createClient();
     try {
-        await db.runTransaction(async (transaction) => {
-            const projectRef = db.collection('projects').doc(projectId);
-            transaction.update(projectRef, {
-                caseNumber: String(data.caseNumber).trim(),
-                name: data.name,
-                projectPurpose: data.projectPurpose ?? '',
-                currentStatusAndIssues: data.currentStatusAndIssues ?? '',
-                yiehPhuiProjectManager: data.yiehPhuiProjectManager ?? '',
-                tpmOfficeContact: data.tpmOfficeContact ?? '',
-                egigaContact: data.egigaContact ?? '',
-            });
+        const { error: projectError } = await supabase.from('projects').update({
+            case_number: String(data.caseNumber).trim(),
+            name: data.name,
+            project_purpose: data.projectPurpose ?? '',
+            current_status_and_issues: data.currentStatusAndIssues ?? '',
+            yieh_phui_project_manager: data.yiehPhuiProjectManager ?? '',
+            tpm_office_contact: data.tpmOfficeContact ?? '',
+            egiga_contact: data.egigaContact ?? '',
+        }).eq('id', projectId);
 
-            const currentSubProjectIds = data.subProjects.map((sp: any) => sp.id).filter(Boolean) as string[];
-            const subProjectsToDelete = originalSubProjectIds.filter(id => !currentSubProjectIds.includes(id));
-            
-            subProjectsToDelete.forEach(id => {
-                transaction.delete(projectRef.collection('sub_projects').doc(id));
-            });
+        if (projectError) throw projectError;
 
-            data.subProjects.forEach((spData: any) => {
-                const spRef = spData.id 
-                    ? projectRef.collection('sub_projects').doc(spData.id)
-                    : projectRef.collection('sub_projects').doc();
+        const currentSubProjectIds = data.subProjects.map((sp: any) => sp.id).filter(Boolean) as string[];
+        const subProjectsToDelete = originalSubProjectIds.filter(id => !currentSubProjectIds.includes(id));
+        
+        if (subProjectsToDelete.length > 0) {
+            const { error: deleteError } = await supabase.from('sub_projects').delete().in('id', subProjectsToDelete);
+            if (deleteError) throw deleteError;
+        }
 
-                const payload: any = {
-                    name: spData.name,
-                    owner: spData.owner,
-                    expectedCompletionDate: spData.expectedCompletionDate ?? null,
-                    actualCompletionDate: spData.actualCompletionDate ?? null,
-                    projectId: projectId,
-                };
+        const subProjectsToInsert = [];
+        const subProjectsToUpdate = [];
 
-                if (spData.id) {
-                    transaction.update(spRef, payload);
-                } else {
-                    transaction.set(spRef, { ...payload, isOnHold: false, createdAt: FieldValue.serverTimestamp() });
-                }
-            });
-        });
+        for (const spData of data.subProjects) {
+            const payload = {
+                name: spData.name,
+                owner: spData.owner,
+                expected_completion_date: spData.expectedCompletionDate ?? null,
+                actual_completion_date: spData.actualCompletionDate ?? null,
+                project_id: projectId,
+            };
+
+            if (spData.id) {
+                subProjectsToUpdate.push({ id: spData.id, ...payload });
+            } else {
+                subProjectsToInsert.push({ firebase_id: crypto.randomUUID(), is_on_hold: false, ...payload });
+            }
+        }
+
+        if (subProjectsToInsert.length > 0) {
+            const { error } = await supabase.from('sub_projects').insert(subProjectsToInsert);
+            if (error) throw error;
+        }
+
+        for (const spUpdate of subProjectsToUpdate) {
+            const { error } = await supabase.from('sub_projects').update({
+                name: spUpdate.name,
+                owner: spUpdate.owner,
+                expected_completion_date: spUpdate.expected_completion_date,
+                actual_completion_date: spUpdate.actual_completion_date
+            }).eq('id', spUpdate.id);
+            if (error) throw error;
+        }
         
         revalidatePath('/dashboard');
         return { success: true, message: '專案已成功更新！' };
     } catch (error) {
+        console.error(error);
         return { success: false, message: '更新失敗' };
     }
 }
@@ -208,260 +220,310 @@ export async function updateProject(projectId: string, data: any, originalSubPro
 // --- 週報管理 ---
 
 export async function addProgressLog(projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
+    const supabase = createClient();
     const userId = 'admin-user'; 
-    const logRef = db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).doc();
     
     const payload = {
-        ...logData,
-        subProjectId,
-        createdBy: userId,
-        updatedAt: FieldValue.serverTimestamp(),
+        firebase_id: crypto.randomUUID(),
+        sub_project_id: subProjectId,
+        reporting_period: logData.reportingPeriod,
+        execution_summary: logData.executionSummary,
+        next_week_plan: logData.nextWeekPlan,
+        roadblocks: logData.roadblocks,
+        completion_percentage: logData.completionPercentage,
+        created_by: userId,
+        updated_at: new Date().toISOString(),
     };
 
-    await logRef.set(payload);
+    const { data: newLog, error } = await supabase.from('progress_logs').insert(payload).select().single();
+    if (error) throw error;
+
     revalidatePath('/dashboard');
     
     return {
-        id: logRef.id,
-        ...logData,
+        id: newLog.id,
         subProjectId,
-        createdBy: userId,
-        updatedAt: new Date().toISOString(),
+        reportingPeriod: newLog.reporting_period,
+        executionSummary: newLog.execution_summary,
+        nextWeekPlan: newLog.next_week_plan,
+        roadblocks: newLog.roadblocks,
+        completionPercentage: newLog.completion_percentage,
+        createdBy: newLog.created_by,
+        updatedAt: newLog.updated_at,
     } as ProgressLog;
 }
 
 export async function updateProgressLog(logId: string, projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
-    const logRef = db.doc(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs/${logId}`);
-    await logRef.update({
-        ...logData,
-        updatedAt: FieldValue.serverTimestamp(),
-    });
+    const supabase = createClient();
+    const { data: updatedLog, error } = await supabase.from('progress_logs').update({
+        reporting_period: logData.reportingPeriod,
+        execution_summary: logData.executionSummary,
+        next_week_plan: logData.nextWeekPlan,
+        roadblocks: logData.roadblocks,
+        completion_percentage: logData.completionPercentage,
+        updated_at: new Date().toISOString(),
+    }).eq('id', logId).select().single();
+
+    if (error) throw error;
 
     revalidatePath('/dashboard');
-    const doc = await logRef.get();
-    const data = doc.data()!;
+    
     return {
-        id: logId,
-        ...data,
-        updatedAt: formatISO(data.updatedAt),
+        id: updatedLog.id,
+        subProjectId: updatedLog.sub_project_id,
+        reportingPeriod: updatedLog.reporting_period,
+        executionSummary: updatedLog.execution_summary,
+        nextWeekPlan: updatedLog.next_week_plan,
+        roadblocks: updatedLog.roadblocks,
+        completionPercentage: updatedLog.completion_percentage,
+        createdBy: updatedLog.created_by,
+        updatedAt: updatedLog.updated_at,
     } as ProgressLog;
 }
 
+export async function deleteProgressLog(logId: string) {
+    const supabase = createClient();
+    const { error } = await supabase.from('progress_logs').delete().eq('id', logId);
+    if (error) throw error;
+    revalidatePath('/dashboard');
+    return { success: true, message: '週報已成功刪除！' };
+}
+
 export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {
-    const projectRef = db.collection('projects').doc(projectId);
-    await db.runTransaction(async (transaction) => {
-        for (const spId of subProjectIds) {
-            const spRef = projectRef.collection('sub_projects').doc(spId);
-            const logs = await spRef.collection('progress_logs').get();
-            logs.docs.forEach(log => transaction.delete(log.ref));
-            transaction.delete(spRef);
-        }
-    });
+    const supabase = createClient();
+    
+    // First, delete related progress logs to avoid foreign key constraints
+    const { error: logsError } = await supabase.from('progress_logs').delete().in('sub_project_id', subProjectIds);
+    if (logsError) throw logsError;
+
+    // Then, delete the sub projects
+    const { error } = await supabase.from('sub_projects').delete().in('id', subProjectIds);
+    if (error) throw error;
+    
+    // Check if the main project has any remaining sub_projects
+    const { count, error: countError } = await supabase.from('sub_projects')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', projectId);
+        
+    // If no sub_projects remain, safely delete the main project
+    if (!countError && count === 0) {
+        await supabase.from('projects').delete().eq('id', projectId);
+    }
+
     revalidatePath('/dashboard');
 }
 
 export async function setProjectOnHold(projectId: string, subProjectIds: string[], onHoldData: any) {
+    const supabase = createClient();
     try {
-        const batch = db.batch();
-        const projectRef = db.collection('projects').doc(projectId);
         const onHoldPayload = {
-            isOnHold: true,
-            onHoldReason: onHoldData.reason,
-            onHoldStartDate: onHoldData.startDate,
-            onHoldEndDate: onHoldData.endDate ?? null,
-            onHoldNotes: onHoldData.notes ?? '',
+            is_on_hold: true,
+            on_hold_reason: onHoldData.reason,
+            on_hold_start_date: onHoldData.startDate,
+            on_hold_end_date: onHoldData.endDate ?? null,
+            on_hold_notes: onHoldData.notes ?? '',
         };
 
-        const subProjectsSnapshot = await projectRef.collection('sub_projects').get();
-        if (subProjectIds.length === subProjectsSnapshot.size) {
-            batch.update(projectRef, { ...onHoldPayload, status: 'on-hold' });
+        const { data: subProjectsSnap } = await supabase.from('sub_projects').select('id').eq('project_id', projectId);
+        
+        if (subProjectsSnap && subProjectIds.length === subProjectsSnap.length) {
+            await supabase.from('projects').update({ ...onHoldPayload, status: 'on-hold' }).eq('id', projectId);
         }
 
-        subProjectIds.forEach(id => {
-            batch.update(projectRef.collection('sub_projects').doc(id), onHoldPayload);
-        });
+        if (subProjectIds.length > 0) {
+            await supabase.from('sub_projects').update({ is_on_hold: true }).in('id', subProjectIds);
+        }
 
-        await batch.commit();
         revalidatePath('/dashboard');
-        return { success: true };
+        return { success: true, message: '已成功設定暫緩！' };
     } catch (e) {
         return { success: false, message: '設定失敗' };
     }
 }
 
 export async function resumeProject(projectId: string, subProjectId?: string) {
-    const projectRef = db.collection('projects').doc(projectId);
+    const supabase = createClient();
     if (subProjectId) {
-        await projectRef.collection('sub_projects').doc(subProjectId).update({ isOnHold: false });
+        await supabase.from('sub_projects').update({ is_on_hold: false }).eq('id', subProjectId);
     } else {
-        await projectRef.update({ status: 'active', isOnHold: false });
+        await supabase.from('projects').update({ status: 'active', is_on_hold: false }).eq('id', projectId);
     }
     revalidatePath('/dashboard');
-    return { success: true };
+    return { success: true, message: '專案已恢復！' };
 }
 
 export async function resumeProjects(projectIds: string[], subProjectsByProject: any) {
-    const batch = db.batch();
-    projectIds.forEach(id => batch.update(db.collection('projects').doc(id), { isOnHold: false, status: 'active' }));
-    for (const pid in subProjectsByProject) {
-        subProjectsByProject[pid].forEach((spid: string) => {
-            batch.update(db.collection('projects').doc(pid).collection('sub_projects').doc(spid), { isOnHold: false });
-        });
+    const supabase = createClient();
+    if (projectIds.length > 0) {
+        await supabase.from('projects').update({ is_on_hold: false, status: 'active' }).in('id', projectIds);
     }
-    await batch.commit();
+    
+    const allSubProjectIdsToResume: string[] = [];
+    for (const pid in subProjectsByProject) {
+        allSubProjectIdsToResume.push(...subProjectsByProject[pid]);
+    }
+    
+    if (allSubProjectIdsToResume.length > 0) {
+        await supabase.from('sub_projects').update({ is_on_hold: false }).in('id', allSubProjectIdsToResume);
+    }
+
     revalidatePath('/dashboard');
-    return { success: true };
+    return { success: true, message: '專案已成功恢復！' };
 }
 
 /**
  * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序、子項目 1,2,3 排序
  */
 async function getOptimizedProjectData() {
-    const [projectsSnap, subProjectsSnap, logsSnap, users] = await Promise.all([
-        db.collection('projects').orderBy('createdAt', 'desc').get(),
-        db.collectionGroup('sub_projects').get(),
-        db.collectionGroup('progress_logs').get(),
+    const supabase = createClient();
+    
+    const [
+        { data: projectsSnap }, 
+        { data: subProjectsSnap }, 
+        { data: logsSnap }, 
+        users
+    ] = await Promise.all([
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('sub_projects').select('*'),
+        supabase.from('progress_logs').select('*'),
         getUsers()
     ]);
 
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
     const currentPeriod = getCurrentReportingPeriod();
 
-    // 1. 主專案去重：以案號為唯一識別
     const projectsMap = new Map<string, FullProject>();
     const caseNumberProcessed = new Set<string>();
 
-    projectsSnap.docs.forEach(doc => {
-        const data = doc.data();
-        const caseNumber = String(data.caseNumber || '').trim();
-        if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
+    if (projectsSnap) {
+        projectsSnap.forEach(doc => {
+            const caseNumber = String(doc.case_number || '').trim();
+            if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
 
-        caseNumberProcessed.add(caseNumber);
-        projectsMap.set(doc.id, {
-            id: doc.id,
-            caseNumber,
-            name: data.name || '',
-            status: data.status || 'active',
-            projectPurpose: data.projectPurpose || '',
-            currentStatusAndIssues: data.currentStatusAndIssues || '',
-            yiehPhuiProjectManager: data.yiehPhuiProjectManager || '',
-            tpmOfficeContact: data.tpmOfficeContact || '',
-            egigaContact: data.egigaContact || '',
-            isOnHold: !!data.isOnHold,
-            createdAt: formatISO(data.createdAt),
-            subProjects: [],
-        } as any);
-    });
+            caseNumberProcessed.add(caseNumber);
+            projectsMap.set(doc.id, {
+                id: doc.id,
+                caseNumber,
+                name: doc.name || '',
+                status: doc.status || 'active',
+                projectPurpose: doc.project_purpose || '',
+                currentStatusAndIssues: doc.current_status_and_issues || '',
+                yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
+                tpmOfficeContact: doc.tpm_office_contact || '',
+                egigaContact: doc.egiga_contact || '',
+                isOnHold: !!doc.is_on_hold,
+                createdAt: formatISO(doc.created_at),
+                subProjects: [],
+            } as any);
+        });
+    }
 
-    // 2. 最新週報判定：[本週優先] + [最後更新時間]
     const latestLogsMap = new Map<string, ProgressLog>();
-    logsSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.reportingPeriod === 'Excel 匯入') return;
+    if (logsSnap) {
+        logsSnap.forEach(doc => {
+            if (doc.reporting_period === 'Excel 匯入') return;
 
-        const spId = data.subProjectId || doc.ref.parent.parent?.id;
-        if (!spId) return;
+            const spId = doc.sub_project_id;
+            if (!spId) return;
 
-        const curUpdatedTime = getSafeTime(data.updatedAt);
-        const isCurrentWeek = data.reportingPeriod === currentPeriod;
+            const curUpdatedTime = new Date(doc.updated_at).getTime();
+            const isCurrentWeek = doc.reporting_period === currentPeriod;
 
-        const existing = latestLogsMap.get(spId);
-        if (!existing) {
-            latestLogsMap.set(spId, {
-                id: doc.id,
-                subProjectId: spId,
-                reportingPeriod: data.reportingPeriod || '',
-                executionSummary: data.executionSummary || '',
-                nextWeekPlan: data.nextWeekPlan || '',
-                roadblocks: data.roadblocks || '',
-                completionPercentage: data.completionPercentage || 0,
-                updatedAt: formatISO(data.updatedAt),
-                createdBy: data.createdBy || '',
-                createdByName: userMap.get(data.createdBy) || '未知',
-            } as any);
-            return;
-        }
-
-        const existingUpdatedTime = getSafeTime(existing.updatedAt);
-        const existingIsCurrent = existing.reportingPeriod === currentPeriod;
-
-        // 判定權重：本週週報 > 非本週週報；如果同類別，則最後更新時間晚的勝出
-        let shouldReplace = false;
-        if (isCurrentWeek && !existingIsCurrent) {
-            shouldReplace = true;
-        } else if (isCurrentWeek === existingIsCurrent) {
-            if (curUpdatedTime > existingUpdatedTime) {
-                shouldReplace = true;
+            const existing = latestLogsMap.get(spId);
+            if (!existing) {
+                latestLogsMap.set(spId, {
+                    id: doc.id,
+                    subProjectId: spId,
+                    reportingPeriod: doc.reporting_period || '',
+                    executionSummary: doc.execution_summary || '',
+                    nextWeekPlan: doc.next_week_plan || '',
+                    roadblocks: doc.roadblocks || '',
+                    completionPercentage: doc.completion_percentage || 0,
+                    updatedAt: formatISO(doc.updated_at),
+                    createdBy: doc.created_by || '',
+                    createdByName: userMap.get(doc.created_by) || '未知',
+                } as any);
+                return;
             }
-        }
 
-        if (shouldReplace) {
-            latestLogsMap.set(spId, {
+            const existingUpdatedTime = new Date(existing.updatedAt).getTime();
+            const existingIsCurrent = existing.reportingPeriod === currentPeriod;
+
+            let shouldReplace = false;
+            if (isCurrentWeek && !existingIsCurrent) {
+                shouldReplace = true;
+            } else if (isCurrentWeek === existingIsCurrent) {
+                if (curUpdatedTime > existingUpdatedTime) {
+                    shouldReplace = true;
+                }
+            }
+
+            if (shouldReplace) {
+                latestLogsMap.set(spId, {
+                    id: doc.id,
+                    subProjectId: spId,
+                    reportingPeriod: doc.reporting_period || '',
+                    executionSummary: doc.execution_summary || '',
+                    nextWeekPlan: doc.next_week_plan || '',
+                    roadblocks: doc.roadblocks || '',
+                    completionPercentage: doc.completion_percentage || 0,
+                    updatedAt: formatISO(doc.updated_at),
+                    createdBy: doc.created_by || '',
+                    createdByName: userMap.get(doc.created_by) || '未知',
+                } as any);
+            }
+        });
+    }
+
+    if (subProjectsSnap) {
+        subProjectsSnap.forEach(doc => {
+            const project = projectsMap.get(doc.project_id);
+            if (!project) return;
+
+            const rawLatestLog = latestLogsMap.get(doc.id) || null;
+            const isCompleted = (rawLatestLog?.completionPercentage ?? 0) === 100;
+            const isCurrentWeek = rawLatestLog?.reportingPeriod === currentPeriod;
+            
+            // 依手冊規範：100% 結案之項目永久自動帶入最後一筆週報；進行中項目若非本週更新則清空本週摘要
+            const latestLog = rawLatestLog ? {
+                ...rawLatestLog,
+                executionSummary: (isCurrentWeek || isCompleted) ? rawLatestLog.executionSummary : '',
+                nextWeekPlan: (isCurrentWeek || isCompleted) ? rawLatestLog.nextWeekPlan : '',
+                roadblocks: (isCurrentWeek || isCompleted) ? rawLatestLog.roadblocks : '',
+            } : null;
+
+            const sp: SubProjectWithLatestLog = {
                 id: doc.id,
-                subProjectId: spId,
-                reportingPeriod: data.reportingPeriod || '',
-                executionSummary: data.executionSummary || '',
-                nextWeekPlan: data.nextWeekPlan || '',
-                roadblocks: data.roadblocks || '',
-                completionPercentage: data.completionPercentage || 0,
-                updatedAt: formatISO(data.updatedAt),
-                createdBy: data.createdBy || '',
-                createdByName: userMap.get(data.createdBy) || '未知',
-            } as any);
-        }
-    });
+                projectId: project.id,
+                name: doc.name || '',
+                owner: doc.owner || '',
+                ownerName: userMap.get(doc.owner) || '未知',
+                expectedCompletionDate: formatISO(doc.expected_completion_date),
+                actualCompletionDate: formatISOOptional(doc.actual_completion_date),
+                isOnHold: !!doc.is_on_hold,
+                isParentOnHold: project.isOnHold,
+                latestLog,
+                projectName: project.name,
+                projectCaseNumber: project.caseNumber,
+                tpmOfficeContact: project.tpmOfficeContact,
+                isOverdue: false,
+            } as any;
 
-    // 3. 組合與「本週空白」顯示轉換
-    subProjectsSnap.docs.forEach(doc => {
-        const data = doc.data();
-        const project = projectsMap.get(data.projectId);
-        if (!project) return;
+            // 依手冊規範：進行中且未滿 100% 之專案，若當前自然週尚未發布週報，自動標記為紅色「本週未更新」
+            if (!sp.isOnHold && !sp.isParentOnHold && !isCompleted) {
+                sp.isOverdue = !isCurrentWeek;
+            }
 
-        const rawLatestLog = latestLogsMap.get(doc.id) || null;
-        
-        // 核心邏輯：如果最新週報不是本週的，儀表板顯示時清空內容，但保留進度
-        const latestLog = rawLatestLog ? {
-            ...rawLatestLog,
-            executionSummary: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.executionSummary : '',
-            nextWeekPlan: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.nextWeekPlan : '',
-            roadblocks: rawLatestLog.reportingPeriod === currentPeriod ? rawLatestLog.roadblocks : '',
-        } : null;
+            project.subProjects.push(sp);
+        });
+    }
 
-        const sp: SubProjectWithLatestLog = {
-            id: doc.id,
-            projectId: project.id,
-            name: data.name || '',
-            owner: data.owner || '',
-            ownerName: userMap.get(data.owner) || '未知',
-            expectedCompletionDate: formatISO(data.expectedCompletionDate),
-            actualCompletionDate: formatISOOptional(data.actualCompletionDate),
-            isOnHold: !!data.isOnHold,
-            isParentOnHold: project.isOnHold,
-            latestLog,
-            projectName: project.name,
-            projectCaseNumber: project.caseNumber,
-            tpmOfficeContact: project.tpmOfficeContact,
-            isOverdue: false,
-        } as any;
-
-        // 逾期判定：非暫緩且進度未達 100%，且超過 7 天沒更新
-        if (!sp.isOnHold && !sp.isParentOnHold && (latestLog?.completionPercentage ?? 0) < 100) {
-            const lastUpdateTime = latestLog ? getSafeTime(latestLog.updatedAt) : 0;
-            const sevenDaysAgo = subDays(new Date(), 7).getTime();
-            sp.isOverdue = lastUpdateTime < sevenDaysAgo;
-        }
-
-        project.subProjects.push(sp);
-    });
-
-    // 4. 排序引擎：案號由大到小，子專案依照 1,2,3 或 一,二,三 排序
     const sortByKey = (a: string, b: string) => b.localeCompare(a, undefined, { numeric: true });
 
     const sortedFullProjects = Array.from(projectsMap.values())
         .filter(p => p.subProjects.length > 0)
         .sort((a, b) => sortByKey(a.caseNumber, b.caseNumber))
         .map(project => {
-            // 關鍵修正：對同一個專案底下的子項目進行排序 (一、二、三 或 1, 2, 3)
             project.subProjects.sort((a, b) => a.name.localeCompare(b.name, 'zh-TW', { numeric: true }));
             return project;
         });
@@ -486,21 +548,30 @@ export const getFullProjectById = async (id: string) => {
 };
 
 /**
- * 取得單一子專案的所有歷史週報 (保留完整資料，依照週報日期絕對排序)
+ * 取得單一子專案的所有歷史週報
  */
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
-    const snap = await db.collection(`projects/${projectId}/sub_projects/${subProjectId}/progress_logs`).get();
+    const supabase = createClient();
+    const { data: snap } = await supabase.from('progress_logs').select('*').eq('sub_project_id', subProjectId);
+    
+    if (!snap) return [];
+
     const users = await getUsers();
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
-    return snap.docs
+    return snap
         .map(doc => {
-            const data = doc.data();
             return {
                 id: doc.id,
-                ...data,
-                updatedAt: formatISO(data.updatedAt),
-                createdByName: userMap.get(data.createdBy) || '未知',
+                subProjectId: doc.sub_project_id,
+                reportingPeriod: doc.reporting_period,
+                executionSummary: doc.execution_summary,
+                nextWeekPlan: doc.next_week_plan,
+                roadblocks: doc.roadblocks,
+                completionPercentage: doc.completion_percentage,
+                createdBy: doc.created_by,
+                updatedAt: formatISO(doc.updated_at),
+                createdByName: userMap.get(doc.created_by) || '未知',
             } as any;
         })
         .filter(l => l.reportingPeriod !== 'Excel 匯入')
@@ -508,6 +579,6 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
             const timeA = getSafeTimeFromPeriod(a.reportingPeriod);
             const timeB = getSafeTimeFromPeriod(b.reportingPeriod);
             if (timeA !== timeB) return timeB - timeA;
-            return getSafeTime(b.updatedAt) - getSafeTime(a.updatedAt);
+            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         });
 };

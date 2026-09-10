@@ -13,9 +13,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { SubProjectWithLatestLog, ProgressLog } from '@/types';
 import { format } from 'date-fns';
-import { Download, Pencil } from 'lucide-react';
+import { Download, Pencil, Trash2 } from 'lucide-react';
 import { Separator } from '../ui/separator';
 import { EditLogDialog } from './edit-log-dialog';
+import { deleteProgressLog } from '@/lib/actions';
 
 type TimelineModalProps = {
   isOpen: boolean;
@@ -39,6 +40,19 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
 
   const handleLogUpdated = (updatedLog: ProgressLog) => {
     onLogUpdated(updatedLog, subProject.id);
+  };
+
+  const handleDeleteClick = async (logId: string) => {
+    if (!isAdmin) return;
+    if (window.confirm('確定要刪除這筆歷史週報嗎？此操作為不可逆操作！')) {
+      try {
+        await deleteProgressLog(logId);
+        onLogUpdated({} as any, subProject.id);
+      } catch (err) {
+        console.error('刪除週報失敗:', err);
+        alert('刪除週報失敗，請稍後再試。');
+      }
+    }
   };
 
   return (
@@ -73,6 +87,7 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
                         key={log.id} 
                         log={log} 
                         onEditClick={handleEditClick}
+                        onDeleteClick={() => handleDeleteClick(log.id)}
                         isAdmin={isAdmin}
                       />
                       ))}
@@ -104,7 +119,7 @@ export function TimelineModal({ isOpen, setIsOpen, subProject, logs, isLoading, 
   );
 }
 
-const TimelineItem = ({ log, onEditClick, isAdmin }: { log: ProgressLog; onEditClick: (log: ProgressLog) => void; isAdmin: boolean; }) => (
+const TimelineItem = ({ log, onEditClick, onDeleteClick, isAdmin }: { log: ProgressLog; onEditClick: (log: ProgressLog) => void; onDeleteClick: () => void; isAdmin: boolean; }) => (
     <div className="relative flex items-start">
         <div className="absolute left-[-2px] top-[5px] flex h-5 w-5 items-center justify-center rounded-full bg-primary">
         <div className="h-2 w-2 rounded-full bg-primary-foreground" />
@@ -112,14 +127,19 @@ const TimelineItem = ({ log, onEditClick, isAdmin }: { log: ProgressLog; onEditC
         <div className="ml-10 w-full">
             <div className="mb-2 flex items-center justify-between">
                 <p className="font-semibold text-primary">{log.reportingPeriod}</p>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>
                     {format(new Date(log.updatedAt as string), 'yyyy/MM/dd HH:mm')} by {log.createdByName}
                   </span>
                   {isAdmin && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditClick(log)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEditClick(log)} title="編輯週報">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={onDeleteClick} title="刪除週報">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   )}
                 </div>
             </div>

@@ -1,8 +1,9 @@
 
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Users, HelpCircle, Book, Route } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 export function Header() {
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   const { toast } = useToast();
+  const { isAdmin, setIsLoginDialogOpen, logout } = useAdmin();
   
   const startTour = async () => {
     const { driver } = await import("driver.js");
@@ -177,44 +179,48 @@ export function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src="https://i.ibb.co/wNFFnrjp/logo1.png" alt="User Avatar" />
-                    <AvatarFallback>U</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">Charlie (Admin)</p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      charlie@example.com
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  <DropdownMenuItem>
-                    <User className="mr-2 h-4 w-4" />
-                    <span>個人資料</span>
+            {isAdmin ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="secondary" size="sm" className="gap-2 border-primary/20 text-xs font-medium">
+                    <Unlock className="h-3.5 w-3.5 text-primary" />
+                    管理員模式
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-48" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-0.5">
+                      <p className="text-sm font-semibold text-primary">管理員 (Admin)</p>
+                      <p className="text-xs text-muted-foreground">已取得所有維護權限</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <Link href="/users" passHref>
+                      <DropdownMenuItem className="cursor-pointer">
+                        <Users className="mr-2 h-4 w-4" />
+                        <span>成員管理</span>
+                      </DropdownMenuItem>
+                    </Link>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>切換為訪客 (登出)</span>
                   </DropdownMenuItem>
-                  <Link href="/users" passHref>
-                    <DropdownMenuItem>
-                      <Users className="mr-2 h-4 w-4" />
-                      <span>成員管理</span>
-                    </DropdownMenuItem>
-                  </Link>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>登出</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+                onClick={() => setIsLoginDialogOpen(true)}
+              >
+                <Lock className="h-3.5 w-3.5" />
+                管理員登入
+              </Button>
+            )}
         </div>
       </div>
     </header>

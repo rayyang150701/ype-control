@@ -40,6 +40,13 @@ const onHoldStyle = {
   ...defaultCellStyle
 };
 
+// 依手冊規範：已 100% 結案之項目套用綠色底圖
+const completedStyle = {
+  fill: { fgColor: { rgb: "E2EFDA" } }, // Light green background
+  font: { color: { rgb: "276A3C" }, bold: true },
+  ...defaultCellStyle
+};
+
 const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF--8';
 const fileExtension = '.xlsx';
 
@@ -101,8 +108,15 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
       const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
       const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
       const completionPercentage = `${sp.latestLog?.completionPercentage ?? 0}%`;
+      const isCompleted = (sp.latestLog?.completionPercentage ?? 0) === 100;
       
-      const currentStyle = isEffectivelyOnHold ? onHoldStyle : defaultCellStyle;
+      // 依手冊規範：已結案套用綠底，暫緩套用灰字
+      let currentStyle = defaultCellStyle;
+      if (isEffectivelyOnHold) {
+        currentStyle = onHoldStyle;
+      } else if (isCompleted) {
+        currentStyle = completedStyle;
+      }
 
       const row = [
         { v: project.caseNumber, s: currentStyle },
@@ -168,7 +182,7 @@ export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, log
     const headers = ['提報區間', '本週摘要', '下週計畫', '問題', '進度%', '更新時間', '填寫人'];
     const userMap = new Map(users.map(u => [u.uid, u.displayName]));
 
-    const data = [
+    const data: any[][] = [
         [title],
         [`製表單位: TPM管理室`, '', '', '', `日期: ${format(new Date(), 'yyyy/MM/dd')}`],
         [],

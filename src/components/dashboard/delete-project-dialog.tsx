@@ -127,9 +127,9 @@ export function DeleteProjectDialog({ isOpen, setIsOpen, projects, onProjectDele
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>刪除子專案</DialogTitle>
+          <DialogTitle>刪除專案 / 子專案</DialogTitle>
           <DialogDescription>
-            此操作無法復原。選擇一個主專案，然後勾選要永久刪除的子專案。
+            此操作無法復原。選擇一個主專案，然後勾選要永久刪除的子專案。若該主專案下的所有子專案皆被刪除，主專案本身也會被一併刪除。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

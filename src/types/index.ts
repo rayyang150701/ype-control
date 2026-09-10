@@ -1,5 +1,4 @@
-
-import type { Timestamp } from 'firebase/firestore';
+export type Timestamp = any;
 
 export type UserRole = 'admin' | 'editor' | 'viewer';
 export type UserStatus = 'pending' | 'active';

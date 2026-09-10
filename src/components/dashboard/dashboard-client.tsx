@@ -15,6 +15,7 @@ import { OnHoldDialog } from './on-hold-dialog';
 import { ResumeProjectDialog } from './resume-project-dialog';
 import { NewLogDialog } from './new-log-dialog';
 import { LoginDialog } from './login-dialog';
+import { useAdmin } from '@/components/admin-context';
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
@@ -29,9 +30,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
-  // 權限控管狀態
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
+  // 權限控管狀態 (由全域 AdminContext 提供)
+  const { isAdmin, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen } = useAdmin();
 
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
@@ -163,7 +163,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         ownerFilter={ownerFilter}
         setOwnerFilter={setOwnerFilter}
         owners={activeOwners}
-        onExportAll={() => exportAllProjectsSummary(fullProjects, users)}
+        onExportAll={() => exportAllProjectsSummary(filteredFullProjects, users)}
         onAddNewProject={() => setIsNewProjectOpen(true)}
         onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
         onDeleteProject={() => setIsDeleteProjectOpen(true)}

@@ -1,10 +1,9 @@
-
 import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 import './globals.css';
 import { Header } from '@/components/header';
-import { FirebaseClientProvider } from '@/firebase';
+import { AdminProvider } from '@/components/admin-context';
 
 export const metadata: Metadata = {
   title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
@@ -28,13 +27,13 @@ export default function RootLayout({
           'min-h-screen bg-background font-body antialiased overflow-x-hidden'
         )}
       >
-        <FirebaseClientProvider>
-            <Header />
-            <main className="w-full px-4 py-4 sm:py-6 lg:py-8">
-                {children}
-            </main>
-            <Toaster />
-        </FirebaseClientProvider>
+        <AdminProvider>
+          <Header />
+          <main className="w-full px-4 py-4 sm:py-6 lg:py-8">
+              {children}
+          </main>
+          <Toaster />
+        </AdminProvider>
       </body>
     </html>
   );

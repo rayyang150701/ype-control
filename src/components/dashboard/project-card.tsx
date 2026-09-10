@@ -76,7 +76,7 @@ export function ProjectCard({ subProject, onCardClick, onAddLog, isAdmin }: Proj
           )}
           {!isCompleted && isOverdue && !isEffectivelyOnHold && (
             <Badge variant="destructive" className="absolute -top-2 -right-2 z-10">
-              逾期未報
+              本週未更新
             </Badge>
           )}
           <CardDescription className="font-mono text-xs">{subProject.projectCaseNumber}</CardDescription>
