@@ -1,4 +1,4 @@
-import { getFullProjects, getActionItems } from '@/lib/actions';
+import { getAllProjectsForInternal, getActionItems } from '@/lib/actions';
 import { InternalTasksClient } from '@/components/internal/internal-tasks-client';
 import { Suspense } from 'react';
 
@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 export default async function InternalTasksPage() {
   const [projects, actionItems] = await Promise.all([
-    getFullProjects(),
+    getAllProjectsForInternal(),
     getActionItems(),
   ]);
 

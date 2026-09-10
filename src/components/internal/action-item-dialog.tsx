@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { createActionItem, updateActionItem } from '@/lib/actions';
+import { createActionItem, updateActionItem, createPocProject } from '@/lib/actions';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus } from '@/types';
 
 interface ActionItemDialogProps {
@@ -41,6 +41,10 @@ export function ActionItemDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [projectId, setProjectId] = useState(item?.projectId || defaultProjectId || '');
+  const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectCaseNumber, setNewProjectCaseNumber] = useState('');
+
   const [title, setTitle] = useState(item?.title || '');
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '開發/施工');
   const [status, setStatus] = useState<ActionItemStatus>(item?.status || 'pending');
@@ -54,6 +58,7 @@ export function ActionItemDialog({
     if (open) {
       if (item) {
         setProjectId(item.projectId);
+        setIsCreatingNewProject(false);
         setTitle(item.title);
         setPhase(item.phase);
         setStatus(item.status);
@@ -64,6 +69,9 @@ export function ActionItemDialog({
         setLessonLearnt(item.lessonLearnt || '');
       } else {
         setProjectId(defaultProjectId || (projects[0]?.id || ''));
+        setIsCreatingNewProject(false);
+        setNewProjectName('');
+        setNewProjectCaseNumber('');
         setTitle('');
         setPhase('開發/施工');
         setStatus('pending');
@@ -82,13 +90,36 @@ export function ActionItemDialog({
       toast({ title: '請輸入事項標題', variant: 'destructive' });
       return;
     }
-    if (!projectId) {
-      toast({ title: '請選擇所屬專案', variant: 'destructive' });
+    if (!isCreatingNewProject && !projectId) {
+      toast({ title: '請選擇所屬專案或建立新專案', variant: 'destructive' });
       return;
     }
 
     setIsSubmitting(true);
     try {
+      let targetProjectId = projectId;
+
+      if (!item && isCreatingNewProject) {
+        if (!newProjectName.trim()) {
+          toast({ title: '請輸入新專案名稱', variant: 'destructive' });
+          setIsSubmitting(false);
+          return;
+        }
+
+        const pocRes = await createPocProject({
+          name: newProjectName.trim(),
+          caseNumber: newProjectCaseNumber.trim() || undefined,
+          tpmOfficeContact: owner || undefined,
+        });
+
+        if (!pocRes.success || !pocRes.data) {
+          toast({ title: '建立新專案失敗', description: pocRes.message, variant: 'destructive' });
+          setIsSubmitting(false);
+          return;
+        }
+        targetProjectId = pocRes.data.id;
+      }
+
       if (item?.id) {
         const res = await updateActionItem(item.id, {
           title,
@@ -109,7 +140,7 @@ export function ActionItemDialog({
         }
       } else {
         const res = await createActionItem({
-          projectId,
+          projectId: targetProjectId,
           title,
           phase,
           status,
@@ -120,7 +151,7 @@ export function ActionItemDialog({
           lessonLearnt,
         });
         if (res.success) {
-          toast({ title: '新增成功', description: '待辦事項已建立' });
+          toast({ title: '新增成功', description: '待辦事項已建立！' });
           onSuccess();
           onOpenChange(false);
         } else {
@@ -144,21 +175,62 @@ export function ActionItemDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          {/* 所屬專案 */}
+          {/* 所屬專案選擇或直接新增 */}
           <div>
-            <Label className="text-sm font-semibold">所屬專案 *</Label>
-            <Select value={projectId} onValueChange={setProjectId} disabled={!!item}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="請選擇專案" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    [{p.caseNumber}] {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center justify-between mb-1">
+              <Label className="text-sm font-semibold">所屬專案項目 *</Label>
+              {!item && (
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingNewProject(!isCreatingNewProject)}
+                  className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+                >
+                  {isCreatingNewProject ? '◀ 返回選擇現有專案' : '➕ 建立全新專案 (POC / 內部評估)'}
+                </button>
+              )}
+            </div>
+
+            {isCreatingNewProject ? (
+              <div className="p-3 border rounded-md bg-purple-50/50 border-purple-200 space-y-2.5">
+                <div className="flex items-center justify-between text-xs text-purple-900 font-semibold">
+                  <span>🧪 建立內部專案 / POC 評估項目</span>
+                  <span className="text-[11px] font-normal text-purple-700">(不公開於客戶管制表)</span>
+                </div>
+                <div>
+                  <Input
+                    placeholder="輸入新專案名稱 (例如：POC-高溫酸氣感測器研製)"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    className="bg-white text-sm"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    placeholder="案號代碼 (選填，如: POC-01)"
+                    value={newProjectCaseNumber}
+                    onChange={(e) => setNewProjectCaseNumber(e.target.value)}
+                    className="bg-white text-xs h-8"
+                  />
+                  <span className="text-[11px] text-muted-foreground flex items-center">
+                    未填將自動配發 POC 代號
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <Select value={projectId} onValueChange={setProjectId} disabled={!!item}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="請選擇專案" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.status === 'poc' ? '🧪 [POC] ' : ''}[{p.caseNumber}] {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* 事項標題 */}

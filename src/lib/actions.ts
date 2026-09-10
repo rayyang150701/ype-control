@@ -722,3 +722,58 @@ export async function deleteActionItem(id: string) {
         return { success: false, message: err?.message || '刪除待辦事項失敗' };
     }
 }
+
+export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
+    const supabase = createClient();
+    const { data: projectsData, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('case_number', { ascending: true });
+        
+    if (error || !projectsData) return [];
+
+    return projectsData.map(doc => ({
+        id: doc.id,
+        caseNumber: doc.case_number,
+        name: doc.name,
+        status: (doc.status || 'active') as any,
+        projectPurpose: doc.project_purpose || '',
+        currentStatusAndIssues: doc.current_status_and_issues || '',
+        yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
+        tpmOfficeContact: doc.tpm_office_contact || '',
+        egigaContact: doc.egiga_contact || '',
+        isOnHold: !!doc.is_on_hold,
+        createdAt: formatISO(doc.created_at),
+        createdBy: doc.created_by || '',
+        subProjects: [],
+    }));
+};
+
+export async function createPocProject(data: {
+    name: string;
+    caseNumber?: string;
+    projectPurpose?: string;
+    tpmOfficeContact?: string;
+}) {
+    const supabase = createClient();
+    try {
+        const caseNum = data.caseNumber?.trim() || `POC-${Date.now().toString().slice(-4)}`;
+        const { data: newProject, error } = await supabase.from('projects').insert({
+            firebase_id: crypto.randomUUID(),
+            name: data.name.trim(),
+            case_number: caseNum,
+            status: 'poc',
+            project_purpose: data.projectPurpose || '內部評估 / POC 追蹤項目',
+            tpm_office_contact: data.tpmOfficeContact || '',
+            is_on_hold: false,
+            created_at: new Date().toISOString()
+        }).select('id, name, case_number, status').single();
+
+        if (error) throw error;
+        revalidatePath('/internal-tasks');
+        return { success: true, message: '內部專案/POC項目已建立！', data: newProject };
+    } catch (err: any) {
+        console.error('建立內部專案失敗:', err);
+        return { success: false, message: err?.message || '建立內部專案失敗' };
+    }
+}

@@ -12,7 +12,7 @@ export interface User {
   createdAt: Timestamp | Date | string;
 }
 
-export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'cancelled';
+export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'cancelled' | 'poc';
 
 export interface Project {
   id: string;

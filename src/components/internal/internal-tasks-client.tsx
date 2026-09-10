@@ -23,10 +23,12 @@ import {
   Trash2,
   Check,
   FolderGit2,
+  FolderPlus,
   Layers
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
+import { NewPocProjectDialog } from './new-poc-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { useAdmin } from '@/components/admin-context';
 import { updateActionItem, deleteActionItem } from '@/lib/actions';
@@ -45,11 +47,12 @@ export function InternalTasksClient({
   const { isAdmin } = useAdmin();
   const { toast } = useToast();
 
-  const [projects] = useState<FullProject[]>(initialProjects);
+  const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
 
   // 篩選狀態
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedProjectType, setSelectedProjectType] = useState<'all' | 'poc' | 'client'>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
@@ -57,6 +60,7 @@ export function InternalTasksClient({
 
   // 彈窗狀態
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pocDialogOpen, setPocDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProjectActionItem | null>(null);
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>();
 
@@ -129,9 +133,16 @@ export function InternalTasksClient({
 
   // 將待辦項目按所屬專案分組
   const groupedByProject = useMemo(() => {
+    let projectList = projects;
+    if (selectedProjectType === 'poc') {
+      projectList = projectList.filter((p) => p.status === 'poc');
+    } else if (selectedProjectType === 'client') {
+      projectList = projectList.filter((p) => p.status !== 'poc');
+    }
+
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
 
-    projects.forEach((proj) => {
+    projectList.forEach((proj) => {
       map.set(proj.id, { project: proj, items: [] });
     });
 
@@ -139,7 +150,7 @@ export function InternalTasksClient({
       const entry = map.get(item.projectId);
       if (entry) {
         entry.items.push(item);
-      } else {
+      } else if (selectedProjectType === 'all') {
         // 若找不到對應專案，放進暫存專案
         const dummyProj: FullProject = {
           id: item.projectId,
@@ -161,7 +172,7 @@ export function InternalTasksClient({
       }
       return true;
     });
-  }, [projects, filteredItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn]);
+  }, [projects, filteredItems, searchQuery, selectedProjectType, selectedPhase, selectedStatus, selectedWaitingOn]);
 
   const toggleCollapse = (projectId: string) => {
     setCollapsedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
@@ -266,10 +277,21 @@ export function InternalTasksClient({
           </Button>
 
           {isAdmin && (
-            <Button onClick={() => handleOpenAdd()} className="gap-1.5 shadow-sm">
-              <Plus className="h-4 w-4" />
-              新增待辦 / 歷程
-            </Button>
+            <>
+              <Button
+                onClick={() => setPocDialogOpen(true)}
+                variant="outline"
+                className="gap-1.5 border-purple-300 bg-purple-50/70 text-purple-800 hover:bg-purple-100 hover:text-purple-950 shadow-xs"
+              >
+                <FolderPlus className="h-4 w-4 text-purple-600" />
+                新增內部專案 (POC / 評估)
+              </Button>
+
+              <Button onClick={() => handleOpenAdd()} className="gap-1.5 shadow-sm">
+                <Plus className="h-4 w-4" />
+                新增待辦 / 歷程
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -339,7 +361,19 @@ export function InternalTasksClient({
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 專案類型篩選 */}
+          <Select value={selectedProjectType} onValueChange={(val: any) => setSelectedProjectType(val)}>
+            <SelectTrigger className="w-[145px] h-9 text-xs font-medium">
+              <SelectValue placeholder="專案類型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部專案 ({projects.length})</SelectItem>
+              <SelectItem value="poc">🧪 內部 POC / 評估 ({projects.filter(p => p.status === 'poc').length})</SelectItem>
+              <SelectItem value="client">🏢 燁輝客戶列管 ({projects.filter(p => p.status !== 'poc').length})</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* 階段篩選 */}
           <Select value={selectedPhase} onValueChange={setSelectedPhase}>
             <SelectTrigger className="w-[130px] h-9 text-xs">
@@ -370,12 +404,13 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
-          {(searchQuery || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all') && (
+          {(searchQuery || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all') && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearchQuery('');
+                setSelectedProjectType('all');
                 setSelectedPhase('all');
                 setSelectedStatus('all');
                 setSelectedWaitingOn('all');
@@ -462,6 +497,15 @@ export function InternalTasksClient({
                           {project.caseNumber}
                         </span>
                         <h2 className="text-base font-bold text-slate-900">{project.name}</h2>
+                        {project.status === 'poc' ? (
+                          <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs">
+                            🧪 內部 POC / 評估案
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-slate-600 border-slate-300 text-[11px] px-2 py-0.5">
+                            🏢 燁輝客戶列管
+                          </Badge>
+                        )}
                         {project.tpmOfficeContact && (
                           <span className="text-xs text-muted-foreground">
                             TPM窗口: {project.tpmOfficeContact}
@@ -701,6 +745,19 @@ export function InternalTasksClient({
         onSuccess={() => {
           // 重新載入或重刷
           window.location.reload();
+        }}
+      />
+
+      {/* 新增內部專案 (POC) 彈窗 */}
+      <NewPocProjectDialog
+        open={pocDialogOpen}
+        onOpenChange={setPocDialogOpen}
+        onSuccess={(newProj) => {
+          if (newProj) {
+            setProjects((prev) => [newProj, ...prev]);
+          } else {
+            window.location.reload();
+          }
         }}
       />
 
