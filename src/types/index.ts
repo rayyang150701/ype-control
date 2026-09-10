@@ -19,7 +19,9 @@ export interface Project {
   caseNumber: string;
   name: string;
   status: ProjectStatus;
+  projectCategory?: '評估案' | '已開案';
   createdAt: Timestamp | Date | string;
+  updatedAt?: Timestamp | Date | string;
   createdBy: string;
   projectPurpose?: string;
   currentStatusAndIssues?: string;
@@ -107,4 +109,5 @@ export interface ProjectActionItem {
   updatedAt: string;
   projectName?: string;
   projectCaseNumber?: string;
+  projectCategory?: '評估案' | '已開案';
 }

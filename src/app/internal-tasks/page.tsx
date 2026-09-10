@@ -1,4 +1,4 @@
-import { getAllProjectsForInternal, getActionItems } from '@/lib/actions';
+import { getAllProjectsForInternal, getActionItems, getUsers } from '@/lib/actions';
 import { InternalTasksClient } from '@/components/internal/internal-tasks-client';
 import { Suspense } from 'react';
 
@@ -6,9 +6,10 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 export default async function InternalTasksPage() {
-  const [projects, actionItems] = await Promise.all([
+  const [projects, actionItems, users] = await Promise.all([
     getAllProjectsForInternal(),
     getActionItems(),
+    getUsers(),
   ]);
 
   return (
@@ -17,6 +18,7 @@ export default async function InternalTasksPage() {
         <InternalTasksClient
           initialProjects={projects}
           initialActionItems={actionItems}
+          users={users}
         />
       </Suspense>
     </div>

@@ -599,9 +599,13 @@ export async function getActionItems(projectId?: string): Promise<ProjectActionI
             return [];
         }
 
-        // 取得專案名稱與案號作為輔助
-        const { data: projectsData } = await supabase.from('projects').select('id, name, case_number');
-        const projMap = new Map((projectsData || []).map(p => [p.id, { name: p.name, caseNumber: p.case_number }]));
+        // 取得專案名稱與案號及類別作為輔助
+        const { data: projectsData } = await supabase.from('projects').select('id, name, case_number, status');
+        const projMap = new Map((projectsData || []).map(p => [p.id, { 
+            name: p.name, 
+            caseNumber: p.case_number,
+            category: (p.status === 'poc' || p.status === 'evaluation') ? '評估案' : '已開案'
+        }]));
 
         return data.map(item => {
             const proj = projMap.get(item.project_id);
@@ -622,6 +626,7 @@ export async function getActionItems(projectId?: string): Promise<ProjectActionI
                 updatedAt: formatISO(item.updated_at),
                 projectName: proj?.name || '',
                 projectCaseNumber: proj?.caseNumber || '',
+                projectCategory: (proj?.category || '已開案') as ('評估案' | '已開案'),
             };
         });
     } catch (err) {
@@ -727,51 +732,86 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
     const supabase = createClient();
     const { data: projectsData, error } = await supabase
         .from('projects')
-        .select('*')
-        .order('case_number', { ascending: true });
+        .select('*');
         
     if (error || !projectsData) return [];
 
-    return projectsData.map(doc => ({
-        id: doc.id,
-        caseNumber: doc.case_number,
-        name: doc.name,
-        status: (doc.status || 'active') as any,
-        projectPurpose: doc.project_purpose || '',
-        currentStatusAndIssues: doc.current_status_and_issues || '',
-        yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
-        tpmOfficeContact: doc.tpm_office_contact || '',
-        egigaContact: doc.egiga_contact || '',
-        isOnHold: !!doc.is_on_hold,
-        createdAt: formatISO(doc.created_at),
-        createdBy: doc.created_by || '',
-        subProjects: [],
-    }));
+    // 去除重覆案號（若有相同案號者，保留最新紀錄以避免畫面上出現兩張一模一樣的卡片）
+    const uniqueMap = new Map<string, any>();
+    for (const doc of projectsData) {
+        const key = doc.case_number ? String(doc.case_number).trim() : doc.id;
+        const existing = uniqueMap.get(key);
+        if (!existing) {
+            uniqueMap.set(key, doc);
+        } else {
+            const existingTime = new Date(existing.created_at).getTime();
+            const curTime = new Date(doc.created_at).getTime();
+            if (curTime > existingTime) {
+                uniqueMap.set(key, doc);
+            }
+        }
+    }
+
+    const projectsList = Array.from(uniqueMap.values());
+
+    return projectsList.map(doc => {
+        const isEval = doc.status === 'poc' || doc.status === 'evaluation';
+        return {
+            id: doc.id,
+            caseNumber: doc.case_number,
+            name: doc.name,
+            status: (doc.status || 'active') as any,
+            projectCategory: isEval ? '評估案' : '已開案',
+            projectPurpose: doc.project_purpose || '',
+            currentStatusAndIssues: doc.current_status_and_issues || '',
+            yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
+            tpmOfficeContact: doc.tpm_office_contact || '',
+            egigaContact: doc.egiga_contact || '',
+            isOnHold: !!doc.is_on_hold,
+            createdAt: formatISO(doc.created_at),
+            createdBy: doc.created_by || '',
+            subProjects: [],
+        };
+    });
 };
 
 export async function createPocProject(data: {
     name: string;
     caseNumber?: string;
+    category?: '評估案' | '已開案';
     projectPurpose?: string;
     tpmOfficeContact?: string;
 }) {
     const supabase = createClient();
     try {
-        const caseNum = data.caseNumber?.trim() || `POC-${Date.now().toString().slice(-4)}`;
+        const category = data.category || '評估案';
+        const isEval = category === '評估案';
+        const defaultPrefix = isEval ? 'POC' : 'PRJ';
+        const caseNum = data.caseNumber?.trim() || `${defaultPrefix}-${Date.now().toString().slice(-4)}`;
+
         const { data: newProject, error } = await supabase.from('projects').insert({
             firebase_id: crypto.randomUUID(),
             name: data.name.trim(),
             case_number: caseNum,
-            status: 'poc',
-            project_purpose: data.projectPurpose || '內部評估 / POC 追蹤項目',
+            status: isEval ? 'evaluation' : 'active',
+            project_purpose: data.projectPurpose || (isEval ? '內部評估案 / POC 項目' : '內部自主開案項目'),
             tpm_office_contact: data.tpmOfficeContact || '',
             is_on_hold: false,
             created_at: new Date().toISOString()
-        }).select('id, name, case_number, status').single();
+        }).select('id, name, case_number, status, tpm_office_contact, project_purpose, created_at').single();
 
         if (error) throw error;
         revalidatePath('/internal-tasks');
-        return { success: true, message: '內部專案/POC項目已建立！', data: newProject };
+        return { 
+            success: true, 
+            message: `內部「${category}」已建立！`, 
+            data: {
+                ...newProject,
+                caseNumber: newProject.case_number,
+                projectCategory: category,
+                subProjects: []
+            } 
+        };
     } catch (err: any) {
         console.error('建立內部專案失敗:', err);
         return { success: false, message: err?.message || '建立內部專案失敗' };

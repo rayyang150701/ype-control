@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createActionItem, updateActionItem, createPocProject } from '@/lib/actions';
-import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus } from '@/types';
+import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User } from '@/types';
 
 interface ActionItemDialogProps {
   open: boolean;
@@ -17,6 +17,7 @@ interface ActionItemDialogProps {
   item?: ProjectActionItem | null;
   defaultProjectId?: string;
   projects: FullProject[];
+  users?: User[];
   onSuccess: () => void;
 }
 
@@ -35,6 +36,7 @@ export function ActionItemDialog({
   item,
   defaultProjectId,
   projects,
+  users = [],
   onSuccess,
 }: ActionItemDialogProps) {
   const { toast } = useToast();
@@ -44,6 +46,7 @@ export function ActionItemDialog({
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCaseNumber, setNewProjectCaseNumber] = useState('');
+  const [newProjectCategory, setNewProjectCategory] = useState<'評估案' | '已開案'>('評估案');
 
   const [title, setTitle] = useState(item?.title || '');
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '開發/施工');
@@ -108,6 +111,7 @@ export function ActionItemDialog({
 
         const pocRes = await createPocProject({
           name: newProjectName.trim(),
+          category: newProjectCategory,
           caseNumber: newProjectCaseNumber.trim() || undefined,
           tpmOfficeContact: owner || undefined,
         });
@@ -125,7 +129,7 @@ export function ActionItemDialog({
           title,
           phase,
           status,
-          owner,
+          owner: owner === '未指定' ? '' : owner,
           waitingOn,
           dueDate: dueDate || null,
           notes,
@@ -144,7 +148,7 @@ export function ActionItemDialog({
           title,
           phase,
           status,
-          owner,
+          owner: owner === '未指定' ? '' : owner,
           waitingOn,
           dueDate: dueDate || null,
           notes,
@@ -185,7 +189,7 @@ export function ActionItemDialog({
                   onClick={() => setIsCreatingNewProject(!isCreatingNewProject)}
                   className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
                 >
-                  {isCreatingNewProject ? '◀ 返回選擇現有專案' : '➕ 建立全新專案 (POC / 內部評估)'}
+                  {isCreatingNewProject ? '◀ 返回選擇現有專案' : '➕ 建立全新專案 (評估案 / 已開案)'}
                 </button>
               )}
             </div>
@@ -193,12 +197,39 @@ export function ActionItemDialog({
             {isCreatingNewProject ? (
               <div className="p-3 border rounded-md bg-purple-50/50 border-purple-200 space-y-2.5">
                 <div className="flex items-center justify-between text-xs text-purple-900 font-semibold">
-                  <span>🧪 建立內部專案 / POC 評估項目</span>
+                  <span>🧪 建立內部專案項目</span>
                   <span className="text-[11px] font-normal text-purple-700">(不公開於客戶管制表)</span>
                 </div>
+
+                {/* 專案類別切換 */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewProjectCategory('評估案')}
+                    className={`py-1.5 px-2 rounded text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                      newProjectCategory === '評估案'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>📝 評估案 (POC / 前期)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewProjectCategory('已開案')}
+                    className={`py-1.5 px-2 rounded text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                      newProjectCategory === '已開案'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>🚀 已開案 (執行中)</span>
+                  </button>
+                </div>
+
                 <div>
                   <Input
-                    placeholder="輸入新專案名稱 (例如：POC-高溫酸氣感測器研製)"
+                    placeholder={newProjectCategory === '評估案' ? "輸入評估專案名稱 (例如：POC-堆高機雙鏡頭自主防撞評估)" : "輸入開案名稱 (例如：全廠設備連網通訊介面升級)"}
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
                     className="bg-white text-sm"
@@ -213,7 +244,7 @@ export function ActionItemDialog({
                     className="bg-white text-xs h-8"
                   />
                   <span className="text-[11px] text-muted-foreground flex items-center">
-                    未填將自動配發 POC 代號
+                    未填將自動配發案號
                   </span>
                 </div>
               </div>
@@ -225,7 +256,7 @@ export function ActionItemDialog({
                 <SelectContent className="max-h-60">
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.status === 'poc' ? '🧪 [POC] ' : ''}[{p.caseNumber}] {p.name}
+                      {p.projectCategory === '評估案' ? '📝 [評估案] ' : '🚀 [已開案] '}[{p.caseNumber}] {p.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -295,12 +326,28 @@ export function ActionItemDialog({
 
             <div>
               <Label className="text-sm font-semibold">內部負責人 (PM / 窗口)</Label>
-              <Input
-                className="mt-1"
-                placeholder="例如：徐智宏、Winona"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-              />
+              {users.length > 0 ? (
+                <Select value={owner} onValueChange={setOwner}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="請選擇成員" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-48">
+                    <SelectItem value="未指定">-- 暫不指定 --</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.uid} value={u.displayName || u.email}>
+                        {u.displayName} ({u.role === 'admin' ? '管理員' : '成員'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className="mt-1"
+                  placeholder="例如：徐智宏、Winona"
+                  value={owner}
+                  onChange={(e) => setOwner(e.target.value)}
+                />
+              )}
             </div>
           </div>
 

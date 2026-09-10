@@ -24,7 +24,9 @@ import {
   Check,
   FolderGit2,
   FolderPlus,
-  Layers
+  Layers,
+  ArrowUpDown,
+  Filter
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
@@ -33,16 +35,18 @@ import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { useAdmin } from '@/components/admin-context';
 import { updateActionItem, deleteActionItem } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import type { FullProject, ProjectActionItem, ActionItemPhase, ActionItemStatus } from '@/types';
+import type { FullProject, ProjectActionItem, ActionItemPhase, ActionItemStatus, User } from '@/types';
 
 interface InternalTasksClientProps {
   initialProjects: FullProject[];
   initialActionItems: ProjectActionItem[];
+  users?: User[];
 }
 
 export function InternalTasksClient({
   initialProjects,
   initialActionItems,
+  users = [],
 }: InternalTasksClientProps) {
   const { isAdmin } = useAdmin();
   const { toast } = useToast();
@@ -50,12 +54,15 @@ export function InternalTasksClient({
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
 
-  // 篩選狀態
+  // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案'>('all');
   const [selectedProjectType, setSelectedProjectType] = useState<'all' | 'poc' | 'client'>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
+  const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
 
   // 彈窗狀態
@@ -131,9 +138,59 @@ export function InternalTasksClient({
     });
   }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn]);
 
+  // 統計評估案 vs 已開案
+  const categoryCounts = useMemo(() => {
+    let pocCount = 0;
+    let activeCount = 0;
+    projects.forEach((p) => {
+      const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
+      if (cat === '評估案') pocCount++;
+      else activeCount++;
+    });
+    return { all: projects.length, poc: pocCount, active: activeCount };
+  }, [projects]);
+
+  // 自然序號比較函數 (1, 2, ... 10, ... 55)
+  const compareCaseNumbers = (a?: string, b?: string, asc: boolean = true) => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+    const matchA = a.match(/^(\d+)/);
+    const matchB = b.match(/^(\d+)/);
+    if (matchA && matchB) {
+      const numA = parseInt(matchA[1], 10);
+      const numB = parseInt(matchB[1], 10);
+      if (numA !== numB) return asc ? numA - numB : numB - numA;
+    }
+    return asc
+      ? a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+      : b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+  };
+
+  // 取得專案最新異動時間 (取待辦或專案本身最大時間)
+  const getProjectRecentTimestamp = (proj: FullProject, projItems: ProjectActionItem[]) => {
+    const toStr = (val: any) => (typeof val === 'string' ? val : val?.toISOString ? val.toISOString() : '');
+    let maxTime = toStr(proj.updatedAt) || toStr(proj.createdAt) || '1970-01-01';
+    for (const item of projItems) {
+      const itTime = item.updatedAt || item.createdAt || item.dueDate || '';
+      if (itTime > maxTime) maxTime = itTime;
+    }
+    return maxTime;
+  };
+
   // 將待辦項目按所屬專案分組
   const groupedByProject = useMemo(() => {
-    let projectList = projects;
+    let projectList = [...projects];
+
+    // 1. 類別篩選 (評估案 vs 已開案)
+    if (selectedCategory !== 'all') {
+      projectList = projectList.filter((p) => {
+        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
+        return cat === selectedCategory;
+      });
+    }
+
+    // 2. 舊專案類型相容 (poc vs client)
     if (selectedProjectType === 'poc') {
       projectList = projectList.filter((p) => p.status === 'poc');
     } else if (selectedProjectType === 'client') {
@@ -150,13 +207,14 @@ export function InternalTasksClient({
       const entry = map.get(item.projectId);
       if (entry) {
         entry.items.push(item);
-      } else if (selectedProjectType === 'all') {
+      } else if (selectedCategory === 'all' && selectedProjectType === 'all') {
         // 若找不到對應專案，放進暫存專案
         const dummyProj: FullProject = {
           id: item.projectId,
           caseNumber: item.projectCaseNumber || 'N/A',
           name: item.projectName || '未分類專案',
           status: 'active',
+          projectCategory: item.projectCategory || '已開案',
           createdAt: item.createdAt,
           createdBy: '',
           subProjects: [],
@@ -165,14 +223,65 @@ export function InternalTasksClient({
       }
     });
 
-    // 只保留有待辦事項的專案，或者在無搜尋過濾時列出所有專案
-    return Array.from(map.values()).filter((group) => {
-      if (searchQuery || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all') {
+    const queryLower = searchQuery.trim().toLowerCase();
+
+    // 3. 搜尋與空專案過濾
+    const result = Array.from(map.values()).filter((group) => {
+      // 專案本身是否符合搜尋關鍵字 (案名、案號、窗口)
+      const projectMatchesSearch = queryLower
+        ? group.project.name.toLowerCase().includes(queryLower) ||
+          (group.project.caseNumber && group.project.caseNumber.toLowerCase().includes(queryLower)) ||
+          (group.project.tpmOfficeContact && group.project.tpmOfficeContact.toLowerCase().includes(queryLower))
+        : false;
+
+      // 如果使用者有設定 phase/status/waitingOn，而專案沒有符合條件的待辦事項，則過濾掉
+      const hasPhaseOrStatusFilter = selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all';
+      if (hasPhaseOrStatusFilter) {
         return group.items.length > 0;
       }
+
+      // 如果使用者有輸入搜尋字串：
+      // - 只要專案本身符合搜尋 (即使該案無待辦事項) -> 顯示！
+      // - 或者其下的待辦事項有符合搜尋 (items.length > 0) -> 顯示！
+      if (queryLower) {
+        return projectMatchesSearch || group.items.length > 0;
+      }
+
+      // 無搜尋字串時：若使用者勾選「只顯示有待辦專案」，則只有 items.length > 0 才顯示
+      if (hideEmptyProjects) {
+        return group.items.length > 0;
+      }
+
       return true;
     });
-  }, [projects, filteredItems, searchQuery, selectedProjectType, selectedPhase, selectedStatus, selectedWaitingOn]);
+
+    // 4. 排序 (案號正序/倒序、最近更新)
+    result.sort((a, b) => {
+      if (sortBy === 'caseNumberAsc') {
+        return compareCaseNumbers(a.project.caseNumber, b.project.caseNumber, true);
+      } else if (sortBy === 'caseNumberDesc') {
+        return compareCaseNumbers(a.project.caseNumber, b.project.caseNumber, false);
+      } else if (sortBy === 'recentUpdated') {
+        const timeA = getProjectRecentTimestamp(a.project, a.items);
+        const timeB = getProjectRecentTimestamp(b.project, b.items);
+        return timeB.localeCompare(timeA); // 最近更新在最上面
+      }
+      return 0;
+    });
+
+    return result;
+  }, [
+    projects,
+    filteredItems,
+    searchQuery,
+    selectedCategory,
+    selectedProjectType,
+    selectedPhase,
+    selectedStatus,
+    selectedWaitingOn,
+    sortBy,
+    hideEmptyProjects,
+  ]);
 
   const toggleCollapse = (projectId: string) => {
     setCollapsedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
@@ -349,12 +458,96 @@ export function InternalTasksClient({
         </Card>
       </div>
 
+      {/* 專案類別快速切換標籤 (評估案 vs 已開案) 與排序設定 */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+        {/* 類別分頁按鈕 */}
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200/80 w-fit">
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('all')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              selectedCategory === 'all'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            全部專案 ({categoryCounts.all})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('評估案')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedCategory === '評估案'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-purple-800 hover:bg-purple-100/70'
+            }`}
+          >
+            <span>📝 評估案 (POC)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                selectedCategory === '評估案' ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-700'
+              }`}
+            >
+              {categoryCounts.poc}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('已開案')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedCategory === '已開案'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-blue-800 hover:bg-blue-100/70'
+            }`}
+          >
+            <span>🚀 已開案 (執行中)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                selectedCategory === '已開案' ? 'bg-blue-700 text-white' : 'bg-blue-100 text-blue-700'
+              }`}
+            >
+              {categoryCounts.active}
+            </span>
+          </button>
+        </div>
+
+        {/* 排序方式與無待辦專案顯示開關 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <ArrowUpDown className="h-3.5 w-3.5" />
+              排序:
+            </span>
+            <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+              <SelectTrigger className="w-[170px] h-8 text-xs bg-white">
+                <SelectValue placeholder="排序方式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="caseNumberAsc">🔢 案號由小到大 (1→55)</SelectItem>
+                <SelectItem value="caseNumberDesc">🔢 案號由大到小 (55→1)</SelectItem>
+                <SelectItem value="recentUpdated">🕒 依照最近更新/待辦</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button
+            variant={hideEmptyProjects ? 'secondary' : 'outline'}
+            size="sm"
+            onClick={() => setHideEmptyProjects((prev) => !prev)}
+            className="h-8 text-xs gap-1"
+          >
+            <Filter className="h-3.5 w-3.5" />
+            {hideEmptyProjects ? '已隱藏無待辦專案' : '顯示所有專案 (含無待辦)'}
+          </Button>
+        </div>
+      </div>
+
       {/* 搜尋與複合過濾列 */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 bg-card p-3 rounded-lg border shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜尋專案、案號、事項、等候對象 (如: 億威、採購)..."
+            placeholder="搜尋專案名稱、案號、事項、等候對象 (如: 億威、採購)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-8 text-sm h-9"
@@ -362,14 +555,14 @@ export function InternalTasksClient({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 專案類型篩選 */}
+          {/* 專案來源篩選 */}
           <Select value={selectedProjectType} onValueChange={(val: any) => setSelectedProjectType(val)}>
             <SelectTrigger className="w-[145px] h-9 text-xs font-medium">
               <SelectValue placeholder="專案類型" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部專案 ({projects.length})</SelectItem>
-              <SelectItem value="poc">🧪 內部 POC / 評估 ({projects.filter(p => p.status === 'poc').length})</SelectItem>
+              <SelectItem value="all">全部來源 ({projects.length})</SelectItem>
+              <SelectItem value="poc">🧪 內部自建專案 ({projects.filter(p => p.status === 'poc').length})</SelectItem>
               <SelectItem value="client">🏢 燁輝客戶列管 ({projects.filter(p => p.status !== 'poc').length})</SelectItem>
             </SelectContent>
           </Select>
@@ -404,16 +597,19 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
-          {(searchQuery || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all') && (
+          {(searchQuery || selectedCategory !== 'all' || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearchQuery('');
+                setSelectedCategory('all');
                 setSelectedProjectType('all');
                 setSelectedPhase('all');
                 setSelectedStatus('all');
                 setSelectedWaitingOn('all');
+                setSortBy('caseNumberAsc');
+                setHideEmptyProjects(false);
               }}
               className="text-xs h-9 px-2 text-muted-foreground hover:text-foreground"
             >
@@ -493,15 +689,22 @@ export function InternalTasksClient({
 
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                          {project.caseNumber}
-                        </span>
+                        {project.caseNumber && (
+                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                            {project.caseNumber}
+                          </span>
+                        )}
                         <h2 className="text-base font-bold text-slate-900">{project.name}</h2>
-                        {project.status === 'poc' ? (
-                          <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs">
-                            🧪 內部 POC / 評估案
+                        {((project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案')) === '評估案') ? (
+                          <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
+                            <span>📝 評估案</span>
                           </Badge>
                         ) : (
+                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
+                            <span>🚀 已開案</span>
+                          </Badge>
+                        )}
+                        {project.status !== 'poc' && (
                           <Badge variant="outline" className="text-slate-600 border-slate-300 text-[11px] px-2 py-0.5">
                             🏢 燁輝客戶列管
                           </Badge>
@@ -562,14 +765,14 @@ export function InternalTasksClient({
                 {!isCollapsed && (
                   <div className="p-4 divide-y">
                     {items.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-muted-foreground">
+                      <div className="py-6 text-center text-xs text-muted-foreground bg-slate-50/40 rounded border border-dashed border-slate-200">
                         此專案尚未建立任何待辦或歷程項目。
                         {isAdmin && (
                           <button
                             onClick={() => handleOpenAdd(project.id)}
-                            className="text-primary underline ml-1 hover:text-primary/80"
+                            className="text-primary font-medium underline ml-1 hover:text-primary/80"
                           >
-                            立即建立
+                            + 立即為此案建立待辦事項
                           </button>
                         )}
                       </div>
@@ -626,6 +829,20 @@ export function InternalTasksClient({
                                   >
                                     {item.title}
                                   </span>
+
+                                  {/* 專案類別標籤 */}
+                                  {item.projectCategory && (
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] px-1.5 py-0 font-medium ${
+                                        item.projectCategory === '評估案'
+                                          ? 'border-purple-300 text-purple-700 bg-purple-50/60'
+                                          : 'border-blue-300 text-blue-700 bg-blue-50/60'
+                                      }`}
+                                    >
+                                      {item.projectCategory === '評估案' ? '📝 評估' : '🚀 開案'}
+                                    </Badge>
+                                  )}
 
                                   {getPhaseBadge(item.phase)}
 
@@ -742,6 +959,7 @@ export function InternalTasksClient({
         item={editingItem}
         defaultProjectId={defaultProjectId}
         projects={projects}
+        users={users}
         onSuccess={() => {
           // 重新載入或重刷
           window.location.reload();
@@ -752,6 +970,7 @@ export function InternalTasksClient({
       <NewPocProjectDialog
         open={pocDialogOpen}
         onOpenChange={setPocDialogOpen}
+        users={users}
         onSuccess={(newProj) => {
           if (newProj) {
             setProjects((prev) => [newProj, ...prev]);
