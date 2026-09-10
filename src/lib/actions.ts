@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem } from '@/types';
 import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 /**
@@ -582,3 +582,143 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
             return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         });
 };
+
+// --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
+
+export async function getActionItems(projectId?: string): Promise<ProjectActionItem[]> {
+    const supabase = createClient();
+    try {
+        let query = supabase.from('project_action_items').select('*');
+        if (projectId) {
+            query = query.eq('project_id', projectId);
+        }
+        
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (error || !data) {
+            console.error('取得待辦事項失敗 (可能尚未建立資料表):', error?.message);
+            return [];
+        }
+
+        // 取得專案名稱與案號作為輔助
+        const { data: projectsData } = await supabase.from('projects').select('id, name, case_number');
+        const projMap = new Map((projectsData || []).map(p => [p.id, { name: p.name, caseNumber: p.case_number }]));
+
+        return data.map(item => {
+            const proj = projMap.get(item.project_id);
+            return {
+                id: item.id,
+                projectId: item.project_id,
+                subProjectId: item.sub_project_id || null,
+                title: item.title,
+                phase: item.phase,
+                status: item.status,
+                owner: item.owner || '',
+                waitingOn: item.waiting_on || '',
+                dueDate: item.due_date ? String(item.due_date) : null,
+                completedAt: item.completed_at ? String(item.completed_at) : null,
+                notes: item.notes || '',
+                lessonLearnt: item.lesson_learnt || '',
+                createdAt: formatISO(item.created_at),
+                updatedAt: formatISO(item.updated_at),
+                projectName: proj?.name || '',
+                projectCaseNumber: proj?.caseNumber || '',
+            };
+        });
+    } catch (err) {
+        console.error('查詢待辦事項異常:', err);
+        return [];
+    }
+}
+
+export async function createActionItem(data: {
+    projectId: string;
+    subProjectId?: string | null;
+    title: string;
+    phase: string;
+    status: string;
+    owner: string;
+    waitingOn?: string;
+    dueDate?: string | null;
+    notes?: string;
+    lessonLearnt?: string;
+}) {
+    const supabase = createClient();
+    try {
+        const { error } = await supabase.from('project_action_items').insert({
+            project_id: data.projectId,
+            sub_project_id: data.subProjectId || null,
+            title: data.title,
+            phase: data.phase || '開發階段',
+            status: data.status || 'pending',
+            owner: data.owner || '',
+            waiting_on: data.waitingOn || '',
+            due_date: data.dueDate || null,
+            completed_at: data.status === 'completed' ? new Date().toISOString() : null,
+            notes: data.notes || '',
+            lesson_learnt: data.lessonLearnt || '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        });
+
+        if (error) throw error;
+        revalidatePath('/internal-tasks');
+        return { success: true, message: '待辦事項已建立！' };
+    } catch (err: any) {
+        console.error('建立待辦事項失敗:', err);
+        return { success: false, message: err?.message || '建立待辦事項失敗' };
+    }
+}
+
+export async function updateActionItem(id: string, data: Partial<{
+    title: string;
+    phase: string;
+    status: string;
+    owner: string;
+    waitingOn: string;
+    dueDate: string | null;
+    notes: string;
+    lessonLearnt: string;
+}>) {
+    const supabase = createClient();
+    try {
+        const updatePayload: any = {
+            ...data,
+            updated_at: new Date().toISOString()
+        };
+
+        if (data.status === 'completed') {
+            updatePayload.completed_at = new Date().toISOString();
+        } else if (data.status && data.status !== 'completed') {
+            updatePayload.completed_at = null;
+        }
+
+        const { error } = await supabase
+            .from('project_action_items')
+            .update(updatePayload)
+            .eq('id', id);
+
+        if (error) throw error;
+        revalidatePath('/internal-tasks');
+        return { success: true, message: '待辦事項已更新！' };
+    } catch (err: any) {
+        console.error('更新待辦事項失敗:', err);
+        return { success: false, message: err?.message || '更新待辦事項失敗' };
+    }
+}
+
+export async function deleteActionItem(id: string) {
+    const supabase = createClient();
+    try {
+        const { error } = await supabase
+            .from('project_action_items')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        revalidatePath('/internal-tasks');
+        return { success: true, message: '待辦事項已刪除！' };
+    } catch (err: any) {
+        console.error('刪除待辦事項失敗:', err);
+        return { success: false, message: err?.message || '刪除待辦事項失敗' };
+    }
+}

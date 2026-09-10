@@ -79,3 +79,32 @@ export interface SubProjectWithLatestLog extends SubProject {
 export interface FullProject extends Project {
     subProjects: SubProjectWithLatestLog[];
 }
+
+export type ActionItemPhase = 
+  | '評估階段' 
+  | '報價/設計' 
+  | '簽呈核決' 
+  | '開發/施工' 
+  | '驗證測試' 
+  | '驗收結案';
+
+export type ActionItemStatus = 'pending' | 'in_progress' | 'blocked' | 'completed';
+
+export interface ProjectActionItem {
+  id: string;
+  projectId: string;
+  subProjectId?: string | null;
+  title: string;
+  phase: ActionItemPhase;
+  status: ActionItemStatus;
+  owner: string;
+  waitingOn?: string;
+  dueDate?: string | null;
+  completedAt?: string | null;
+  notes?: string;
+  lessonLearnt?: string;
+  createdAt: string;
+  updatedAt: string;
+  projectName?: string;
+  projectCaseNumber?: string;
+}

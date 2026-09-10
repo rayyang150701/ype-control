@@ -93,3 +93,29 @@ CREATE POLICY "Allow service role all users" ON public.users FOR ALL USING (auth
 CREATE POLICY "Allow service role all projects" ON public.projects FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Allow service role all sub_projects" ON public.sub_projects FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Allow service role all progress_logs" ON public.progress_logs FOR ALL USING (auth.role() = 'service_role');
+
+-- 5. 內部待辦事項與歷程追蹤表 (Project Action Items)
+CREATE TABLE IF NOT EXISTS public.project_action_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  sub_project_id UUID REFERENCES public.sub_projects(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  phase TEXT NOT NULL DEFAULT '開發階段',
+  status TEXT NOT NULL DEFAULT 'pending',
+  owner TEXT NOT NULL DEFAULT '',
+  waiting_on TEXT DEFAULT '',
+  due_date DATE,
+  completed_at TIMESTAMPTZ,
+  notes TEXT DEFAULT '',
+  lesson_learnt TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_action_items_project_id ON public.project_action_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_status ON public.project_action_items(status);
+CREATE INDEX IF NOT EXISTS idx_action_items_due_date ON public.project_action_items(due_date);
+
+ALTER TABLE public.project_action_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read project_action_items" ON public.project_action_items FOR SELECT USING (true);
+CREATE POLICY "Allow service role all project_action_items" ON public.project_action_items FOR ALL USING (auth.role() = 'service_role');

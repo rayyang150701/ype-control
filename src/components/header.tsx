@@ -16,10 +16,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 
 export function Header() {
+  const pathname = usePathname() || '';
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   const { toast } = useToast();
   const { isAdmin, setIsLoginDialogOpen, logout } = useAdmin();
@@ -221,6 +223,37 @@ export function Header() {
                 管理員登入
               </Button>
             )}
+        </div>
+      </div>
+
+      {/* 雙視圖切換分頁列：客戶進度管制 vs 內部專案待辦追蹤 */}
+      <div className="w-full bg-slate-100/80 border-t px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard"
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              pathname.startsWith('/dashboard') || pathname === '/'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+            }`}
+          >
+            <span>📊 客戶進度管制總表 (對外週報)</span>
+          </Link>
+          <Link
+            href="/internal-tasks"
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              pathname.startsWith('/internal-tasks')
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+            }`}
+          >
+            <span>📋 內部專案與待辦追蹤 (對內跟催 & AI 診斷)</span>
+          </Link>
+        </div>
+        <div className="text-xs text-muted-foreground hidden md:block">
+          {pathname.startsWith('/internal-tasks')
+            ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
+            : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}
         </div>
       </div>
     </header>
