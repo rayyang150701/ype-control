@@ -16,7 +16,7 @@ export interface User {
 
 export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'cancelled' | 'poc';
 
-export type ProjectSourceType = '燁輝列管專案' | '億威內部自建專案' | '其他智慧製造專案';
+export type ProjectSourceType = '燁輝列管專案' | '億威內部自建專案' | '其他專案' | '其他智慧製造專案';
 
 export interface Client {
   id: string;

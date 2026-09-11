@@ -82,27 +82,6 @@ export function InternalTasksClient({
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
 
-  // 是否所有專案的待辦項目都已收合
-  const isAllCollapsed = useMemo(() => {
-    if (projects.length === 0) return false;
-    return projects.every((p) => collapsedProjects[p.id]);
-  }, [projects, collapsedProjects]);
-
-  // 一鍵切換：顯示/隱藏 所有專案待辦項目
-  const toggleAllCollapse = () => {
-    if (isAllCollapsed) {
-      // 目前全部收合中 -> 一鍵顯示 (展開) 所有專案待辦
-      setCollapsedProjects({});
-    } else {
-      // 目前有展開 -> 一鍵隱藏 (收合) 所有專案待辦
-      const next: Record<string, boolean> = {};
-      projects.forEach((p) => {
-        next[p.id] = true;
-      });
-      setCollapsedProjects(next);
-    }
-  };
-
   // 彈窗狀態
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pocDialogOpen, setPocDialogOpen] = useState(false);
@@ -288,10 +267,13 @@ export function InternalTasksClient({
       });
     }
 
-    // 3. 專案來源型態篩選 (燁輝列管專案 vs 億威內部自建專案 vs 其他智慧製造專案)
+    // 3. 專案來源型態篩選 (燁輝列管專案 vs 億威內部自建專案 vs 其他專案)
     if (selectedSourceType !== 'all') {
       projectList = projectList.filter((p) => {
         const src = p.sourceType || (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案');
+        if (selectedSourceType === '其他專案' || selectedSourceType === '其他智慧製造專案') {
+          return src === '其他專案' || src === '其他智慧製造專案';
+        }
         return src === selectedSourceType;
       });
     }
@@ -302,18 +284,28 @@ export function InternalTasksClient({
     }
 
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
+    const caseNumberMap = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
 
     projectList.forEach((proj) => {
-      map.set(proj.id, { project: proj, items: [] });
+      const entry = { project: proj, items: [] };
+      map.set(proj.id, entry);
+      if (proj.caseNumber && proj.caseNumber.trim()) {
+        caseNumberMap.set(proj.caseNumber.trim(), entry);
+      }
     });
 
     filteredItems.forEach((item) => {
-      const entry = map.get(item.projectId);
+      let entry = map.get(item.projectId);
+      if (!entry && item.projectCaseNumber && item.projectCaseNumber.trim()) {
+        entry = caseNumberMap.get(item.projectCaseNumber.trim());
+      }
       if (entry) {
         entry.items.push(item);
       } else {
         // 若此待辦所屬專案存在於系統專案名單中，表示該專案已被目前條件 (如已結案/類別/專案類型) 過濾，不可重新加入！
-        const projectExists = projects.some((p) => p.id === item.projectId);
+        const projectExists = projects.some(
+          (p) => p.id === item.projectId || (p.caseNumber && item.projectCaseNumber && p.caseNumber.trim() === item.projectCaseNumber.trim())
+        );
         if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedSourceType === 'all') {
           // 僅當為資料庫完全不存在的孤兒資料，且處於「全部無篩選」狀態時，才暫存為未分類專案
           const dummyProj: FullProject = {
@@ -397,6 +389,30 @@ export function InternalTasksClient({
     hideEmptyProjects,
   ]);
 
+  // 是否所有目前畫面上顯示的專案待辦項目都已收合
+  const isAllCollapsed = useMemo(() => {
+    if (groupedByProject.length === 0) return false;
+    return groupedByProject.every((g) => !!collapsedProjects[g.project.id]);
+  }, [groupedByProject, collapsedProjects]);
+
+  // 一鍵切換：顯示/隱藏 所有專案待辦項目
+  const toggleAllCollapse = () => {
+    if (isAllCollapsed) {
+      // 目前全部收合中 -> 一鍵顯示 (展開) 所有專案待辦
+      setCollapsedProjects({});
+    } else {
+      // 目前有展開 -> 一鍵隱藏 (收合) 所有專案待辦
+      const next: Record<string, boolean> = {};
+      groupedByProject.forEach((g) => {
+        next[g.project.id] = true;
+      });
+      projects.forEach((p) => {
+        next[p.id] = true;
+      });
+      setCollapsedProjects(next);
+    }
+  };
+
   const toggleCollapse = (projectId: string) => {
     setCollapsedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
   };
@@ -462,8 +478,13 @@ export function InternalTasksClient({
             if (p.id !== projectId) return p;
             const updatedCategory = payload.category ?? p.projectCategory;
             const updatedInternalStatus = payload.internalStatus ?? p.internalStatus;
+            let updatedCaseNumber = (res as any).data?.caseNumber !== undefined ? (res as any).data.caseNumber : p.caseNumber;
+            if (payload.category === '已開案' && updatedCaseNumber) {
+              updatedCaseNumber = updatedCaseNumber.replace(/^POC[\s\-_]*/i, '').trim();
+            }
             return {
               ...p,
+              caseNumber: updatedCaseNumber,
               projectCategory: updatedCategory,
               internalStatus: updatedInternalStatus,
               autoCompletedByClient: payload.internalStatus === 'in_progress' ? false : p.autoCompletedByClient,
@@ -795,7 +816,7 @@ export function InternalTasksClient({
               <SelectItem value="all">全部來源型態 ({projects.length})</SelectItem>
               <SelectItem value="燁輝列管專案">🏢 燁輝列管專案</SelectItem>
               <SelectItem value="億威內部自建專案">🏭 億威自建專案</SelectItem>
-              <SelectItem value="其他智慧製造專案">⚙️ 其他智慧製造專案</SelectItem>
+              <SelectItem value="其他專案">⚙️ 其他專案</SelectItem>
             </SelectContent>
           </Select>
 
@@ -970,9 +991,9 @@ export function InternalTasksClient({
                         <Badge className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
                           <span>🏭 億威自建</span>
                         </Badge>
-                      ) : project.sourceType === '其他智慧製造專案' ? (
+                      ) : (project.sourceType === '其他專案' || project.sourceType === '其他智慧製造專案') ? (
                         <Badge className="bg-teal-700 hover:bg-teal-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
-                          <span>⚙️ 其他智慧製造專案</span>
+                          <span>⚙️ 其他專案</span>
                         </Badge>
                       ) : (
                         <Badge className="bg-blue-700 hover:bg-blue-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">

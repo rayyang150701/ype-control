@@ -1077,7 +1077,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
 
     const projectsWithItems = new Set((actionItemsData || []).map(i => i.project_id));
 
-    // 去除重覆案號（若有相同案號者，保留最新紀錄以避免畫面上出現兩張一模一樣的卡片）
+    // 去除重覆案號（若有相同案號者，優先保留已有待辦事項的紀錄，否則保留最新紀錄以避免畫面上出現兩張一模一樣的卡片）
     const uniqueMap = new Map<string, any>();
     for (const doc of projectsData) {
         const key = doc.case_number ? String(doc.case_number).trim() : doc.id;
@@ -1085,10 +1085,18 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
         if (!existing) {
             uniqueMap.set(key, doc);
         } else {
-            const existingTime = new Date(existing.created_at).getTime();
-            const curTime = new Date(doc.created_at).getTime();
-            if (curTime > existingTime) {
+            const curHasItems = projectsWithItems.has(doc.id);
+            const existHasItems = projectsWithItems.has(existing.id);
+            if (curHasItems && !existHasItems) {
                 uniqueMap.set(key, doc);
+            } else if (!curHasItems && existHasItems) {
+                // 保留既有具待辦事項之紀錄
+            } else {
+                const existingTime = new Date(existing.created_at).getTime();
+                const curTime = new Date(doc.created_at).getTime();
+                if (curTime > existingTime) {
+                    uniqueMap.set(key, doc);
+                }
             }
         }
     }
@@ -1169,8 +1177,14 @@ export async function createInternalProject(data: {
     try {
         const category = data.category || '評估案';
         const isEval = category === '評估案';
-        const defaultPrefix = isEval ? 'POC' : 'PRJ';
-        const caseNum = data.caseNumber?.trim() || `${defaultPrefix}-${Date.now().toString().slice(-4)}`;
+        let caseNum = data.caseNumber?.trim();
+        if (!caseNum) {
+            // 評估案自動帶 POC，無需流水號
+            caseNum = isEval ? 'POC' : `PRJ-${Date.now().toString().slice(-4)}`;
+        } else if (category === '已開案') {
+            // 已開案自動移除 POC 前綴
+            caseNum = caseNum.replace(/^POC[\s\-_]*/i, '').trim();
+        }
 
         const sourceType: ProjectSourceType = data.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
         const clientName = data.clientName?.trim() || '燁輝';
@@ -1265,7 +1279,17 @@ export async function updateInternalProject(projectId: string, data: {
             on_hold_notes: serializeProjectMeta(meta),
         };
 
-        if (data.caseNumber !== undefined) updateData.case_number = data.caseNumber.trim();
+        if (data.caseNumber !== undefined) {
+            let cNum = data.caseNumber.trim();
+            if (data.category === '已開案') {
+                cNum = cNum.replace(/^POC[\s\-_]*/i, '').trim();
+            } else if (data.category === '評估案' && !cNum) {
+                cNum = 'POC';
+            }
+            updateData.case_number = cNum;
+        } else if (data.category === '已開案' && proj.case_number) {
+            updateData.case_number = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
+        }
         
         const effectivePm = data.responsiblePm !== undefined ? data.responsiblePm.trim() : (data.tpmOfficeContact !== undefined ? data.tpmOfficeContact.trim() : undefined);
         if (effectivePm !== undefined) updateData.tpm_office_contact = effectivePm;
@@ -1305,7 +1329,7 @@ export async function updateInternalProject(projectId: string, data: {
             data: {
                 id: projectId,
                 name: data.name.trim(),
-                caseNumber: data.caseNumber?.trim() ?? proj.case_number,
+                caseNumber: updateData.case_number ?? (data.caseNumber?.trim() ?? proj.case_number),
                 projectCategory: meta.category,
                 internalStatus: meta.internalStatus,
                 sourceType: meta.sourceType,
@@ -1353,10 +1377,19 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
             on_hold_notes: serializeProjectMeta(meta),
         };
 
+        let nextCaseNumber = proj.case_number;
         if (payload.category === '已開案') {
             updateData.status = 'active';
+            if (proj.case_number) {
+                nextCaseNumber = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
+                updateData.case_number = nextCaseNumber;
+            }
         } else if (payload.category === '評估案') {
             updateData.status = 'evaluation';
+            if (!proj.case_number || !proj.case_number.trim()) {
+                nextCaseNumber = 'POC';
+                updateData.case_number = 'POC';
+            }
         }
 
         if (payload.internalStatus === 'completed') {
@@ -1385,7 +1418,16 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
         else if (payload.internalStatus === 'terminated') msg = '專案已標記為「專案終止」！';
         else if (payload.internalStatus === 'in_progress') msg = '專案已重新開啟為「進行中」！';
 
-        return { success: true, message: msg };
+        return { 
+            success: true, 
+            message: msg,
+            data: {
+                id: projectId,
+                caseNumber: nextCaseNumber,
+                category: meta.category,
+                internalStatus: meta.internalStatus,
+            }
+        };
     } catch (err: any) {
         console.error('更新內部專案狀態失敗:', err);
         return { success: false, message: err?.message || '更新內部專案狀態失敗' };

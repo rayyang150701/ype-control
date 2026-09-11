@@ -36,11 +36,22 @@ export function NewPocProjectDialog({
   const [sourceType, setSourceType] = useState<ProjectSourceType>('億威內部自建專案');
   const [clientName, setClientName] = useState('燁輝');
   const [name, setName] = useState('');
-  const [caseNumber, setCaseNumber] = useState('');
+  const [caseNumber, setCaseNumber] = useState('POC');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [responsiblePm, setResponsiblePm] = useState('');
   const [clientContact, setClientContact] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
+
+  const handleCategoryChange = (newCat: '評估案' | '已開案') => {
+    setCategory(newCat);
+    if (newCat === '評估案') {
+      if (!caseNumber.trim()) {
+        setCaseNumber('POC');
+      }
+    } else if (newCat === '已開案') {
+      setCaseNumber((prev) => prev.replace(/^POC[\s\-_]*/i, '').trim());
+    }
+  };
 
   // 若父層沒傳 clients，主動載入客戶清單
   useEffect(() => {
@@ -65,6 +76,13 @@ export function NewPocProjectDialog({
       return;
     }
 
+    let finalCaseNumber = caseNumber.trim();
+    if (category === '已開案') {
+      finalCaseNumber = finalCaseNumber.replace(/^POC[\s\-_]*/i, '').trim();
+    } else if (category === '評估案' && !finalCaseNumber) {
+      finalCaseNumber = 'POC';
+    }
+
     setIsSubmitting(true);
     try {
       const res = await createPocProject({
@@ -74,7 +92,7 @@ export function NewPocProjectDialog({
         clientName: clientName.trim() || '燁輝',
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
-        caseNumber: caseNumber || undefined,
+        caseNumber: finalCaseNumber || undefined,
         expectedCompletionDate: expectedCompletionDate || undefined,
         tpmOfficeContact: responsiblePm.trim(),
         projectPurpose,
@@ -83,7 +101,7 @@ export function NewPocProjectDialog({
       if (res.success) {
         toast({ title: '建立成功', description: `內部專案「${name}」已建立！` });
         setName('');
-        setCaseNumber('');
+        setCaseNumber('POC');
         setExpectedCompletionDate('');
         setResponsiblePm('');
         setClientContact('');
@@ -173,14 +191,14 @@ export function NewPocProjectDialog({
 
               <button
                 type="button"
-                onClick={() => setSourceType('其他智慧製造專案')}
+                onClick={() => setSourceType('其他專案')}
                 className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
-                  sourceType === '其他智慧製造專案'
+                  sourceType === '其他專案' || sourceType === '其他智慧製造專案'
                     ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>⚙️ 其他智慧製造專案</span>
+                <span>⚙️ 其他專案</span>
               </button>
             </div>
           </div>
@@ -192,7 +210,7 @@ export function NewPocProjectDialog({
               <div className="grid grid-cols-2 gap-1.5 mt-1">
                 <button
                   type="button"
-                  onClick={() => setCategory('評估案')}
+                  onClick={() => handleCategoryChange('評估案')}
                   className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     category === '評估案'
                       ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
@@ -204,7 +222,7 @@ export function NewPocProjectDialog({
 
                 <button
                   type="button"
-                  onClick={() => setCategory('已開案')}
+                  onClick={() => handleCategoryChange('已開案')}
                   className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     category === '已開案'
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
@@ -288,10 +306,10 @@ export function NewPocProjectDialog({
           {/* 5. 案號代碼與預估完成日 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs font-semibold">案號代碼 (選填，留空自動編號)</Label>
+              <Label className="text-xs font-semibold">案號代碼 (評估案預設為 POC)</Label>
               <Input
                 className="mt-1 text-xs font-mono"
-                placeholder={category === '評估案' ? "POC-01" : "PRJ-01"}
+                placeholder={category === '評估案' ? "POC" : "留空自動編號或填入案號"}
                 value={caseNumber}
                 onChange={(e) => setCaseNumber(e.target.value)}
               />

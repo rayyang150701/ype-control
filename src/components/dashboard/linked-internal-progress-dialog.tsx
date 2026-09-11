@@ -178,9 +178,9 @@ export function LinkedInternalProgressDialog({
                       <Badge className="bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">
                         🏭 億威自建
                       </Badge>
-                    ) : project.sourceType === '其他智慧製造專案' ? (
+                    ) : (project.sourceType === '其他專案' || project.sourceType === '其他智慧製造專案') ? (
                       <Badge className="bg-teal-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">
-                        ⚙️ 其他智慧製造專案
+                        ⚙️ 其他專案
                       </Badge>
                     ) : (
                       <Badge className="bg-blue-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">

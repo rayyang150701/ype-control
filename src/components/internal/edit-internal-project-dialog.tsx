@@ -92,6 +92,17 @@ export function EditInternalProjectDialog({
     }
   }, [project, open]);
 
+  const handleCategoryChange = (newCat: '評估案' | '已開案') => {
+    setCategory(newCat);
+    if (newCat === '評估案') {
+      if (!caseNumber.trim()) {
+        setCaseNumber('POC');
+      }
+    } else if (newCat === '已開案') {
+      setCaseNumber((prev) => prev.replace(/^POC[\s\-_]*/i, '').trim());
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
@@ -100,11 +111,18 @@ export function EditInternalProjectDialog({
       return;
     }
 
+    let finalCaseNumber = caseNumber.trim();
+    if (category === '已開案') {
+      finalCaseNumber = finalCaseNumber.replace(/^POC[\s\-_]*/i, '').trim();
+    } else if (category === '評估案' && !finalCaseNumber) {
+      finalCaseNumber = 'POC';
+    }
+
     setIsSubmitting(true);
     try {
       const res = await updateInternalProject(project.id, {
         name: name.trim(),
-        caseNumber: caseNumber.trim() || undefined,
+        caseNumber: finalCaseNumber,
         category,
         internalStatus,
         sourceType,
@@ -224,14 +242,14 @@ export function EditInternalProjectDialog({
 
                 <button
                   type="button"
-                  onClick={() => setSourceType('其他智慧製造專案')}
+                  onClick={() => setSourceType('其他專案')}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
-                    sourceType === '其他智慧製造專案'
+                    sourceType === '其他專案' || sourceType === '其他智慧製造專案'
                       ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <span>⚙️ 其他智慧製造專案</span>
+                  <span>⚙️ 其他專案</span>
                 </button>
               </div>
             </div>
@@ -243,7 +261,7 @@ export function EditInternalProjectDialog({
                 <div className="grid grid-cols-2 gap-1.5 mt-1">
                   <button
                     type="button"
-                    onClick={() => setCategory('評估案')}
+                    onClick={() => handleCategoryChange('評估案')}
                     className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                       category === '評估案'
                         ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
@@ -255,7 +273,7 @@ export function EditInternalProjectDialog({
 
                   <button
                     type="button"
-                    onClick={() => setCategory('已開案')}
+                    onClick={() => handleCategoryChange('已開案')}
                     className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                       category === '已開案'
                         ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
