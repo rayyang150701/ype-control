@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { createActionItem, updateActionItem, createPocProject } from '@/lib/actions';
-import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User } from '@/types';
+import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client } from '@/types';
 
 interface ActionItemDialogProps {
   open: boolean;
@@ -18,6 +20,7 @@ interface ActionItemDialogProps {
   defaultProjectId?: string;
   projects: FullProject[];
   users?: User[];
+  clients?: Client[];
   onSuccess: () => void;
 }
 
@@ -37,10 +40,17 @@ export function ActionItemDialog({
   defaultProjectId,
   projects,
   users = [],
+  clients = [],
   onSuccess,
 }: ActionItemDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 客戶清單整合
+  const clientList: Client[] = clients.length > 0 ? clients : [
+    { id: 'c-1', name: '燁輝', code: 'YP', createdAt: '' },
+    { id: 'c-2', name: '億威', code: 'EW', createdAt: '' },
+  ];
 
   const [projectId, setProjectId] = useState(item?.projectId || defaultProjectId || '');
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
@@ -57,6 +67,26 @@ export function ActionItemDialog({
   const [notes, setNotes] = useState(item?.notes || '');
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
 
+  // 根據選擇的責任歸屬 (客戶/單位，如「億威」或「燁輝」)，從成員名單中挑選屬於該客戶的成員
+  const selectedClientName = (owner || '燁輝').trim();
+  const matchedMembers = users.filter((u) => {
+    if (!u.clientName) return false;
+    return u.clientName.trim().toLowerCase() === selectedClientName.toLowerCase();
+  });
+
+  // 如果該客戶目前還沒有在成員管理中維護成員，或尚未匹配到，備援提供該客戶的主要窗口或全部成員
+  const clientContactPerson = clientList.find((c) => c.name === selectedClientName)?.contactPerson;
+  const waitingOnMemberOptions = Array.from(
+    new Set([
+      ...matchedMembers.map((u) => ({
+        value: u.displayName || u.email,
+        label: u.displayName || u.email,
+        hint: u.department ? `${u.department}` : (u.role === 'admin' ? '管理員' : '成員'),
+      })),
+      ...(clientContactPerson ? [{ value: clientContactPerson, label: clientContactPerson, hint: '客戶主要窗口' }] : []),
+    ])
+  );
+
   useEffect(() => {
     if (open) {
       if (item) {
@@ -71,14 +101,16 @@ export function ActionItemDialog({
         setNotes(item.notes || '');
         setLessonLearnt(item.lessonLearnt || '');
       } else {
-        setProjectId(defaultProjectId || (projects[0]?.id || ''));
+        const targetProjId = defaultProjectId || (projects[0]?.id || '');
+        const targetProj = projects.find((p) => p.id === targetProjId);
+        setProjectId(targetProjId);
         setIsCreatingNewProject(false);
         setNewProjectName('');
         setNewProjectCaseNumber('');
         setTitle('');
         setPhase('開發/施工');
         setStatus('pending');
-        setOwner('');
+        setOwner(targetProj?.clientName || '燁輝');
         setWaitingOn('');
         setDueDate('');
         setNotes('');
@@ -249,14 +281,24 @@ export function ActionItemDialog({
                 </div>
               </div>
             ) : (
-              <Select value={projectId} onValueChange={setProjectId} disabled={!!item}>
+              <Select
+                value={projectId}
+                onValueChange={(val) => {
+                  setProjectId(val);
+                  const selectedP = projects.find((p) => p.id === val);
+                  if (selectedP?.clientName) {
+                    setOwner(selectedP.clientName);
+                  }
+                }}
+                disabled={!!item}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="請選擇專案" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.projectCategory === '評估案' ? '📝 [評估案] ' : '🚀 [已開案] '}[{p.caseNumber}] {p.name}
+                      {p.projectCategory === '評估案' ? '📝 [評估案] ' : '🚀 [已開案] '}[{p.caseNumber}] {p.name} {p.clientName ? `(${p.clientName})` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -310,44 +352,44 @@ export function ActionItemDialog({
             </div>
           </div>
 
-          {/* 等誰處理 & 內部負責人 */}
+          {/* 責任歸屬 & 目前等誰處理 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm font-semibold text-rose-600">
-                目前等誰處理 (卡關跟催對象)
+              <Label className="text-sm font-semibold flex items-center gap-1">
+                <Building2 className="h-3.5 w-3.5 text-slate-500" />
+                責任歸屬 (客戶/單位)
               </Label>
-              <Input
-                className="mt-1 border-rose-300 focus:border-rose-500"
-                placeholder="例如：等億威報價、等採購議價、等資訊部課長核簽"
-                value={waitingOn}
-                onChange={(e) => setWaitingOn(e.target.value)}
-              />
+              <Select value={owner || '燁輝'} onValueChange={setOwner}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="選擇責任歸屬客戶" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  {clientList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>
+                      {c.name} {c.code ? `(${c.code})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <Label className="text-sm font-semibold">內部負責人 (PM / 窗口)</Label>
-              {users.length > 0 ? (
-                <Select value={owner} onValueChange={setOwner}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="請選擇成員" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-48">
-                    <SelectItem value="未指定">-- 暫不指定 --</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.uid} value={u.displayName || u.email}>
-                        {u.displayName} ({u.role === 'admin' ? '管理員' : '成員'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  className="mt-1"
-                  placeholder="例如：徐智宏、Winona"
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value)}
+              <Label className="text-sm font-semibold text-rose-600 flex items-center justify-between">
+                <span>目前等誰處理 (卡關跟催對象)</span>
+                {owner && <span className="text-[11px] font-normal text-rose-500 font-sans">({owner} 成員)</span>}
+              </Label>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={waitingOn}
+                  onChange={setWaitingOn}
+                  options={waitingOnMemberOptions}
+                  placeholder={
+                    waitingOnMemberOptions.length > 0
+                      ? `選擇 ${owner || '客戶'} 成員或輸入...`
+                      : '輸入等候對象或處理事項...'
+                  }
                 />
-              )}
+              </div>
             </div>
           </div>
 

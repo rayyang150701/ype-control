@@ -1179,11 +1179,11 @@ export function InternalTasksClient({
                                     </Badge>
                                   )}
 
-                                  {/* 內部負責人 */}
+                                  {/* 責任歸屬 (客戶/單位) */}
                                   {item.owner && (
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded">
                                       <UserCheck className="h-3 w-3" />
-                                      負責人: {item.owner}
+                                      責任歸屬: {item.owner}
                                     </span>
                                   )}
                                 </div>
@@ -1282,6 +1282,7 @@ export function InternalTasksClient({
         defaultProjectId={defaultProjectId}
         projects={projects}
         users={users}
+        clients={clients}
         onSuccess={() => {
           // 重新載入或重刷
           window.location.reload();
