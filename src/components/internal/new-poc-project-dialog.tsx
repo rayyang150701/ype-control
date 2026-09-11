@@ -180,7 +180,7 @@ export function NewPocProjectDialog({
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>⚙️ 其他智造專案</span>
+                <span>⚙️ 其他智慧製造專案</span>
               </button>
             </div>
           </div>

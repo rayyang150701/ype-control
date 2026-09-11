@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -439,6 +439,24 @@ export function InternalTasksClient({
     setAiDialogOpen(true);
   };
 
+  useEffect(() => {
+    const handler = (e: any) => {
+      const projId = e.detail?.projectId;
+      const proj = projects.find((p) => p.id === projId);
+      handleOpenAI(projId, proj?.name);
+    };
+    window.addEventListener('open-ai-diagnosis', handler);
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('ai') === 'open') {
+        handleOpenAI();
+      }
+    }
+
+    return () => window.removeEventListener('open-ai-diagnosis', handler);
+  }, [projects]);
+
   // 輔助取得階段顏色
   const getPhaseBadge = (phase: string) => {
     switch (phase) {
@@ -481,10 +499,10 @@ export function InternalTasksClient({
           <Button
             onClick={() => handleOpenAI()}
             variant="outline"
-            className="gap-1.5 border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100"
+            className="gap-1.5 border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shadow-2xs font-semibold"
           >
             <Bot className="h-4 w-4 text-indigo-600" />
-            AI 全專案延誤診斷
+            🤖 AI 智慧診斷
           </Button>
 
           {isAdmin && (
@@ -684,7 +702,7 @@ export function InternalTasksClient({
               <SelectItem value="all">全部來源型態 ({projects.length})</SelectItem>
               <SelectItem value="燁輝列管專案">🏢 燁輝列管專案</SelectItem>
               <SelectItem value="億威內部自建專案">🏭 億威自建專案</SelectItem>
-              <SelectItem value="其他智慧製造專案">⚙️ 其他智造專案</SelectItem>
+              <SelectItem value="其他智慧製造專案">⚙️ 其他智慧製造專案</SelectItem>
             </SelectContent>
           </Select>
 
@@ -822,13 +840,13 @@ export function InternalTasksClient({
                 }`}
               >
                 {/* 專案卡片標頭 */}
-                <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b gap-3 ${
+                <div className={`flex flex-col lg:flex-row lg:items-center justify-between px-3.5 py-2.5 border-b gap-2.5 ${
                   isCompleted ? 'bg-emerald-50/40' : isTerminated ? 'bg-rose-50/30' : 'bg-slate-50/80'
                 }`}>
-                  <div className="flex items-start sm:items-center gap-3">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
                     <button
                       onClick={() => toggleCollapse(project.id)}
-                      className="mt-0.5 sm:mt-0 p-1 rounded hover:bg-slate-200 transition-colors text-slate-600"
+                      className="p-1 rounded hover:bg-slate-200 transition-colors text-slate-600 shrink-0"
                     >
                       {isCollapsed ? (
                         <ChevronDown className="h-4 w-4" />
@@ -837,142 +855,138 @@ export function InternalTasksClient({
                       )}
                     </button>
 
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {project.caseNumber && (
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                            {project.caseNumber}
-                          </span>
-                        )}
-                        <h2 className="text-base font-bold text-slate-900">{project.name}</h2>
-                        
-                        {/* 專案來源型態標籤 */}
-                        {project.sourceType === '億威內部自建專案' ? (
-                          <Badge className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
-                            <span>🏭 億威自建</span>
-                          </Badge>
-                        ) : project.sourceType === '其他智慧製造專案' ? (
-                          <Badge className="bg-teal-700 hover:bg-teal-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
-                            <span>⚙️ 其他智造</span>
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-blue-700 hover:bg-blue-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
-                            <span>🏢 燁輝列管</span>
-                          </Badge>
-                        )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* 案號 */}
+                      {project.caseNumber && (
+                        <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 shrink-0">
+                          {project.caseNumber}
+                        </span>
+                      )}
 
-                        {/* 專案類別標籤 */}
-                        {isEvalCategory ? (
-                          <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
-                            <span>📝 評估案</span>
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
-                            <span>🚀 已開案</span>
-                          </Badge>
-                        )}
-
-                        {/* 客戶名稱標籤 */}
-                        <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-[11px] px-2 py-0.5 flex items-center gap-1 font-medium shadow-2xs">
-                          <Building2 className="h-3 w-3 text-slate-500" />
-                          <span>客戶: {project.clientName || '燁輝'}</span>
+                      {/* 專案來源型態標籤 (置於名稱前) */}
+                      {project.sourceType === '億威內部自建專案' ? (
+                        <Badge className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
+                          <span>🏭 億威自建</span>
                         </Badge>
+                      ) : project.sourceType === '其他智慧製造專案' ? (
+                        <Badge className="bg-teal-700 hover:bg-teal-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
+                          <span>⚙️ 其他智慧製造專案</span>
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-blue-700 hover:bg-blue-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
+                          <span>🏢 燁輝列管</span>
+                        </Badge>
+                      )}
 
-                        {/* 專案生命週期狀態標籤 */}
-                        {isCompleted ? (
-                          project.autoCompletedByClient ? (
-                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
-                              <span>🏆 客戶管制表已結案 (自動轉換)</span>
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
-                              <span>✅ 已結案</span>
-                            </Badge>
-                          )
-                        ) : isTerminated ? (
-                          <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 text-[11px] px-2 py-0.5 flex items-center gap-1">
-                            <span>⛔ 專案終止</span>
+                      {/* 專案類別標籤 (開案狀態，置於名稱前) */}
+                      {isEvalCategory ? (
+                        <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                          <span>📝 評估案</span>
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                          <span>🚀 已開案</span>
+                        </Badge>
+                      )}
+
+                      {/* 專案名稱 */}
+                      <h2 className="text-sm sm:text-base font-bold text-slate-900 mr-1">{project.name}</h2>
+
+                      {/* 客戶名稱標籤 */}
+                      <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-[11px] px-1.5 py-0.5 flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                        <Building2 className="h-3 w-3 text-slate-500" />
+                        <span>客戶: {project.clientName || '燁輝'}</span>
+                      </Badge>
+
+                      {/* 專案生命週期狀態標籤 */}
+                      {isCompleted ? (
+                        project.autoCompletedByClient ? (
+                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                            <span>🏆 客戶管制表已結案</span>
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[11px] px-2 py-0.5">
-                            {isEvalCategory ? '評估中' : '執行中'}
+                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                            <span>✅ 已結案</span>
                           </Badge>
-                        )}
+                        )
+                      ) : isTerminated ? (
+                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 text-[11px] px-1.5 py-0.5 flex items-center gap-1 shrink-0">
+                          <span>⛔ 專案終止</span>
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[11px] px-1.5 py-0.5 shrink-0">
+                          {isEvalCategory ? '評估中' : '執行中'}
+                        </Badge>
+                      )}
 
-                        {/* 關聯客戶管制表標籤 */}
-                        {project.linkedCustomerProjectId && (
-                          <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] px-2 py-0.5 flex items-center gap-1">
-                            <span>🔗 已連結客戶管制表</span>
-                          </Badge>
-                        )}
+                      {/* 關聯客戶管制表標籤 */}
+                      {project.linkedCustomerProjectId && (
+                        <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] px-1.5 py-0.5 flex items-center gap-1 shrink-0">
+                          <span>🔗 已連結</span>
+                        </Badge>
+                      )}
 
-                        {/* 負責 PM 與 客戶窗口 */}
-                        {(project.responsiblePm || project.tpmOfficeContact) && (
-                          <span className="text-xs text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs">
-                            <UserCheck className="h-3 w-3 text-slate-500" />
-                            PM: {project.responsiblePm || project.tpmOfficeContact}
+                      {/* 負責 PM 與 客戶窗口 */}
+                      {(project.responsiblePm || project.tpmOfficeContact) && (
+                        <span className="text-[11px] text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                          <UserCheck className="h-3 w-3 text-slate-500" />
+                          PM: {project.responsiblePm || project.tpmOfficeContact}
+                        </span>
+                      )}
+
+                      {(project.clientContact || project.yiehPhuiProjectManager) && (
+                        <span className="text-[11px] text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                          <Users className="h-3 w-3 text-slate-500" />
+                          窗口: {project.clientContact || project.yiehPhuiProjectManager}
+                        </span>
+                      )}
+
+                      {/* 專案目標完成日 (整合至同一行) */}
+                      {project.expectedCompletionDate && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="flex items-center gap-1 text-[11px] text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-300 font-medium shadow-2xs">
+                            <Calendar className="h-3 w-3 text-slate-500" />
+                            目標: {project.expectedCompletionDate}
                           </span>
-                        )}
-
-                        {(project.clientContact || project.yiehPhuiProjectManager) && (
-                          <span className="text-xs text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs">
-                            <Users className="h-3 w-3 text-slate-500" />
-                            窗口: {project.clientContact || project.yiehPhuiProjectManager}
-                          </span>
-                        )}
-
-                        {/* 專案層級預估完成日 (綁定整個專案) */}
-                        {project.expectedCompletionDate && (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="flex items-center gap-1 text-[11px] text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-300 font-medium shadow-2xs">
-                              <Calendar className="h-3 w-3 text-slate-500" />
-                              專案目標完成: {project.expectedCompletionDate}
+                          {!isCompleted && isProjOverdue && (
+                            <Badge variant="destructive" className="text-[10px] px-1 py-0 bg-rose-600 font-semibold shadow-2xs">
+                              🚨 逾期 {projDiffDays}天
+                            </Badge>
+                          )}
+                          {!isCompleted && isProjUpcoming && (
+                            <Badge className="text-[10px] px-1 py-0 bg-amber-500 text-white font-medium shadow-2xs">
+                              ⏳ 剩 {Math.abs(projDiffDays)}天
+                            </Badge>
+                          )}
+                          {!isCompleted && projExpectedDate && !isProjOverdue && !isProjUpcoming && (
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              (剩 {Math.abs(projDiffDays)}天)
                             </span>
-                            {!isCompleted && isProjOverdue && (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 bg-rose-600 font-semibold shadow-2xs">
-                                🚨 專案已逾期 {projDiffDays} 天
-                              </Badge>
-                            )}
-                            {!isCompleted && isProjUpcoming && (
-                              <Badge className="text-[10px] px-1.5 py-0 bg-amber-500 text-white font-medium shadow-2xs">
-                                ⏳ 剩餘 {Math.abs(projDiffDays)} 天到期
-                              </Badge>
-                            )}
-                            {!isCompleted && projExpectedDate && !isProjOverdue && !isProjUpcoming && (
-                              <span className="text-[11px] text-slate-500 font-medium">
-                                (剩餘 {Math.abs(projDiffDays)} 天)
-                              </span>
-                            )}
-                            {isCompleted && (
-                              <span className="text-[11px] text-emerald-600 font-medium">
-                                (專案已結案)
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
 
-                      {/* 專案待辦指標小徽章 */}
-                      <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
-                        <span>待辦總數: {items.length} 項</span>
-                        {blockedItems.length > 0 && (
-                          <span className="text-rose-600 font-semibold flex items-center gap-0.5">
-                            <AlertCircle className="h-3 w-3" />
-                            {blockedItems.length} 項卡關中
-                          </span>
-                        )}
-                        {overdueItems.length > 0 && (
-                          <span className="text-amber-600 font-semibold flex items-center gap-0.5">
-                            <AlertTriangle className="h-3 w-3" />
-                            {overdueItems.length} 項逾期
-                          </span>
-                        )}
-                      </div>
+                      {/* 待辦統計徽章 (整合至同一行) */}
+                      <span className="text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-medium shrink-0">
+                        待辦 {items.length}項
+                      </span>
+                      {blockedItems.length > 0 && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-rose-300 bg-rose-50 text-rose-600 font-medium shrink-0">
+                          <AlertCircle className="h-3 w-3 mr-0.5" />
+                          {blockedItems.length}項卡關
+                        </Badge>
+                      )}
+                      {overdueItems.length > 0 && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-300 bg-amber-50 text-amber-600 font-medium shrink-0">
+                          <AlertTriangle className="h-3 w-3 mr-0.5" />
+                          {overdueItems.length}項逾期
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
-                  {/* 專案右側操作按鈕 */}
-                  <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                  {/* 專案右側操作按鈕 (已移除個別 AI 診斷按鈕) */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end lg:self-auto flex-wrap">
                     {/* 管理員專案狀態生命週期變更與編輯 */}
                     {isAdmin && (
                       <div className="flex items-center gap-1">
@@ -1058,16 +1072,6 @@ export function InternalTasksClient({
                         </DropdownMenu>
                       </div>
                     )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleOpenAI(project.id, project.name)}
-                      className="gap-1 text-xs text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50 h-8"
-                    >
-                      <Bot className="h-3.5 w-3.5" />
-                      AI 診斷此案
-                    </Button>
 
                     {isAdmin && (
                       <Button
@@ -1334,6 +1338,13 @@ export function InternalTasksClient({
         onOpenChange={setAiDialogOpen}
         projectId={aiTargetProjectId}
         projectName={aiTargetProjectName}
+        projects={projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          caseNumber: p.caseNumber,
+          category: p.projectCategory || ((p as any).status === 'poc' ? '評估案' : '已開案'),
+          status: p.status,
+        }))}
       />
     </div>
   );

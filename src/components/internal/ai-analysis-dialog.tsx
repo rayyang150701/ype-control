@@ -4,13 +4,23 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Bot, AlertTriangle, CheckCircle2, Clock, Users, Lightbulb, RefreshCw } from 'lucide-react';
+
+interface ProjectOption {
+  id: string;
+  name: string;
+  caseNumber?: string;
+  category?: string;
+  status?: string;
+}
 
 interface AIAnalysisDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId?: string;
   projectName?: string;
+  projects?: ProjectOption[];
 }
 
 interface AnalysisData {
@@ -37,17 +47,19 @@ export function AIAnalysisDialog({
   onOpenChange,
   projectId,
   projectName,
+  projects = [],
 }: AIAnalysisDialogProps) {
+  const [currentProjectId, setCurrentProjectId] = useState<string>(projectId || 'all');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<AnalysisData | null>(null);
 
-  const runAnalysis = async () => {
+  const runAnalysis = async (targetId: string = currentProjectId) => {
     setLoading(true);
     try {
       const res = await fetch('/api/ai/analyze-project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId: targetId === 'all' ? undefined : targetId }),
       });
       const json = await res.json();
       if (json.success && json.analysis) {
@@ -62,9 +74,16 @@ export function AIAnalysisDialog({
 
   useEffect(() => {
     if (open) {
-      runAnalysis();
+      const initialId = projectId || 'all';
+      setCurrentProjectId(initialId);
+      runAnalysis(initialId);
     }
   }, [open, projectId]);
+
+  const handleProjectChange = (val: string) => {
+    setCurrentProjectId(val);
+    runAnalysis(val);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,7 +97,7 @@ export function AIAnalysisDialog({
             <Button
               variant="outline"
               size="sm"
-              onClick={runAnalysis}
+              onClick={() => runAnalysis(currentProjectId)}
               disabled={loading}
               className="gap-1 text-xs"
             >
@@ -86,9 +105,30 @@ export function AIAnalysisDialog({
               重新分析
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            分析標的：{projectName || data?.projectTitle || '全部列管專案'}
-          </p>
+
+          {/* 專案切換下拉選單 (支援全部專案或個別專案) */}
+          <div className="mt-2.5 flex items-center gap-2 bg-indigo-50/80 border border-indigo-100 p-2.5 rounded-lg">
+            <span className="text-xs font-semibold text-indigo-950 whitespace-nowrap flex items-center gap-1">
+              <Bot className="h-3.5 w-3.5 text-indigo-600" />
+              診斷標的：
+            </span>
+            <Select value={currentProjectId} onValueChange={handleProjectChange}>
+              <SelectTrigger className="bg-white text-xs h-8 border-indigo-200 flex-1">
+                <SelectValue placeholder="請選擇診斷專案" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="all" className="font-semibold text-indigo-900">
+                  🌐 全部專案 (全域綜合診斷與歷程盤點)
+                </SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                    {p.caseNumber ? `[${p.caseNumber}] ` : ''}{p.name}
+                    {p.category ? ` (${p.category})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </DialogHeader>
 
         {loading ? (

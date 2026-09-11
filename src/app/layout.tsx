@@ -6,7 +6,7 @@ import { Header } from '@/components/header';
 import { AdminProvider } from '@/components/admin-context';
 
 export const metadata: Metadata = {
-  title: 'Project Zenith - 燁輝智慧製造執行方案進度管制表',
+  title: 'Project Zenith - 智慧製造執行方案進度管制表',
   description: 'Project Progress Tracking System for YC-ICT',
 };
 

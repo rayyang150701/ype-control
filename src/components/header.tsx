@@ -1,7 +1,7 @@
 
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2 } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
@@ -16,11 +16,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 
 export function Header() {
+  const router = useRouter();
   const pathname = usePathname() || '';
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   const { toast } = useToast();
@@ -157,7 +158,7 @@ export function Header() {
 
         <div className="flex-1 flex justify-center px-4">
             <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap overflow-hidden text-ellipsis">
-                燁輝智慧製造執行方案進度管制表
+                智慧製造執行方案進度管制表
             </Link>
         </div>
 
@@ -232,7 +233,7 @@ export function Header() {
         </div>
       </div>
 
-      {/* 雙視圖切換分頁列：客戶進度管制 vs 內部專案待辦追蹤 vs 客戶維護管理 */}
+      {/* 雙視圖切換分頁列：燁輝進度管制 vs 內部專案待辦追蹤 vs AI診斷 */}
       <div className="w-full bg-slate-100/80 border-t px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Link
@@ -243,7 +244,7 @@ export function Header() {
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
             }`}
           >
-            <span>📊 客戶進度管制總表 (對外週報)</span>
+            <span>📊 燁輝進度管制總表 (對外週報)</span>
           </Link>
           <Link
             href="/internal-tasks"
@@ -255,6 +256,21 @@ export function Header() {
           >
             <span>📋 內部專案與待辦追蹤 (對內跟催 & AI 診斷)</span>
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              if (pathname.startsWith('/internal-tasks')) {
+                window.dispatchEvent(new CustomEvent('open-ai-diagnosis'));
+              } else {
+                router.push('/internal-tasks?ai=open');
+              }
+            }}
+            className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer active:scale-95"
+            title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
+          >
+            <Bot className="h-3.5 w-3.5" />
+            <span>🤖 AI 智慧診斷</span>
+          </button>
         </div>
         <div className="text-xs text-muted-foreground hidden md:block">
           {pathname.startsWith('/clients')
