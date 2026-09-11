@@ -19,7 +19,14 @@ export interface Project {
   caseNumber: string;
   name: string;
   status: ProjectStatus;
+  isInternal?: boolean;
   projectCategory?: '評估案' | '已開案';
+  internalStatus?: 'in_progress' | 'completed' | 'terminated';
+  autoCompletedByClient?: boolean;
+  linkedInternalProjectId?: string;
+  linkedInternalProjectName?: string;
+  linkedCustomerProjectId?: string;
+  linkedCustomerProjectName?: string;
   createdAt: Timestamp | Date | string;
   updatedAt?: Timestamp | Date | string;
   createdBy: string;
@@ -34,6 +41,15 @@ export interface Project {
   onHoldStartDate?: Timestamp | Date | string;
   onHoldEndDate?: Timestamp | Date | string;
   onHoldNotes?: string;
+}
+
+export interface InternalProjectOption {
+  id: string;
+  caseNumber: string;
+  name: string;
+  category: '評估案' | '已開案';
+  internalStatus: 'in_progress' | 'completed' | 'terminated';
+  tpmOfficeContact?: string;
 }
 
 export interface SubProject {

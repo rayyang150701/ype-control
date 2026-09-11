@@ -5,7 +5,7 @@ import { useTransition, useState, useEffect } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CalendarIcon, PlusCircle, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
+import { CalendarIcon, PlusCircle, Trash2, PauseCircle, PlayCircle, FolderGit2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -22,11 +22,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { User, FullProject, SubProjectWithLatestLog } from '@/types';
+import { User, FullProject, SubProjectWithLatestLog, InternalProjectOption } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
-import { updateProject, getUsers, resumeProject, getFullProjectById } from '@/lib/actions';
+import { updateProject, getUsers, resumeProject, getFullProjectById, getInternalProjectsForDropdown } from '@/lib/actions';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const subProjectSchema = z.object({
@@ -40,6 +40,7 @@ const subProjectSchema = z.object({
 const projectSchema = z.object({
   caseNumber: z.string().min(1, '主專案案號為必填'),
   name: z.string().min(1, '主專案名稱為必填'),
+  linkedInternalProjectId: z.string().optional(),
   projectPurpose: z.string().optional(),
   currentStatusAndIssues: z.string().optional(),
   yiehPhuiProjectManager: z.string().optional(),
@@ -61,6 +62,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
+  const [internalProjects, setInternalProjects] = useState<InternalProjectOption[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
   
   const {
@@ -75,6 +77,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     defaultValues: {
       caseNumber: '',
       name: '',
+      linkedInternalProjectId: '',
       projectPurpose: '',
       currentStatusAndIssues: '',
       yiehPhuiProjectManager: '',
@@ -89,6 +92,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
       reset({
         caseNumber: project.caseNumber,
         name: project.name,
+        linkedInternalProjectId: project.linkedInternalProjectId || '',
         projectPurpose: project.projectPurpose ?? '',
         currentStatusAndIssues: project.currentStatusAndIssues ?? '',
         yiehPhuiProjectManager: project.yiehPhuiProjectManager ?? '',
@@ -111,8 +115,13 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
       const userList = await getUsers();
       setUsers(userList);
     }
+    async function fetchInternalProjects() {
+      const list = await getInternalProjectsForDropdown();
+      setInternalProjects(list);
+    }
     if (isOpen) {
       fetchUsers();
+      fetchInternalProjects();
     }
   }, [isOpen]);
 
@@ -186,7 +195,48 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
             </DialogHeader>
 
             <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4">
-              
+              {/* 連結內部專案 (選填) */}
+              <div className="p-3 rounded-lg border border-indigo-100 bg-indigo-50/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="linkedInternalProjectId" className="text-xs font-semibold text-indigo-950 flex items-center gap-1.5">
+                    <FolderGit2 className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>連結內部專案 (選填，連動即時內部待辦歷程)</span>
+                  </Label>
+                  <span className="text-[11px] text-indigo-600">先內部評估後列管</span>
+                </div>
+                <Controller
+                  control={control}
+                  name="linkedInternalProjectId"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value || 'none'}
+                      onValueChange={(val) => {
+                        field.onChange(val === 'none' ? '' : val);
+                      }}
+                    >
+                      <SelectTrigger className="bg-white text-xs h-9 border-indigo-200">
+                        <SelectValue placeholder="-- 請選擇欲關聯的內部專案 (或解除綁定) --" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">無 (暫不連結內部專案 / 解除綁定)</SelectItem>
+                        {internalProjects.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-slate-500">[{p.caseNumber}]</span>
+                              <span className="font-medium">{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground">({p.category} · {p.internalStatus === 'completed' ? '已結案' : p.internalStatus === 'terminated' ? '已終止' : '進行中'})</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <p className="text-[11px] text-indigo-700/80 leading-relaxed">
+                  連結後，在管制總表中可直接點選「📋 內部待辦進度」參閱即時階段、等候對象（Waiting on）與跟催日；且當本案完工結案時，內部專案將自動轉換為已結案。
+                </p>
+              </div>
+
               {/* 主專案資訊 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="grid gap-2">

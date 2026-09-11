@@ -26,14 +26,24 @@ import {
   FolderPlus,
   Layers,
   ArrowUpDown,
-  Filter
+  Filter,
+  Rocket,
+  Ban,
+  RotateCcw
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
 import { NewPocProjectDialog } from './new-poc-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { useAdmin } from '@/components/admin-context';
-import { updateActionItem, deleteActionItem } from '@/lib/actions';
+import { updateActionItem, deleteActionItem, updateInternalProjectStatus } from '@/lib/actions';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import type { FullProject, ProjectActionItem, ActionItemPhase, ActionItemStatus, User } from '@/types';
 
@@ -57,6 +67,7 @@ export function InternalTasksClient({
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案'>('all');
+  const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'completed' | 'terminated'>('all');
   const [selectedProjectType, setSelectedProjectType] = useState<'all' | 'poc' | 'client'>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -150,6 +161,20 @@ export function InternalTasksClient({
     return { all: projects.length, poc: pocCount, active: activeCount };
   }, [projects]);
 
+  // 統計內部專案狀態 (進行中/評估中、已結案、專案終止)
+  const internalStatusCounts = useMemo(() => {
+    let inProgress = 0;
+    let completed = 0;
+    let terminated = 0;
+    projects.forEach((p) => {
+      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      if (status === 'completed') completed++;
+      else if (status === 'terminated') terminated++;
+      else inProgress++;
+    });
+    return { all: projects.length, inProgress, completed, terminated };
+  }, [projects]);
+
   // 自然序號比較函數 (1, 2, ... 10, ... 55)
   const compareCaseNumbers = (a?: string, b?: string, asc: boolean = true) => {
     if (!a && !b) return 0;
@@ -190,7 +215,15 @@ export function InternalTasksClient({
       });
     }
 
-    // 2. 舊專案類型相容 (poc vs client)
+    // 2. 專案生命週期狀態篩選 (進行中/評估中、已結案、專案終止)
+    if (selectedInternalStatus !== 'all') {
+      projectList = projectList.filter((p) => {
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        return status === selectedInternalStatus;
+      });
+    }
+
+    // 3. 舊專案類型相容 (poc vs client)
     if (selectedProjectType === 'poc') {
       projectList = projectList.filter((p) => p.status === 'poc');
     } else if (selectedProjectType === 'client') {
@@ -275,6 +308,7 @@ export function InternalTasksClient({
     filteredItems,
     searchQuery,
     selectedCategory,
+    selectedInternalStatus,
     selectedProjectType,
     selectedPhase,
     selectedStatus,
@@ -328,6 +362,35 @@ export function InternalTasksClient({
       }
     } catch (err: any) {
       toast({ title: '狀態更新失敗', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleUpdateProjectStatus = async (projectId: string, payload: {
+    category?: '評估案' | '已開案';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+  }) => {
+    try {
+      const res = await updateInternalProjectStatus(projectId, payload);
+      if (res.success) {
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id !== projectId) return p;
+            const updatedCategory = payload.category ?? p.projectCategory;
+            const updatedInternalStatus = payload.internalStatus ?? p.internalStatus;
+            return {
+              ...p,
+              projectCategory: updatedCategory,
+              internalStatus: updatedInternalStatus,
+              autoCompletedByClient: payload.internalStatus === 'in_progress' ? false : p.autoCompletedByClient,
+            };
+          })
+        );
+        toast({ title: res.message });
+      } else {
+        toast({ title: '更新失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: '操作異常', description: err.message, variant: 'destructive' });
     }
   };
 
@@ -567,6 +630,19 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
+          {/* 專案生命週期狀態篩選 */}
+          <Select value={selectedInternalStatus} onValueChange={(val: any) => setSelectedInternalStatus(val)}>
+            <SelectTrigger className="w-[145px] h-9 text-xs font-medium">
+              <SelectValue placeholder="專案狀態" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部專案狀態 ({projects.length})</SelectItem>
+              <SelectItem value="in_progress">⏳ 進行/評估中 ({internalStatusCounts.inProgress})</SelectItem>
+              <SelectItem value="completed">✅ 已結案 ({internalStatusCounts.completed})</SelectItem>
+              <SelectItem value="terminated">⛔ 專案終止 ({internalStatusCounts.terminated})</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* 階段篩選 */}
           <Select value={selectedPhase} onValueChange={setSelectedPhase}>
             <SelectTrigger className="w-[130px] h-9 text-xs">
@@ -589,7 +665,7 @@ export function InternalTasksClient({
               <SelectValue placeholder="狀態篩選" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部狀態</SelectItem>
+              <SelectItem value="all">全部待辦狀態</SelectItem>
               <SelectItem value="pending">待處理</SelectItem>
               <SelectItem value="in_progress">處理中</SelectItem>
               <SelectItem value="blocked">🚨 卡關等候中</SelectItem>
@@ -597,13 +673,14 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
-          {(searchQuery || selectedCategory !== 'all' || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
+          {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearchQuery('');
                 setSelectedCategory('all');
+                setSelectedInternalStatus('all');
                 setSelectedProjectType('all');
                 setSelectedPhase('all');
                 setSelectedStatus('all');
@@ -668,13 +745,23 @@ export function InternalTasksClient({
               return differenceInCalendarDays(new Date(), new Date(i.dueDate)) > 0;
             });
 
+            const isEvalCategory = (project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案')) === '評估案';
+            const internalStatus = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' ? 'terminated' : 'in_progress'));
+            const isCompleted = internalStatus === 'completed';
+            const isTerminated = internalStatus === 'terminated';
+            const isInProgress = !isCompleted && !isTerminated;
+
             return (
               <div
                 key={project.id}
-                className="rounded-lg border bg-card shadow-sm transition-all overflow-hidden"
+                className={`rounded-lg border bg-card shadow-sm transition-all overflow-hidden ${
+                  isCompleted ? 'border-emerald-200 bg-emerald-50/10' : isTerminated ? 'border-rose-200 opacity-80' : ''
+                }`}
               >
                 {/* 專案卡片標頭 */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50/80 border-b gap-3">
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b gap-3 ${
+                  isCompleted ? 'bg-emerald-50/40' : isTerminated ? 'bg-rose-50/30' : 'bg-slate-50/80'
+                }`}>
                   <div className="flex items-start sm:items-center gap-3">
                     <button
                       onClick={() => toggleCollapse(project.id)}
@@ -695,7 +782,9 @@ export function InternalTasksClient({
                           </span>
                         )}
                         <h2 className="text-base font-bold text-slate-900">{project.name}</h2>
-                        {((project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案')) === '評估案') ? (
+                        
+                        {/* 專案類別標籤 */}
+                        {isEvalCategory ? (
                           <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
                             <span>📝 評估案</span>
                           </Badge>
@@ -704,11 +793,39 @@ export function InternalTasksClient({
                             <span>🚀 已開案</span>
                           </Badge>
                         )}
-                        {project.status !== 'poc' && (
+
+                        {/* 專案生命週期狀態標籤 */}
+                        {isCompleted ? (
+                          project.autoCompletedByClient ? (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
+                              <span>🏆 客戶管制表已結案 (自動轉換)</span>
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
+                              <span>✅ 已結案</span>
+                            </Badge>
+                          )
+                        ) : isTerminated ? (
+                          <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 text-[11px] px-2 py-0.5 flex items-center gap-1">
+                            <span>⛔ 專案終止</span>
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[11px] px-2 py-0.5">
+                            {isEvalCategory ? '評估中' : '執行中'}
+                          </Badge>
+                        )}
+
+                        {/* 關聯客戶管制表標籤 */}
+                        {project.linkedCustomerProjectId ? (
+                          <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] px-2 py-0.5 flex items-center gap-1">
+                            <span>🔗 已連結客戶管制表</span>
+                          </Badge>
+                        ) : project.status !== 'poc' && (
                           <Badge variant="outline" className="text-slate-600 border-slate-300 text-[11px] px-2 py-0.5">
                             🏢 燁輝客戶列管
                           </Badge>
                         )}
+
                         {project.tpmOfficeContact && (
                           <span className="text-xs text-muted-foreground">
                             TPM窗口: {project.tpmOfficeContact}
@@ -736,7 +853,73 @@ export function InternalTasksClient({
                   </div>
 
                   {/* 專案右側操作按鈕 */}
-                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                    {/* 管理員專案狀態生命週期變更 */}
+                    {isAdmin && (
+                      <div className="flex items-center gap-1">
+                        {/* 評估案專屬捷徑：一鍵轉為已開案 */}
+                        {isEvalCategory && isInProgress && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUpdateProjectStatus(project.id, { category: '已開案' })}
+                            className="gap-1 text-xs h-8 border-blue-300 bg-blue-50/70 text-blue-700 hover:bg-blue-100 hover:text-blue-900 shadow-2xs font-medium"
+                            title="評估通過，轉為已開案正式執行"
+                          >
+                            <Rocket className="h-3.5 w-3.5 text-blue-600" />
+                            轉為已開案
+                          </Button>
+                        )}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-1 text-xs h-8 text-slate-700 bg-white shadow-2xs">
+                              <span>狀態管理</span>
+                              <ChevronDown className="h-3 w-3 text-slate-400" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-52 text-xs">
+                            {isEvalCategory && isInProgress && (
+                              <DropdownMenuItem
+                                onClick={() => handleUpdateProjectStatus(project.id, { category: '已開案' })}
+                                className="cursor-pointer py-1.5"
+                              >
+                                <Rocket className="h-3.5 w-3.5 text-blue-600 mr-2" />
+                                轉為已開案 (進入正式執行)
+                              </DropdownMenuItem>
+                            )}
+                            {isInProgress && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'completed' })}
+                                  className="cursor-pointer py-1.5 text-emerald-700 focus:text-emerald-800 focus:bg-emerald-50"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mr-2" />
+                                  手動標記為已結案
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'terminated' })}
+                                  className="cursor-pointer py-1.5 text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                                >
+                                  <Ban className="h-3.5 w-3.5 text-rose-600 mr-2" />
+                                  專案終止 (不繼續執行)
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {(isCompleted || isTerminated) && (
+                              <DropdownMenuItem
+                                onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'in_progress' })}
+                                className="cursor-pointer py-1.5 text-blue-700 focus:text-blue-800 focus:bg-blue-50"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5 text-blue-600 mr-2" />
+                                重新開啟專案 (重設為進行中)
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
                     <Button
                       variant="ghost"
                       size="sm"

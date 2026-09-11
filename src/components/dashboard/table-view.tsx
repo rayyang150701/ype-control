@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { SubProjectWithLatestLog, FullProject } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Pencil, PauseCircle, CheckCircle2, PlusCircle } from 'lucide-react';
+import { Pencil, PauseCircle, CheckCircle2, PlusCircle, FolderGit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Badge } from '../ui/badge';
@@ -14,10 +14,18 @@ type TableViewProps = {
   onEditProject: (projectId: string) => void;
   onSubProjectClick: (subProject: SubProjectWithLatestLog) => void;
   onAddLog: (subProject: SubProjectWithLatestLog) => void;
+  onViewInternalProgress?: (internalProjectId: string) => void;
   isAdmin: boolean;
 };
 
-export function TableView({ groupedProjects, onEditProject, onSubProjectClick, onAddLog, isAdmin }: TableViewProps) {
+export function TableView({ 
+  groupedProjects, 
+  onEditProject, 
+  onSubProjectClick, 
+  onAddLog, 
+  onViewInternalProgress,
+  isAdmin 
+}: TableViewProps) {
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({});
   const [weekRange, setWeekRange] = useState('');
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -196,14 +204,27 @@ export function TableView({ groupedProjects, onEditProject, onSubProjectClick, o
                           )}
                           <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true) }}>{project.caseNumber}</td>
                           <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))} style={{ backgroundColor: getCellBgColor(project, sp, true)}}>
-                            <div className='flex flex-col gap-1'>
+                            <div className='flex flex-col gap-1.5'>
                               <span className="font-semibold leading-tight">{project.name}</span>
-                              {project.isOnHold && (
-                                 <Badge className="bg-amber-500 text-white flex items-center gap-1 w-fit scale-90 origin-left">
-                                    <PauseCircle className="h-3 w-3" />
-                                    暫緩
-                                 </Badge>
-                              )}
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {project.isOnHold && (
+                                   <Badge className="bg-amber-500 text-white flex items-center gap-1 w-fit scale-90 origin-left">
+                                      <PauseCircle className="h-3 w-3" />
+                                      暫緩
+                                   </Badge>
+                                )}
+                                {project.linkedInternalProjectId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onViewInternalProgress && onViewInternalProgress(project.linkedInternalProjectId!)}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 transition-colors text-[11px] font-medium w-fit shadow-2xs"
+                                    title="點選參閱此專案關聯之內部待辦與歷程進度"
+                                  >
+                                    <FolderGit2 className="h-3 w-3 text-indigo-600 shrink-0" />
+                                    <span>內部待辦進度</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td rowSpan={project.subProjects.length} className={cn("border-b border-r px-3 py-2 text-sm text-gray-800 align-middle break-words", getCellBgColor(project, sp, true))}>

@@ -15,6 +15,7 @@ import { OnHoldDialog } from './on-hold-dialog';
 import { ResumeProjectDialog } from './resume-project-dialog';
 import { NewLogDialog } from './new-log-dialog';
 import { LoginDialog } from './login-dialog';
+import { LinkedInternalProgressDialog } from './linked-internal-progress-dialog';
 import { useAdmin } from '@/components/admin-context';
 
 type DashboardClientProps = {
@@ -47,6 +48,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [isOnHoldProjectOpen, setIsOnHoldProjectOpen] = useState(false);
   const [isResumeProjectOpen, setIsResumeProjectOpen] = useState(false);
   const [isNewLogOpen, setIsNewLogOpen] = useState(false);
+  const [isInternalProgressOpen, setIsInternalProgressOpen] = useState(false);
+  const [selectedInternalProjectId, setSelectedInternalProjectId] = useState<string | undefined>(undefined);
 
   const refreshData = async () => {
     try {
@@ -204,6 +207,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onSubProjectClick={handleSubProjectClick} 
             onAddLog={handleAddLogClick}
             isAdmin={isAdmin}
+            onViewInternalProgress={(internalProjectId) => {
+              setSelectedInternalProjectId(internalProjectId);
+              setIsInternalProgressOpen(true);
+            }}
         />
       )}
 
@@ -235,6 +242,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onLogAdded={onOperationSuccess} 
         />
       )}
+
+      <LinkedInternalProgressDialog
+        open={isInternalProgressOpen}
+        onOpenChange={setIsInternalProgressOpen}
+        internalProjectId={selectedInternalProjectId}
+      />
 
       <LoginDialog 
         isOpen={isLoginDialogOpen} 
