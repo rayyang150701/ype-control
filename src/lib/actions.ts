@@ -9,9 +9,9 @@ import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
  * 格式化為 ISO 字串
  */
 const formatISO = (dateStr: string | null): string => {
-    if (!dateStr) return new Date().toISOString();
+    if (!dateStr) return '';
     const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    return isNaN(d.getTime()) ? '' : d.toISOString();
 };
 
 const formatISOOptional = (dateStr: string | null): string | undefined => {
@@ -934,7 +934,15 @@ export async function getActionItems(projectId?: string): Promise<ProjectActionI
             category: (p.status === 'poc' || p.status === 'evaluation') ? '評估案' : '已開案'
         }]));
 
-        return data.map(item => {
+        // 嚴格確保新增項目永遠放在最前面（依照建立時間由新到舊排序）
+        const sortedData = [...data].sort((a, b) => {
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (timeA !== timeB) return timeB - timeA;
+            return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+
+        return sortedData.map(item => {
             const proj = projMap.get(item.project_id);
             return {
                 id: item.id,
@@ -976,7 +984,8 @@ export async function createActionItem(data: {
 }) {
     const supabase = getSupabaseClient();
     try {
-        const { error } = await supabase.from('project_action_items').insert({
+        const nowIso = new Date().toISOString();
+        const { data: inserted, error } = await supabase.from('project_action_items').insert({
             project_id: data.projectId,
             sub_project_id: data.subProjectId || null,
             title: data.title,
@@ -985,16 +994,44 @@ export async function createActionItem(data: {
             owner: data.owner || '',
             waiting_on: data.waitingOn || '',
             due_date: data.dueDate || null,
-            completed_at: data.status === 'completed' ? new Date().toISOString() : null,
+            completed_at: data.status === 'completed' ? nowIso : null,
             notes: data.notes || '',
             lesson_learnt: data.lessonLearnt || '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        });
+            created_at: nowIso,
+            updated_at: nowIso
+        }).select('*').single();
 
         if (error) throw error;
+
+        // 取得專案名稱與案號作為輔助
+        const { data: projData } = await supabase
+            .from('projects')
+            .select('name, case_number, status')
+            .eq('id', data.projectId)
+            .single();
+
+        const newItem: ProjectActionItem = {
+            id: inserted.id,
+            projectId: inserted.project_id,
+            subProjectId: inserted.sub_project_id || null,
+            title: inserted.title,
+            phase: inserted.phase,
+            status: inserted.status,
+            owner: inserted.owner || '',
+            waitingOn: inserted.waiting_on || '',
+            dueDate: inserted.due_date ? String(inserted.due_date) : null,
+            completedAt: inserted.completed_at ? String(inserted.completed_at) : null,
+            notes: inserted.notes || '',
+            lessonLearnt: inserted.lesson_learnt || '',
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            projectName: projData?.name || '',
+            projectCaseNumber: projData?.case_number || '',
+            projectCategory: (projData?.status === 'poc' || projData?.status === 'evaluation') ? '評估案' : '已開案',
+        };
+
         revalidatePath('/internal-tasks');
-        return { success: true, message: '待辦事項已建立！' };
+        return { success: true, message: '待辦事項已建立！', data: newItem };
     } catch (err: any) {
         console.error('建立待辦事項失敗:', err);
         return { success: false, message: err?.message || '建立待辦事項失敗' };
@@ -1013,8 +1050,9 @@ export async function updateActionItem(id: string, data: Partial<{
 }>) {
     const supabase = getSupabaseClient();
     try {
+        const nowIso = new Date().toISOString();
         const updatePayload: any = {
-            updated_at: new Date().toISOString()
+            updated_at: nowIso
         };
 
         if (data.title !== undefined) updatePayload.title = data.title;
@@ -1027,19 +1065,40 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
         if (data.status === 'completed') {
-            updatePayload.completed_at = new Date().toISOString();
+            updatePayload.completed_at = nowIso;
         } else if (data.status && data.status !== 'completed') {
             updatePayload.completed_at = null;
         }
 
-        const { error } = await supabase
+        const { data: updated, error } = await supabase
             .from('project_action_items')
             .update(updatePayload)
-            .eq('id', id);
+            .eq('id', id)
+            .select('*')
+            .single();
 
         if (error) throw error;
         revalidatePath('/internal-tasks');
-        return { success: true, message: '待辦事項已更新！' };
+        return { 
+            success: true, 
+            message: '待辦事項已更新！',
+            data: updated ? {
+                id: updated.id,
+                projectId: updated.project_id,
+                subProjectId: updated.sub_project_id || null,
+                title: updated.title,
+                phase: updated.phase,
+                status: updated.status,
+                owner: updated.owner || '',
+                waitingOn: updated.waiting_on || '',
+                dueDate: updated.due_date ? String(updated.due_date) : null,
+                completedAt: updated.completed_at ? String(updated.completed_at) : null,
+                notes: updated.notes || '',
+                lessonLearnt: updated.lesson_learnt || '',
+                createdAt: formatISO(updated.created_at),
+                updatedAt: formatISO(updated.updated_at),
+            } : undefined
+        };
     } catch (err: any) {
         console.error('更新待辦事項失敗:', err);
         return { success: false, message: err?.message || '更新待辦事項失敗' };

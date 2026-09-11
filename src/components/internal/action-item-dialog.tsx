@@ -21,7 +21,7 @@ interface ActionItemDialogProps {
   projects: FullProject[];
   users?: User[];
   clients?: Client[];
-  onSuccess: () => void;
+  onSuccess: (savedItem?: ProjectActionItem) => void;
 }
 
 const PHASES: ActionItemPhase[] = [
@@ -169,7 +169,7 @@ export function ActionItemDialog({
         });
         if (res.success) {
           toast({ title: '更新成功', description: '待辦歷程已成功儲存' });
-          onSuccess();
+          onSuccess(res.data as any);
           onOpenChange(false);
         } else {
           toast({ title: '更新失敗', description: res.message, variant: 'destructive' });
@@ -188,7 +188,7 @@ export function ActionItemDialog({
         });
         if (res.success) {
           toast({ title: '新增成功', description: '待辦事項已建立！' });
-          onSuccess();
+          onSuccess(res.data as any);
           onOpenChange(false);
         } else {
           toast({ title: '新增失敗', description: res.message, variant: 'destructive' });

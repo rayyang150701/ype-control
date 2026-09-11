@@ -323,6 +323,16 @@ export function InternalTasksClient({
       }
     });
 
+    // 關鍵排序：針對每個專案底下的待辦事項，確保「新增項目永遠放在最前面（最新在前）」
+    map.forEach((group) => {
+      group.items.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+    });
+
     const queryLower = searchQuery.trim().toLowerCase();
 
     // 3. 搜尋與空專案過濾
@@ -1396,9 +1406,20 @@ export function InternalTasksClient({
         defaultProjectId={defaultProjectId}
         projects={projects}
         users={users}
-        clients={clients}
-        onSuccess={() => {
-          // 重新載入或重刷
+        onSuccess={(savedItem) => {
+          if (savedItem) {
+            if (editingItem) {
+              setActionItems((prev) =>
+                prev.map((i) => (i.id === savedItem.id ? { ...i, ...savedItem } : i))
+              );
+            } else {
+              // 新增項目：永遠放在最前面！
+              setActionItems((prev) => [savedItem, ...prev.filter((i) => i.id !== savedItem.id)]);
+              // 自動展開所屬專案
+              setCollapsedProjects((prev) => ({ ...prev, [savedItem.projectId]: false }));
+            }
+          }
+          // 重新載入以同步資料庫最新資料
           window.location.reload();
         }}
       />
