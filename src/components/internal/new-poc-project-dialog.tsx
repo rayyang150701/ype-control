@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,14 +8,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { createPocProject } from '@/lib/actions';
-import { FolderPlus } from 'lucide-react';
-import type { User } from '@/types';
+import { createPocProject, getClients } from '@/lib/actions';
+import { FolderPlus, Calendar, UserCheck, Users, Building2 } from 'lucide-react';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import type { User, Client, ProjectSourceType } from '@/types';
 
 interface NewPocProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   users?: User[];
+  clients?: Client[];
   onSuccess: (newProject?: any) => void;
 }
 
@@ -23,17 +25,38 @@ export function NewPocProjectDialog({
   open,
   onOpenChange,
   users = [],
+  clients: initialClients = [],
   onSuccess,
 }: NewPocProjectDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clientList, setClientList] = useState<Client[]>(initialClients);
 
   const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
+  const [sourceType, setSourceType] = useState<ProjectSourceType>('億威內部自建專案');
+  const [clientName, setClientName] = useState('燁輝');
   const [name, setName] = useState('');
   const [caseNumber, setCaseNumber] = useState('');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
-  const [tpmOfficeContact, setTpmOfficeContact] = useState('');
+  const [responsiblePm, setResponsiblePm] = useState('');
+  const [clientContact, setClientContact] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
+
+  // 若父層沒傳 clients，主動載入客戶清單
+  useEffect(() => {
+    if (open && clientList.length === 0) {
+      getClients().then((res) => {
+        if (res && res.length > 0) setClientList(res);
+      });
+    }
+  }, [open, clientList.length]);
+
+  // 當專案來源型態變更為「燁輝列管專案」時，自動切換客戶為「燁輝」
+  useEffect(() => {
+    if (sourceType === '燁輝列管專案') {
+      setClientName('燁輝');
+    }
+  }, [sourceType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,9 +70,13 @@ export function NewPocProjectDialog({
       const res = await createPocProject({
         name,
         category,
+        sourceType,
+        clientName: clientName.trim() || '燁輝',
+        responsiblePm: responsiblePm.trim(),
+        clientContact: clientContact.trim(),
         caseNumber: caseNumber || undefined,
         expectedCompletionDate: expectedCompletionDate || undefined,
-        tpmOfficeContact,
+        tpmOfficeContact: responsiblePm.trim(),
         projectPurpose,
       });
 
@@ -58,9 +85,12 @@ export function NewPocProjectDialog({
         setName('');
         setCaseNumber('');
         setExpectedCompletionDate('');
-        setTpmOfficeContact('');
+        setResponsiblePm('');
+        setClientContact('');
         setProjectPurpose('');
         setCategory('評估案');
+        setSourceType('億威內部自建專案');
+        setClientName('燁輝');
         onOpenChange(false);
         onSuccess(res.data);
       } else {
@@ -73,54 +103,138 @@ export function NewPocProjectDialog({
     }
   };
 
+  // 整理 PM 下拉選項清單 (來自系統使用者)
+  const pmOptions = users.map((u) => ({
+    value: u.displayName || u.email,
+    label: u.displayName || u.email,
+    hint: u.role === 'admin' ? '管理員' : '成員',
+  }));
+
+  // 客戶窗口預設建議名單 (包含常見聯絡人與選中客戶主要窗口)
+  const contactOptions = [
+    '黃裕峰',
+    '張簡',
+    ...(clientList.find((c) => c.name === clientName)?.contactPerson
+      ? [clientList.find((c) => c.name === clientName)!.contactPerson!]
+      : []),
+  ].filter(Boolean);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold">
             <FolderPlus className="h-5 w-5 text-purple-600" />
             新增內部專案 (評估案 / 已開案)
           </DialogTitle>
           <p className="text-xs text-muted-foreground">
-            此專案供內部管制作業與待辦追蹤，<span className="text-purple-700 font-medium">不會公開於燁輝客戶端的進度管制總表</span>。
+            此專案供內部管制作業與待辦追蹤，可設定所屬來源型態、客戶名稱、負責PM及窗口。
           </p>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          {/* 專案類別切換 */}
+          {/* 1. 專案來源型態 (3選1) */}
           <div>
-            <Label className="text-xs font-semibold">專案類別 *</Label>
-            <div className="grid grid-cols-2 gap-2 mt-1">
+            <Label className="text-xs font-semibold">專案來源型態 *</Label>
+            <div className="grid grid-cols-3 gap-1.5 mt-1">
               <button
                 type="button"
-                onClick={() => setCategory('評估案')}
-                className={`py-2 px-3 rounded-md text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
-                  category === '評估案'
+                onClick={() => setSourceType('燁輝列管專案')}
+                className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                  sourceType === '燁輝列管專案'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>🏢 燁輝列管專案</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSourceType('億威內部自建專案')}
+                className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                  sourceType === '億威內部自建專案'
                     ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>📝 評估案 (POC / 前期驗證)</span>
+                <span>🏭 億威自建專案</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setCategory('已開案')}
-                className={`py-2 px-3 rounded-md text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
-                  category === '已開案'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                onClick={() => setSourceType('其他智慧製造專案')}
+                className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                  sourceType === '其他智慧製造專案'
+                    ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>🚀 已開案 (自主立案執行)</span>
+                <span>⚙️ 其他智造專案</span>
               </button>
             </div>
           </div>
 
+          {/* 2. 專案類別與客戶名稱 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-semibold">專案執行類別 *</Label>
+              <div className="grid grid-cols-2 gap-1.5 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setCategory('評估案')}
+                  className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                    category === '評估案'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>📝 評估案 (POC)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCategory('已開案')}
+                  className={`py-1.5 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                    category === '已開案'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>🚀 已開案</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold flex items-center gap-1">
+                <Building2 className="h-3.5 w-3.5 text-slate-500" />
+                客戶名稱 (下拉式) *
+              </Label>
+              <Select value={clientName} onValueChange={setClientName}>
+                <SelectTrigger className="mt-1 text-xs h-9">
+                  <SelectValue placeholder="請選擇客戶" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  {clientList.length > 0 ? (
+                    clientList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name} {c.code ? `(${c.code})` : ''}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="燁輝">燁輝 (預設)</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* 3. 專案名稱 */}
           <div>
             <Label className="text-xs font-semibold">專案名稱 *</Label>
             <Input
-              className="mt-1"
+              className="mt-1 text-xs"
               placeholder={category === '評估案' ? "例如：POC-堆高機雙鏡頭自主防撞評估" : "例如：全廠設備連網通訊介面升級"}
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -128,69 +242,81 @@ export function NewPocProjectDialog({
             />
           </div>
 
+          {/* 4. 負責 PM 與 客戶窗口 (下拉式 + 保留手動輸入) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs font-semibold">案號代碼 (選填)</Label>
+              <Label className="text-xs font-semibold flex items-center gap-1">
+                <UserCheck className="h-3.5 w-3.5 text-slate-500" />
+                負責 PM 是誰 (下拉/輸入)
+              </Label>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={responsiblePm}
+                  onChange={setResponsiblePm}
+                  options={pmOptions}
+                  placeholder="選擇成員或直接輸入..."
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold flex items-center gap-1">
+                <Users className="h-3.5 w-3.5 text-slate-500" />
+                客戶窗口是誰 (下拉/輸入)
+              </Label>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={clientContact}
+                  onChange={setClientContact}
+                  options={contactOptions}
+                  placeholder="選擇窗口或直接輸入..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 5. 案號代碼與預估完成日 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-semibold">案號代碼 (選填，留空自動編號)</Label>
               <Input
-                className="mt-1"
-                placeholder={category === '評估案' ? "例如：POC-01 (預設自動編號)" : "例如：PRJ-01 (預設自動編號)"}
+                className="mt-1 text-xs font-mono"
+                placeholder={category === '評估案' ? "POC-01" : "PRJ-01"}
                 value={caseNumber}
                 onChange={(e) => setCaseNumber(e.target.value)}
               />
             </div>
 
             <div>
-              <Label className="text-xs font-semibold">內部負責人 / TPM窗口</Label>
-              {users.length > 0 ? (
-                <Select value={tpmOfficeContact} onValueChange={setTpmOfficeContact}>
-                  <SelectTrigger className="mt-1 text-xs">
-                    <SelectValue placeholder="請選擇成員" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-48">
-                    <SelectItem value="未指定">-- 暫不指定 --</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.uid} value={u.displayName || u.email}>
-                        {u.displayName} ({u.role === 'admin' ? '管理員' : '成員'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  className="mt-1"
-                  placeholder="例如：徐智宏、Winona"
-                  value={tpmOfficeContact}
-                  onChange={(e) => setTpmOfficeContact(e.target.value)}
-                />
-              )}
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-slate-500" />
+                  專案預估完成日期 (選填)
+                </span>
+                {expectedCompletionDate && (
+                  <button
+                    type="button"
+                    onClick={() => setExpectedCompletionDate('')}
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    清除
+                  </button>
+                )}
+              </Label>
+              <Input
+                type="date"
+                className="mt-1 text-xs h-9"
+                value={expectedCompletionDate}
+                onChange={(e) => setExpectedCompletionDate(e.target.value)}
+              />
             </div>
           </div>
 
+          {/* 6. 專案目的說明 */}
           <div>
-            <Label className="text-xs font-semibold flex items-center justify-between">
-              <span>📅 專案預估完成日期 (選填，綁定整個專案)</span>
-              {expectedCompletionDate && (
-                <button
-                  type="button"
-                  onClick={() => setExpectedCompletionDate('')}
-                  className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                >
-                  清除
-                </button>
-              )}
-            </Label>
-            <Input
-              type="date"
-              className="mt-1 text-xs"
-              value={expectedCompletionDate}
-              onChange={(e) => setExpectedCompletionDate(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <Label className="text-xs font-semibold">專案目的 / 評估說明 (選填)</Label>
+            <Label className="text-xs font-semibold">專案目的 / 說明 (選填)</Label>
             <Textarea
-              className="mt-1 min-h-[70px] text-xs"
+              className="mt-1 min-h-[60px] text-xs"
               placeholder="簡要描述此案的目標、可行性驗證重點或預期效益..."
               value={projectPurpose}
               onChange={(e) => setProjectPurpose(e.target.value)}

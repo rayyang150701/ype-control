@@ -119,3 +119,26 @@ CREATE INDEX IF NOT EXISTS idx_action_items_due_date ON public.project_action_it
 ALTER TABLE public.project_action_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read project_action_items" ON public.project_action_items FOR SELECT USING (true);
 CREATE POLICY "Allow service role all project_action_items" ON public.project_action_items FOR ALL USING (auth.role() = 'service_role');
+
+-- 6. 客戶維護資料表 (Clients)
+CREATE TABLE IF NOT EXISTS public.clients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  code TEXT DEFAULT '',
+  contact_person TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  contact_email TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read clients" ON public.clients FOR SELECT USING (true);
+CREATE POLICY "Allow service role all clients" ON public.clients FOR ALL USING (auth.role() = 'service_role');
+
+-- 預設核心客戶
+INSERT INTO public.clients (name, code, contact_person, notes)
+VALUES ('燁輝', 'YP', '黃裕峰', '系統核心預設客戶')
+ON CONFLICT (name) DO NOTHING;
+

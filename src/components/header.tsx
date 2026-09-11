@@ -1,7 +1,7 @@
 
 'use client';
 import Image from 'next/image';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2 } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
@@ -204,6 +204,12 @@ export function Header() {
                         <span>成員管理</span>
                       </DropdownMenuItem>
                     </Link>
+                    <Link href="/clients" passHref>
+                      <DropdownMenuItem className="cursor-pointer">
+                        <Building2 className="mr-2 h-4 w-4" />
+                        <span>客戶維護管理</span>
+                      </DropdownMenuItem>
+                    </Link>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">
@@ -226,9 +232,9 @@ export function Header() {
         </div>
       </div>
 
-      {/* 雙視圖切換分頁列：客戶進度管制 vs 內部專案待辦追蹤 */}
+      {/* 雙視圖切換分頁列：客戶進度管制 vs 內部專案待辦追蹤 vs 客戶維護管理 */}
       <div className="w-full bg-slate-100/80 border-t px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link
             href="/dashboard"
             className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
@@ -249,9 +255,23 @@ export function Header() {
           >
             <span>📋 內部專案與待辦追蹤 (對內跟催 & AI 診斷)</span>
           </Link>
+          {isAdmin && (
+            <Link
+              href="/clients"
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                pathname.startsWith('/clients')
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+              }`}
+            >
+              <span>🏢 客戶維護管理</span>
+            </Link>
+          )}
         </div>
         <div className="text-xs text-muted-foreground hidden md:block">
-          {pathname.startsWith('/internal-tasks')
+          {pathname.startsWith('/clients')
+            ? '🏢 客戶維護介面：管理所有合作客戶名單'
+            : pathname.startsWith('/internal-tasks')
             ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}
         </div>

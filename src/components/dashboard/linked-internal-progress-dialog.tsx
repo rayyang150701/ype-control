@@ -21,7 +21,9 @@ import {
   ExternalLink, 
   Layers,
   FolderGit2,
-  Hourglass
+  Hourglass,
+  Building2,
+  Users
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { getLinkedInternalProjectDetails } from '@/lib/actions';
@@ -171,6 +173,26 @@ export function LinkedInternalProgressDialog({
                       </span>
                     )}
                     <h3 className="text-base font-bold text-slate-900">{project.name}</h3>
+
+                    {project.sourceType === '億威內部自建專案' ? (
+                      <Badge className="bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">
+                        🏭 億威自建
+                      </Badge>
+                    ) : project.sourceType === '其他智慧製造專案' ? (
+                      <Badge className="bg-teal-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">
+                        ⚙️ 其他智造
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-blue-700 text-white text-[11px] px-2 py-0.5 shadow-2xs">
+                        🏢 燁輝列管
+                      </Badge>
+                    )}
+
+                    <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-[11px] px-2 py-0.5 flex items-center gap-1">
+                      <Building2 className="h-3 w-3 text-slate-500" />
+                      客戶: {project.clientName || '燁輝'}
+                    </Badge>
+
                     {getStatusBadge()}
                     {project.autoCompletedByClient && (
                       <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 text-[11px]">
@@ -179,18 +201,25 @@ export function LinkedInternalProgressDialog({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {project.expectedCompletionDate && (
                       <div className="text-xs text-slate-700 flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
                         <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                        <span>專案預計完成: <strong>{project.expectedCompletionDate}</strong></span>
+                        <span>目標完成: <strong>{project.expectedCompletionDate}</strong></span>
                       </div>
                     )}
 
-                    {project.tpmOfficeContact && (
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    {(project.responsiblePm || project.tpmOfficeContact) && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
                         <UserCheck className="h-3.5 w-3.5 text-slate-500" />
-                        <span>TPM 窗口: <strong>{project.tpmOfficeContact}</strong></span>
+                        <span>PM: <strong>{project.responsiblePm || project.tpmOfficeContact}</strong></span>
+                      </div>
+                    )}
+
+                    {(project.clientContact || project.yiehPhuiProjectManager) && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        <Users className="h-3.5 w-3.5 text-slate-500" />
+                        <span>窗口: <strong>{project.clientContact || project.yiehPhuiProjectManager}</strong></span>
                       </div>
                     )}
                   </div>

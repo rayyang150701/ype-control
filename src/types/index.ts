@@ -14,6 +14,20 @@ export interface User {
 
 export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'cancelled' | 'poc';
 
+export type ProjectSourceType = '燁輝列管專案' | '億威內部自建專案' | '其他智慧製造專案';
+
+export interface Client {
+  id: string;
+  name: string;
+  code?: string;
+  contactPerson?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  notes?: string;
+  createdAt: Timestamp | Date | string;
+  updatedAt?: Timestamp | Date | string;
+}
+
 export interface Project {
   id: string;
   caseNumber: string;
@@ -22,6 +36,10 @@ export interface Project {
   isInternal?: boolean;
   projectCategory?: '評估案' | '已開案';
   internalStatus?: 'in_progress' | 'completed' | 'terminated';
+  sourceType?: ProjectSourceType;
+  clientName?: string;
+  responsiblePm?: string;
+  clientContact?: string;
   expectedCompletionDate?: string | null;
   autoCompletedByClient?: boolean;
   linkedInternalProjectId?: string;
@@ -50,6 +68,10 @@ export interface InternalProjectOption {
   name: string;
   category: '評估案' | '已開案';
   internalStatus: 'in_progress' | 'completed' | 'terminated';
+  sourceType?: ProjectSourceType;
+  clientName?: string;
+  responsiblePm?: string;
+  clientContact?: string;
   expectedCompletionDate?: string | null;
   tpmOfficeContact?: string;
 }

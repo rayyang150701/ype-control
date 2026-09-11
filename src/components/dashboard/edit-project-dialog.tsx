@@ -21,12 +21,22 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { User, FullProject, SubProjectWithLatestLog, InternalProjectOption } from '@/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
-import { Separator } from '../ui/separator';
-import { updateProject, getUsers, resumeProject, getFullProjectById, getInternalProjectsForDropdown } from '@/lib/actions';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { updateProject, getUsers, resumeProject, getFullProjectById, getInternalProjectsForDropdown, deleteProject } from '@/lib/actions';
 import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const subProjectSchema = z.object({
@@ -64,6 +74,28 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const [users, setUsers] = useState<User[]>([]);
   const [internalProjects, setInternalProjects] = useState<InternalProjectOption[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    setIsDeletingProject(true);
+    try {
+      const res = await deleteProject(project.id);
+      if (res.success) {
+        toast({ title: '專案已刪除', description: res.message });
+        setShowDeleteConfirm(false);
+        setIsOpen(false);
+        window.location.reload();
+      } else {
+        toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: '刪除異常', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
   
   const {
     register,
@@ -472,17 +504,66 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
             </div>
 
             {/* Footer */}
-            <DialogFooter className='pt-4'>
-              <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
-                取消
+            <DialogFooter className='pt-4 flex flex-row items-center justify-between sm:justify-between w-full border-t'>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="gap-1 text-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                刪除此專案全部項目
               </Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending ? '儲存中...' : '儲存變更'}
-              </Button>
+
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
+                  取消
+                </Button>
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? '儲存中...' : '儲存變更'}
+                </Button>
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* 刪除專案確認對話框 */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              確認刪除專案「{project?.name}」？
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-xs">
+              <p>
+                ⚠️ 警告：此操作將會<strong>直接刪除該專案的所有內容</strong>，包括：
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-slate-700">
+                <li>專案主檔與所有子專案</li>
+                <li>專案所屬的所有週報紀錄</li>
+                <li>專案所屬的所有內部待辦事項與追蹤歷程</li>
+                <li>解除與其他專案的所有雙向關聯</li>
+              </ul>
+              <p className="text-rose-600 font-semibold pt-1">
+                此動作刪除後將無法復原，請確認是否繼續執行？
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingProject}>取消返回</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProject}
+              disabled={isDeletingProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingProject ? '正在刪除專案項目...' : '確認刪除此專案'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

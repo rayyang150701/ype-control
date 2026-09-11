@@ -1,8 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption } from '@/types';
+import { createClient as getSupabaseClient } from '@/lib/supabase/server';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType } from '@/types';
 import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 /**
@@ -46,6 +46,10 @@ export interface ProjectMeta {
     isInternal?: boolean;
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    sourceType?: ProjectSourceType;
+    clientName?: string;
+    responsiblePm?: string;
+    clientContact?: string;
     expectedCompletionDate?: string | null;
     autoCompletedByClient?: boolean;
     linkedInternalProjectId?: string;
@@ -73,7 +77,7 @@ function serializeProjectMeta(meta: ProjectMeta): string {
 // --- 成員管理 ---
 
 export async function getUsers(): Promise<User[]> {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase.from('users').select('*');
     if (error || !data) return [];
 
@@ -88,7 +92,7 @@ export async function getUsers(): Promise<User[]> {
 }
 
 export async function createUser(data: any) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { error } = await supabase.from('users').insert({
             firebase_uid: crypto.randomUUID(), // placeholder since no longer using firebase auth
@@ -107,7 +111,7 @@ export async function createUser(data: any) {
 }
 
 export async function updateUser(uid: string, data: any) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { error } = await supabase.from('users').update({
             email: data.email,
@@ -124,7 +128,7 @@ export async function updateUser(uid: string, data: any) {
 }
 
 export async function deleteUser(uid: string) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { error } = await supabase.from('users').delete().eq('uid', uid);
         if (error) throw error;
@@ -135,28 +139,217 @@ export async function deleteUser(uid: string) {
     }
 }
 
+// --- 客戶維護管理 ---
+
+export async function getClients(): Promise<Client[]> {
+    const supabase = getSupabaseClient();
+    const defaultClient: Client = {
+        id: 'default-yieh-phui',
+        name: '燁輝',
+        code: 'YP',
+        contactPerson: '黃裕峰',
+        contactPhone: '',
+        contactEmail: '',
+        notes: '系統核心預設客戶',
+        createdAt: new Date().toISOString(),
+    };
+
+    try {
+        const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: true });
+        if (error || !data || data.length === 0) {
+            return [defaultClient];
+        }
+
+        const clientList: Client[] = data.map((doc: any) => ({
+            id: doc.id,
+            name: doc.name,
+            code: doc.code || '',
+            contactPerson: doc.contact_person || '',
+            contactPhone: doc.contact_phone || '',
+            contactEmail: doc.contact_email || '',
+            notes: doc.notes || '',
+            createdAt: formatISO(doc.created_at),
+            updatedAt: formatISOOptional(doc.updated_at),
+        }));
+
+        // 確保「燁輝」必然在清單首位
+        if (!clientList.some(c => c.name === '燁輝')) {
+            clientList.unshift(defaultClient);
+        }
+
+        return clientList;
+    } catch (e) {
+        return [defaultClient];
+    }
+}
+
+export async function createClient(data: {
+    name: string;
+    code?: string;
+    contactPerson?: string;
+    contactPhone?: string;
+    contactEmail?: string;
+    notes?: string;
+}) {
+    const supabase = getSupabaseClient();
+    try {
+        if (!data.name || !data.name.trim()) {
+            return { success: false, message: '客戶名稱為必填' };
+        }
+        const { error } = await supabase.from('clients').insert({
+            name: data.name.trim(),
+            code: data.code?.trim() || '',
+            contact_person: data.contactPerson?.trim() || '',
+            contact_phone: data.contactPhone?.trim() || '',
+            contact_email: data.contactEmail?.trim() || '',
+            notes: data.notes?.trim() || '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+        revalidatePath('/clients');
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+        return { success: true, message: `客戶「${data.name}」已成功新增！` };
+    } catch (err: any) {
+        console.error('新增客戶失敗:', err);
+        return { success: false, message: err?.message || '新增客戶失敗，請確認資料庫是否已建立 clients 表' };
+    }
+}
+
+export async function updateClient(id: string, data: {
+    name: string;
+    code?: string;
+    contactPerson?: string;
+    contactPhone?: string;
+    contactEmail?: string;
+    notes?: string;
+}) {
+    const supabase = getSupabaseClient();
+    try {
+        if (!data.name || !data.name.trim()) {
+            return { success: false, message: '客戶名稱為必填' };
+        }
+        const { error } = await supabase.from('clients').update({
+            name: data.name.trim(),
+            code: data.code?.trim() || '',
+            contact_person: data.contactPerson?.trim() || '',
+            contact_phone: data.contactPhone?.trim() || '',
+            contact_email: data.contactEmail?.trim() || '',
+            notes: data.notes?.trim() || '',
+            updated_at: new Date().toISOString(),
+        }).eq('id', id);
+        if (error) throw error;
+        revalidatePath('/clients');
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+        return { success: true, message: `客戶「${data.name}」已成功更新！` };
+    } catch (err: any) {
+        console.error('更新客戶失敗:', err);
+        return { success: false, message: err?.message || '更新客戶失敗' };
+    }
+}
+
+export async function deleteClient(id: string, name: string) {
+    if (name === '燁輝') {
+        return { success: false, message: '「燁輝」為系統預設核心客戶，不可刪除！' };
+    }
+    const supabase = getSupabaseClient();
+    try {
+        const { error } = await supabase.from('clients').delete().eq('id', id);
+        if (error) throw error;
+        revalidatePath('/clients');
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+        return { success: true, message: `客戶「${name}」已成功刪除！` };
+    } catch (err: any) {
+        console.error('刪除客戶失敗:', err);
+        return { success: false, message: err?.message || '刪除客戶失敗' };
+    }
+}
+
+// --- 專案刪除 (完整級聯刪除) ---
+
+export async function deleteProject(projectId: string) {
+    const supabase = getSupabaseClient();
+    try {
+        // 1. 刪除專案所屬內部待辦事項
+        await supabase.from('project_action_items').delete().eq('project_id', projectId);
+
+        // 2. 刪除專案所屬子專案及週報紀錄
+        const { data: subProjects } = await supabase.from('sub_projects').select('id').eq('project_id', projectId);
+        if (subProjects && subProjects.length > 0) {
+            const subProjectIds = subProjects.map(sp => sp.id);
+            await supabase.from('progress_logs').delete().in('sub_project_id', subProjectIds);
+            await supabase.from('sub_projects').delete().eq('project_id', projectId);
+        }
+
+        // 3. 解除可能與其他專案存在的關聯
+        const { data: linkedProjs } = await supabase.from('projects').select('id, on_hold_notes');
+        if (linkedProjs) {
+            for (const p of linkedProjs) {
+                const meta = parseProjectMeta(p.on_hold_notes);
+                let changed = false;
+                if (meta.linkedInternalProjectId === projectId) {
+                    delete meta.linkedInternalProjectId;
+                    changed = true;
+                }
+                if (meta.linkedCustomerProjectId === projectId) {
+                    delete meta.linkedCustomerProjectId;
+                    changed = true;
+                }
+                if (changed) {
+                    await supabase.from('projects').update({
+                        on_hold_notes: serializeProjectMeta(meta)
+                    }).eq('id', p.id);
+                }
+            }
+        }
+
+        // 4. 刪除主專案
+        const { error: deleteErr } = await supabase.from('projects').delete().eq('id', projectId);
+        if (deleteErr) throw deleteErr;
+
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+        return { success: true, message: '專案及所屬所有項目已成功刪除！' };
+    } catch (err: any) {
+        console.error('刪除專案失敗:', err);
+        return { success: false, message: err?.message || '刪除專案失敗' };
+    }
+}
+
 // --- 專案管理 ---
 
 export async function createProject(data: any) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const userId = 'admin-user'; 
 
     try {
+        const clientName = data.clientName?.trim() || '燁輝';
+        const sourceType: ProjectSourceType = data.sourceType || '燁輝列管專案';
+        const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || data.egigaContact?.trim() || '';
+        const clientContact = data.clientContact?.trim() || data.yiehPhuiProjectManager?.trim() || '';
+
         const metaPayload: ProjectMeta = {
             isInternal: false,
+            sourceType,
+            clientName,
+            responsiblePm,
+            clientContact,
             linkedInternalProjectId: data.linkedInternalProjectId || undefined,
         };
 
         const { data: newProject, error: projectError } = await supabase.from('projects').insert({
-            firebase_id: crypto.randomUUID(), // Mocking firebase_id for now
+            firebase_id: crypto.randomUUID(),
             name: data.name,
             case_number: String(data.caseNumber).trim(),
             status: 'active',
             created_by: userId,
             project_purpose: data.projectPurpose ?? '',
             current_status_and_issues: data.currentStatusAndIssues ?? '',
-            yieh_phui_project_manager: data.yiehPhuiProjectManager ?? '',
-            tpm_office_contact: data.tpmOfficeContact ?? '',
+            yieh_phui_project_manager: clientContact,
+            tpm_office_contact: responsiblePm,
             egiga_contact: data.egigaContact ?? '',
             is_on_hold: false,
             on_hold_notes: serializeProjectMeta(metaPayload),
@@ -206,7 +399,7 @@ export async function createProject(data: any) {
 }
 
 export async function updateProject(projectId: string, data: any, originalSubProjectIds: string[]) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         // 取得現有 metadata
         const { data: existingProj } = await supabase
@@ -215,6 +408,16 @@ export async function updateProject(projectId: string, data: any, originalSubPro
             .eq('id', projectId)
             .single();
         const currentMeta = parseProjectMeta(existingProj?.on_hold_notes);
+        
+        const clientName = data.clientName?.trim() || currentMeta.clientName || '燁輝';
+        const sourceType: ProjectSourceType = data.sourceType || currentMeta.sourceType || '燁輝列管專案';
+        const responsiblePm = data.responsiblePm !== undefined ? data.responsiblePm.trim() : (currentMeta.responsiblePm || data.tpmOfficeContact || '');
+        const clientContact = data.clientContact !== undefined ? data.clientContact.trim() : (currentMeta.clientContact || data.yiehPhuiProjectManager || '');
+
+        currentMeta.clientName = clientName;
+        currentMeta.sourceType = sourceType;
+        currentMeta.responsiblePm = responsiblePm;
+        currentMeta.clientContact = clientContact;
         currentMeta.linkedInternalProjectId = data.linkedInternalProjectId || undefined;
         currentMeta.isInternal = false;
 
@@ -223,8 +426,8 @@ export async function updateProject(projectId: string, data: any, originalSubPro
             name: data.name,
             project_purpose: data.projectPurpose ?? '',
             current_status_and_issues: data.currentStatusAndIssues ?? '',
-            yieh_phui_project_manager: data.yiehPhuiProjectManager ?? '',
-            tpm_office_contact: data.tpmOfficeContact ?? '',
+            yieh_phui_project_manager: clientContact,
+            tpm_office_contact: responsiblePm,
             egiga_contact: data.egigaContact ?? '',
             on_hold_notes: serializeProjectMeta(currentMeta),
         }).eq('id', projectId);
@@ -303,7 +506,7 @@ export async function updateProject(projectId: string, data: any, originalSubPro
 // --- 週報管理 ---
 
 export async function addProgressLog(projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const userId = 'admin-user'; 
     
     const payload = {
@@ -349,7 +552,7 @@ export async function addProgressLog(projectId: string, subProjectId: string, lo
 }
 
 export async function updateProgressLog(logId: string, projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const { data: updatedLog, error } = await supabase.from('progress_logs').update({
         reporting_period: logData.reportingPeriod,
         execution_summary: logData.executionSummary,
@@ -389,7 +592,7 @@ export async function updateProgressLog(logId: string, projectId: string, subPro
 }
 
 export async function deleteProgressLog(logId: string) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const { error } = await supabase.from('progress_logs').delete().eq('id', logId);
     if (error) throw error;
     revalidatePath('/dashboard');
@@ -397,7 +600,7 @@ export async function deleteProgressLog(logId: string) {
 }
 
 export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     
     // First, delete related progress logs to avoid foreign key constraints
     const { error: logsError } = await supabase.from('progress_logs').delete().in('sub_project_id', subProjectIds);
@@ -421,7 +624,7 @@ export async function deleteSubProjects(projectId: string, subProjectIds: string
 }
 
 export async function setProjectOnHold(projectId: string, subProjectIds: string[], onHoldData: any) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const onHoldPayload = {
             is_on_hold: true,
@@ -449,7 +652,7 @@ export async function setProjectOnHold(projectId: string, subProjectIds: string[
 }
 
 export async function resumeProject(projectId: string, subProjectId?: string) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     if (subProjectId) {
         await supabase.from('sub_projects').update({ is_on_hold: false }).eq('id', subProjectId);
     } else {
@@ -460,7 +663,7 @@ export async function resumeProject(projectId: string, subProjectId?: string) {
 }
 
 export async function resumeProjects(projectIds: string[], subProjectsByProject: any) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     if (projectIds.length > 0) {
         await supabase.from('projects').update({ is_on_hold: false, status: 'active' }).in('id', projectIds);
     }
@@ -482,7 +685,7 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
  * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序、子項目 1,2,3 排序
  */
 async function getOptimizedProjectData() {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     
     const [
         { data: projectsSnap }, 
@@ -509,16 +712,25 @@ async function getOptimizedProjectData() {
 
             caseNumberProcessed.add(caseNumber);
             const meta = parseProjectMeta(doc.on_hold_notes);
+            const clientName = meta.clientName?.trim() || '燁輝';
+            const sourceType: ProjectSourceType = meta.sourceType || '燁輝列管專案';
+            const responsiblePm = meta.responsiblePm?.trim() || doc.tpm_office_contact || doc.egiga_contact || '';
+            const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
+
             projectsMap.set(doc.id, {
                 id: doc.id,
                 caseNumber,
                 name: doc.name || '',
                 status: doc.status || 'active',
+                sourceType,
+                clientName,
+                responsiblePm,
+                clientContact,
                 linkedInternalProjectId: meta.linkedInternalProjectId,
                 projectPurpose: doc.project_purpose || '',
                 currentStatusAndIssues: doc.current_status_and_issues || '',
-                yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
-                tpmOfficeContact: doc.tpm_office_contact || '',
+                yiehPhuiProjectManager: clientContact,
+                tpmOfficeContact: responsiblePm,
                 egigaContact: doc.egiga_contact || '',
                 isOnHold: !!doc.is_on_hold,
                 createdAt: formatISO(doc.created_at),
@@ -660,7 +872,7 @@ export const getFullProjectById = async (id: string) => {
  * 取得單一子專案的所有歷史週報
  */
 export const getProgressLogsForSubProject = async (projectId: string, subProjectId: string): Promise<ProgressLog[]> => {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const { data: snap } = await supabase.from('progress_logs').select('*').eq('sub_project_id', subProjectId);
     
     if (!snap) return [];
@@ -695,7 +907,7 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
 export async function getActionItems(projectId?: string): Promise<ProjectActionItem[]> {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         let query = supabase.from('project_action_items').select('*');
         if (projectId) {
@@ -756,7 +968,7 @@ export async function createActionItem(data: {
     notes?: string;
     lessonLearnt?: string;
 }) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { error } = await supabase.from('project_action_items').insert({
             project_id: data.projectId,
@@ -793,7 +1005,7 @@ export async function updateActionItem(id: string, data: Partial<{
     notes: string;
     lessonLearnt: string;
 }>) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const updatePayload: any = {
             ...data,
@@ -821,7 +1033,7 @@ export async function updateActionItem(id: string, data: Partial<{
 }
 
 export async function deleteActionItem(id: string) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { error } = await supabase
             .from('project_action_items')
@@ -838,7 +1050,7 @@ export async function deleteActionItem(id: string) {
 }
 
 export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     const [
         { data: projectsData, error: projErr },
         { data: actionItemsData }
@@ -894,6 +1106,11 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             internalStatus = 'terminated';
         }
 
+        const clientName = meta.clientName?.trim() || '燁輝';
+        const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
+        const responsiblePm = meta.responsiblePm?.trim() || doc.tpm_office_contact || doc.egiga_contact || '';
+        const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
+
         return {
             id: doc.id,
             caseNumber: doc.case_number,
@@ -902,13 +1119,17 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             isInternal: true,
             projectCategory: isEval ? '評估案' : '已開案',
             internalStatus,
+            sourceType,
+            clientName,
+            responsiblePm,
+            clientContact,
             expectedCompletionDate: meta.expectedCompletionDate || null,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: doc.project_purpose || '',
             currentStatusAndIssues: doc.current_status_and_issues || '',
-            yiehPhuiProjectManager: doc.yieh_phui_project_manager || '',
-            tpmOfficeContact: doc.tpm_office_contact || '',
+            yiehPhuiProjectManager: clientContact,
+            tpmOfficeContact: responsiblePm,
             egigaContact: doc.egiga_contact || '',
             isOnHold: !!doc.is_on_hold,
             createdAt: formatISO(doc.created_at),
@@ -922,21 +1143,34 @@ export async function createInternalProject(data: {
     name: string;
     caseNumber?: string;
     category?: '評估案' | '已開案';
+    sourceType?: ProjectSourceType;
+    clientName?: string;
+    responsiblePm?: string;
+    clientContact?: string;
     projectPurpose?: string;
     tpmOfficeContact?: string;
     expectedCompletionDate?: string | null;
 }) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const category = data.category || '評估案';
         const isEval = category === '評估案';
         const defaultPrefix = isEval ? 'POC' : 'PRJ';
         const caseNum = data.caseNumber?.trim() || `${defaultPrefix}-${Date.now().toString().slice(-4)}`;
 
+        const sourceType: ProjectSourceType = data.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
+        const clientName = data.clientName?.trim() || '燁輝';
+        const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || '';
+        const clientContact = data.clientContact?.trim() || '';
+
         const meta: ProjectMeta = {
             isInternal: true,
             category,
             internalStatus: 'in_progress',
+            sourceType,
+            clientName,
+            responsiblePm,
+            clientContact,
             expectedCompletionDate: data.expectedCompletionDate || null,
         };
 
@@ -946,11 +1180,12 @@ export async function createInternalProject(data: {
             case_number: caseNum,
             status: isEval ? 'evaluation' : 'active',
             project_purpose: data.projectPurpose || (isEval ? '內部評估案 / POC 項目' : '內部自主開案項目'),
-            tpm_office_contact: data.tpmOfficeContact || '',
+            tpm_office_contact: responsiblePm,
+            yieh_phui_project_manager: clientContact,
             is_on_hold: false,
             on_hold_notes: serializeProjectMeta(meta),
             created_at: new Date().toISOString()
-        }).select('id, name, case_number, status, tpm_office_contact, project_purpose, created_at, on_hold_notes').single();
+        }).select('id, name, case_number, status, tpm_office_contact, yieh_phui_project_manager, project_purpose, created_at, on_hold_notes').single();
 
         if (error) throw error;
         revalidatePath('/internal-tasks');
@@ -964,6 +1199,10 @@ export async function createInternalProject(data: {
                 isInternal: true,
                 projectCategory: category,
                 internalStatus: 'in_progress' as const,
+                sourceType,
+                clientName,
+                responsiblePm,
+                clientContact,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
                 subProjects: []
             } 
@@ -979,11 +1218,15 @@ export async function updateInternalProject(projectId: string, data: {
     caseNumber?: string;
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    sourceType?: ProjectSourceType;
+    clientName?: string;
+    responsiblePm?: string;
+    clientContact?: string;
     tpmOfficeContact?: string;
     projectPurpose?: string;
     expectedCompletionDate?: string | null;
 }) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { data: proj, error: fetchErr } = await supabase
             .from('projects')
@@ -998,6 +1241,10 @@ export async function updateInternalProject(projectId: string, data: {
         if (data.category) meta.category = data.category;
         if (data.internalStatus) meta.internalStatus = data.internalStatus;
         if (data.expectedCompletionDate !== undefined) meta.expectedCompletionDate = data.expectedCompletionDate;
+        if (data.sourceType) meta.sourceType = data.sourceType;
+        if (data.clientName) meta.clientName = data.clientName.trim();
+        if (data.responsiblePm !== undefined) meta.responsiblePm = data.responsiblePm.trim();
+        if (data.clientContact !== undefined) meta.clientContact = data.clientContact.trim();
 
         const updateData: any = {
             name: data.name.trim(),
@@ -1006,7 +1253,11 @@ export async function updateInternalProject(projectId: string, data: {
         };
 
         if (data.caseNumber !== undefined) updateData.case_number = data.caseNumber.trim();
-        if (data.tpmOfficeContact !== undefined) updateData.tpm_office_contact = data.tpmOfficeContact;
+        
+        const effectivePm = data.responsiblePm !== undefined ? data.responsiblePm.trim() : (data.tpmOfficeContact !== undefined ? data.tpmOfficeContact.trim() : undefined);
+        if (effectivePm !== undefined) updateData.tpm_office_contact = effectivePm;
+
+        if (data.clientContact !== undefined) updateData.yieh_phui_project_manager = data.clientContact.trim();
         if (data.projectPurpose !== undefined) updateData.project_purpose = data.projectPurpose;
 
         if (data.category === '已開案') {
@@ -1044,8 +1295,12 @@ export async function updateInternalProject(projectId: string, data: {
                 caseNumber: data.caseNumber?.trim() ?? proj.case_number,
                 projectCategory: meta.category,
                 internalStatus: meta.internalStatus,
+                sourceType: meta.sourceType,
+                clientName: meta.clientName,
+                responsiblePm: meta.responsiblePm,
+                clientContact: meta.clientContact,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
-                tpmOfficeContact: data.tpmOfficeContact ?? proj.tpm_office_contact,
+                tpmOfficeContact: effectivePm ?? proj.tpm_office_contact,
                 projectPurpose: data.projectPurpose ?? proj.project_purpose,
             }
         };
@@ -1062,7 +1317,7 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated';
 }) {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { data: proj, error: fetchErr } = await supabase
             .from('projects')
@@ -1126,7 +1381,7 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
 
 export async function syncInternalProjectCompletion(internalProjectId: string, isCompleted: boolean) {
     if (!internalProjectId) return;
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const { data: proj } = await supabase
             .from('projects')
@@ -1165,6 +1420,10 @@ export async function getInternalProjectsForDropdown(): Promise<InternalProjectO
         name: p.name,
         category: p.projectCategory || '已開案',
         internalStatus: p.internalStatus || 'in_progress',
+        sourceType: p.sourceType,
+        clientName: p.clientName,
+        responsiblePm: p.responsiblePm,
+        clientContact: p.clientContact,
         expectedCompletionDate: p.expectedCompletionDate || null,
         tpmOfficeContact: p.tpmOfficeContact,
     }));
@@ -1174,7 +1433,7 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
     project: FullProject;
     actionItems: ProjectActionItem[];
 } | null> {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
     try {
         const [
             { data: proj, error: projErr },
@@ -1189,6 +1448,11 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
         const meta = parseProjectMeta(proj.on_hold_notes);
         const isEval = meta.category ? meta.category === '評估案' : (proj.status === 'poc' || proj.status === 'evaluation');
 
+        const clientName = meta.clientName?.trim() || '燁輝';
+        const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
+        const responsiblePm = meta.responsiblePm?.trim() || proj.tpm_office_contact || proj.egiga_contact || '';
+        const clientContact = meta.clientContact?.trim() || proj.yieh_phui_project_manager || '';
+
         const fullProj: FullProject = {
             id: proj.id,
             caseNumber: proj.case_number,
@@ -1197,13 +1461,17 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
             isInternal: true,
             projectCategory: isEval ? '評估案' : '已開案',
             internalStatus: meta.internalStatus || (proj.status === 'completed' ? 'completed' : proj.status === 'terminated' || proj.status === 'cancelled' ? 'terminated' : 'in_progress'),
+            sourceType,
+            clientName,
+            responsiblePm,
+            clientContact,
             expectedCompletionDate: meta.expectedCompletionDate || null,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: proj.project_purpose || '',
             currentStatusAndIssues: proj.current_status_and_issues || '',
-            yiehPhuiProjectManager: proj.yieh_phui_project_manager || '',
-            tpmOfficeContact: proj.tpm_office_contact || '',
+            yiehPhuiProjectManager: clientContact,
+            tpmOfficeContact: responsiblePm,
             egigaContact: proj.egiga_contact || '',
             isOnHold: !!proj.is_on_hold,
             createdAt: formatISO(proj.created_at),

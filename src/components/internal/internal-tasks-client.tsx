@@ -29,7 +29,9 @@ import {
   Filter,
   Rocket,
   Ban,
-  RotateCcw
+  RotateCcw,
+  Building2,
+  Users
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
@@ -46,18 +48,20 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import type { FullProject, ProjectActionItem, ActionItemPhase, ActionItemStatus, User } from '@/types';
+import type { FullProject, ProjectActionItem, ActionItemPhase, ActionItemStatus, User, Client, ProjectSourceType } from '@/types';
 
 interface InternalTasksClientProps {
   initialProjects: FullProject[];
   initialActionItems: ProjectActionItem[];
   users?: User[];
+  clients?: Client[];
 }
 
 export function InternalTasksClient({
   initialProjects,
   initialActionItems,
   users = [],
+  clients = [],
 }: InternalTasksClientProps) {
   const { isAdmin } = useAdmin();
   const { toast } = useToast();
@@ -69,7 +73,7 @@ export function InternalTasksClient({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '已結案'>('all');
   const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'completed' | 'terminated'>('all');
-  const [selectedProjectType, setSelectedProjectType] = useState<'all' | 'poc' | 'client'>('all');
+  const [selectedSourceType, setSelectedSourceType] = useState<'all' | ProjectSourceType>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
@@ -244,11 +248,12 @@ export function InternalTasksClient({
       });
     }
 
-    // 3. 舊專案類型相容 (poc vs client)
-    if (selectedProjectType === 'poc') {
-      projectList = projectList.filter((p) => p.status === 'poc');
-    } else if (selectedProjectType === 'client') {
-      projectList = projectList.filter((p) => p.status !== 'poc');
+    // 3. 專案來源型態篩選 (燁輝列管專案 vs 億威內部自建專案 vs 其他智慧製造專案)
+    if (selectedSourceType !== 'all') {
+      projectList = projectList.filter((p) => {
+        const src = p.sourceType || (p.projectCategory === '評估案' || p.status === 'poc' ? '億威內部自建專案' : '燁輝列管專案');
+        return src === selectedSourceType;
+      });
     }
 
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
@@ -264,7 +269,7 @@ export function InternalTasksClient({
       } else {
         // 若此待辦所屬專案存在於系統專案名單中，表示該專案已被目前條件 (如已結案/類別/專案類型) 過濾，不可重新加入！
         const projectExists = projects.some((p) => p.id === item.projectId);
-        if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedProjectType === 'all') {
+        if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedSourceType === 'all') {
           // 僅當為資料庫完全不存在的孤兒資料，且處於「全部無篩選」狀態時，才暫存為未分類專案
           const dummyProj: FullProject = {
             id: item.projectId,
@@ -285,10 +290,14 @@ export function InternalTasksClient({
 
     // 3. 搜尋與空專案過濾
     const result = Array.from(map.values()).filter((group) => {
-      // 專案本身是否符合搜尋關鍵字 (案名、案號、窗口)
+      // 專案本身是否符合搜尋關鍵字 (案名、案號、客戶名稱、PM、窗口、來源型態)
       const projectMatchesSearch = queryLower
         ? group.project.name.toLowerCase().includes(queryLower) ||
           (group.project.caseNumber && group.project.caseNumber.toLowerCase().includes(queryLower)) ||
+          (group.project.clientName && group.project.clientName.toLowerCase().includes(queryLower)) ||
+          (group.project.responsiblePm && group.project.responsiblePm.toLowerCase().includes(queryLower)) ||
+          (group.project.clientContact && group.project.clientContact.toLowerCase().includes(queryLower)) ||
+          (group.project.sourceType && group.project.sourceType.toLowerCase().includes(queryLower)) ||
           (group.project.tpmOfficeContact && group.project.tpmOfficeContact.toLowerCase().includes(queryLower))
         : false;
 
@@ -334,7 +343,7 @@ export function InternalTasksClient({
     searchQuery,
     selectedCategory,
     selectedInternalStatus,
-    selectedProjectType,
+    selectedSourceType,
     selectedPhase,
     selectedStatus,
     selectedWaitingOn,
@@ -666,15 +675,16 @@ export function InternalTasksClient({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 專案來源篩選 */}
-          <Select value={selectedProjectType} onValueChange={(val: any) => setSelectedProjectType(val)}>
-            <SelectTrigger className="w-[145px] h-9 text-xs font-medium">
-              <SelectValue placeholder="專案類型" />
+          {/* 專案來源型態篩選 */}
+          <Select value={selectedSourceType} onValueChange={(val: any) => setSelectedSourceType(val)}>
+            <SelectTrigger className="w-[165px] h-9 text-xs font-medium">
+              <SelectValue placeholder="專案來源型態" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部來源 ({projects.length})</SelectItem>
-              <SelectItem value="poc">🧪 內部自建專案 ({projects.filter(p => p.status === 'poc').length})</SelectItem>
-              <SelectItem value="client">🏢 燁輝客戶列管 ({projects.filter(p => p.status !== 'poc').length})</SelectItem>
+              <SelectItem value="all">全部來源型態 ({projects.length})</SelectItem>
+              <SelectItem value="燁輝列管專案">🏢 燁輝列管專案</SelectItem>
+              <SelectItem value="億威內部自建專案">🏭 億威自建專案</SelectItem>
+              <SelectItem value="其他智慧製造專案">⚙️ 其他智造專案</SelectItem>
             </SelectContent>
           </Select>
 
@@ -721,7 +731,7 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
-          {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedProjectType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
+          {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedSourceType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
             <Button
               variant="ghost"
               size="sm"
@@ -729,7 +739,7 @@ export function InternalTasksClient({
                 setSearchQuery('');
                 setSelectedCategory('all');
                 setSelectedInternalStatus('all');
-                setSelectedProjectType('all');
+                setSelectedSourceType('all');
                 setSelectedPhase('all');
                 setSelectedStatus('all');
                 setSelectedWaitingOn('all');
@@ -836,6 +846,21 @@ export function InternalTasksClient({
                         )}
                         <h2 className="text-base font-bold text-slate-900">{project.name}</h2>
                         
+                        {/* 專案來源型態標籤 */}
+                        {project.sourceType === '億威內部自建專案' ? (
+                          <Badge className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
+                            <span>🏭 億威自建</span>
+                          </Badge>
+                        ) : project.sourceType === '其他智慧製造專案' ? (
+                          <Badge className="bg-teal-700 hover:bg-teal-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
+                            <span>⚙️ 其他智造</span>
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-blue-700 hover:bg-blue-800 text-white text-[11px] px-2 py-0.5 shadow-2xs flex items-center gap-1">
+                            <span>🏢 燁輝列管</span>
+                          </Badge>
+                        )}
+
                         {/* 專案類別標籤 */}
                         {isEvalCategory ? (
                           <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-2 py-0.5 shadow-xs flex items-center gap-1">
@@ -846,6 +871,12 @@ export function InternalTasksClient({
                             <span>🚀 已開案</span>
                           </Badge>
                         )}
+
+                        {/* 客戶名稱標籤 */}
+                        <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-[11px] px-2 py-0.5 flex items-center gap-1 font-medium shadow-2xs">
+                          <Building2 className="h-3 w-3 text-slate-500" />
+                          <span>客戶: {project.clientName || '燁輝'}</span>
+                        </Badge>
 
                         {/* 專案生命週期狀態標籤 */}
                         {isCompleted ? (
@@ -869,19 +900,24 @@ export function InternalTasksClient({
                         )}
 
                         {/* 關聯客戶管制表標籤 */}
-                        {project.linkedCustomerProjectId ? (
+                        {project.linkedCustomerProjectId && (
                           <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] px-2 py-0.5 flex items-center gap-1">
                             <span>🔗 已連結客戶管制表</span>
                           </Badge>
-                        ) : project.status !== 'poc' && (
-                          <Badge variant="outline" className="text-slate-600 border-slate-300 text-[11px] px-2 py-0.5">
-                            🏢 燁輝客戶列管
-                          </Badge>
                         )}
 
-                        {project.tpmOfficeContact && (
-                          <span className="text-xs text-muted-foreground">
-                            TPM窗口: {project.tpmOfficeContact}
+                        {/* 負責 PM 與 客戶窗口 */}
+                        {(project.responsiblePm || project.tpmOfficeContact) && (
+                          <span className="text-xs text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs">
+                            <UserCheck className="h-3 w-3 text-slate-500" />
+                            PM: {project.responsiblePm || project.tpmOfficeContact}
+                          </span>
+                        )}
+
+                        {(project.clientContact || project.yiehPhuiProjectManager) && (
+                          <span className="text-xs text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs">
+                            <Users className="h-3 w-3 text-slate-500" />
+                            窗口: {project.clientContact || project.yiehPhuiProjectManager}
                           </span>
                         )}
 
@@ -1257,6 +1293,7 @@ export function InternalTasksClient({
         open={pocDialogOpen}
         onOpenChange={setPocDialogOpen}
         users={users}
+        clients={clients}
         onSuccess={(newProj) => {
           if (newProj) {
             setProjects((prev) => [newProj, ...prev]);
@@ -1272,6 +1309,7 @@ export function InternalTasksClient({
         onOpenChange={setEditProjectDialogOpen}
         project={projectToEdit}
         users={users}
+        clients={clients}
         onSuccess={(updatedData) => {
           setProjects((prev) =>
             prev.map((p) => {
@@ -1282,6 +1320,10 @@ export function InternalTasksClient({
               };
             })
           );
+        }}
+        onDeleted={(deletedProjectId) => {
+          setProjects((prev) => prev.filter((p) => p.id !== deletedProjectId));
+          setActionItems((prev) => prev.filter((item) => item.projectId !== deletedProjectId));
         }}
       />
 
