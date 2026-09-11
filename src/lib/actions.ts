@@ -87,6 +87,8 @@ export async function getUsers(): Promise<User[]> {
         displayName: doc.display_name || '',
         role: doc.role || 'viewer',
         status: doc.status || 'active',
+        department: doc.department || '',
+        clientName: doc.client_name || '',
         createdAt: formatISO(doc.created_at),
     }));
 }
@@ -100,6 +102,8 @@ export async function createUser(data: any) {
             display_name: data.displayName,
             role: data.role,
             status: data.status,
+            department: data.department || '',
+            client_name: data.clientName || '',
             created_at: new Date().toISOString()
         });
         if (error) throw error;
@@ -117,7 +121,9 @@ export async function updateUser(uid: string, data: any) {
             email: data.email,
             display_name: data.displayName,
             role: data.role,
-            status: data.status
+            status: data.status,
+            department: data.department || '',
+            client_name: data.clientName || ''
         }).eq('uid', uid);
         if (error) throw error;
         revalidatePath('/users');

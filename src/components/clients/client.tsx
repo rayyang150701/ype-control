@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Plus, Search, Edit2, Trash2, ShieldCheck, Copy, Check } from 'lucide-react';
+import { Building2, Plus, Search, Edit2, Trash2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -26,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/components/admin-context';
 import { deleteClient } from '@/lib/actions';
 import { ClientDialog } from './client-dialog';
 import type { Client } from '@/types';
@@ -34,30 +34,10 @@ interface ClientsClientProps {
   initialClients: Client[];
 }
 
-const SQL_SCHEMA_SCRIPT = `-- 在 Supabase SQL Editor 執行此段以建立客戶資料表
-CREATE TABLE IF NOT EXISTS public.clients (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
-  code TEXT DEFAULT '',
-  contact_person TEXT DEFAULT '',
-  contact_phone TEXT DEFAULT '',
-  contact_email TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read clients" ON public.clients FOR SELECT USING (true);
-CREATE POLICY "Allow service role all clients" ON public.clients FOR ALL USING (auth.role() = 'service_role');
-
-INSERT INTO public.clients (name, code, contact_person, notes)
-VALUES ('燁輝', 'YP', '黃裕峰', '系統核心預設客戶')
-ON CONFLICT (name) DO NOTHING;`;
-
 export function ClientsClient({ initialClients }: ClientsClientProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { isAdmin, setIsLoginDialogOpen } = useAdmin();
   const [clients, setClients] = useState<Client[]>(initialClients);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -66,7 +46,6 @@ export function ClientsClient({ initialClients }: ClientsClientProps) {
   // 刪除確認
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
 
   const filteredClients = clients.filter((c) => {
     const q = searchQuery.trim().toLowerCase();
@@ -115,12 +94,22 @@ export function ClientsClient({ initialClients }: ClientsClientProps) {
     }
   };
 
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(SQL_SCHEMA_SCRIPT);
-    setCopiedSql(true);
-    toast({ title: '已複製 SQL 指令', description: '可前往 Supabase SQL Editor 執行建立資料表' });
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-card rounded-xl border border-slate-200 shadow-xs max-w-lg mx-auto mt-8">
+        <div className="p-3 bg-amber-50 rounded-full text-amber-600 mb-3">
+          <Building2 className="h-8 w-8" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-800 mb-1">需要管理員權限</h2>
+        <p className="text-xs text-muted-foreground mb-5 max-w-sm">
+          「客戶維護管理」為管理員專屬功能。請切換為管理員模式後再進行維護。
+        </p>
+        <Button onClick={() => setIsLoginDialogOpen(true)} className="gap-2 text-xs">
+          管理員登入
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -248,29 +237,6 @@ export function ClientsClient({ initialClients }: ClientsClientProps) {
           </TableBody>
         </Table>
       </div>
-
-      {/* 資料庫結構備查區塊 */}
-      <Card className="bg-slate-50/60 border border-slate-200">
-        <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-              <span>🛠️ Supabase 資料表備查 (Clients Table DDL)</span>
-            </CardTitle>
-            <CardDescription className="text-[11px] text-muted-foreground">
-              系統已內建容錯機制。若需在 Supabase 資料庫建立獨立表格，可複製下方指令直接執行：
-            </CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleCopySql} className="h-7 text-xs gap-1">
-            {copiedSql ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-            {copiedSql ? '已複製' : '複製 SQL 指令'}
-          </Button>
-        </CardHeader>
-        <CardContent className="py-0 px-4 pb-3">
-          <pre className="p-2.5 rounded bg-slate-900 text-slate-100 text-[11px] font-mono overflow-x-auto max-h-36">
-            {SQL_SCHEMA_SCRIPT}
-          </pre>
-        </CardContent>
-      </Card>
 
       {/* 新增/編輯彈窗 */}
       <ClientDialog

@@ -126,6 +126,32 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
     header: 'Email',
   },
   {
+    accessorKey: 'clientName',
+    header: '所屬客戶',
+    cell: ({ row }) => {
+      const client = row.original.clientName;
+      return client ? (
+        <span className="font-medium text-slate-700">{client}</span>
+      ) : (
+        <span className="text-muted-foreground text-xs">未設定</span>
+      );
+    },
+  },
+  {
+    accessorKey: 'department',
+    header: '部門',
+    cell: ({ row }) => {
+      const dept = row.original.department;
+      return dept ? (
+        <Badge variant="outline" className="font-mono text-xs">
+          {dept}
+        </Badge>
+      ) : (
+        <span className="text-muted-foreground text-xs">未設定</span>
+      );
+    },
+  },
+  {
     accessorKey: 'role',
     header: '角色',
      cell: ({ row }) => {

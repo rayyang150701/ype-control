@@ -150,21 +150,31 @@ export function EditInternalProjectDialog({
     }
   };
 
-  // 整理 PM 下拉選項清單 (來自系統使用者)
-  const pmOptions = users.map((u) => ({
+  // 整理 PM 下拉選項清單 (一律只選部門為 PM 的成員；若無則備援顯示所有成員並標註部門)
+  const pmUsers = users.filter((u) => u.department?.trim().toUpperCase() === 'PM');
+  const availablePmUsers = pmUsers.length > 0 ? pmUsers : users;
+  const pmOptions = availablePmUsers.map((u) => ({
     value: u.displayName || u.email,
     label: u.displayName || u.email,
-    hint: u.role === 'admin' ? '管理員' : '成員',
+    hint: u.department ? `部門: ${u.department}` : (u.role === 'admin' ? '管理員' : '成員'),
   }));
 
-  // 客戶窗口預設建議名單
-  const contactOptions = [
-    '黃裕峰',
-    '張簡',
-    ...(clientList.find((c) => c.name === clientName)?.contactPerson
-      ? [clientList.find((c) => c.name === clientName)!.contactPerson!]
-      : []),
-  ].filter(Boolean);
+  // 客戶窗口預設建議名單 (直接從成員管理中挑選「所屬客戶」符合該專案客戶的使用者；備援加上客戶表主要窗口)
+  const matchedClientUsers = users.filter((u) => {
+    if (!u.clientName) return false;
+    return u.clientName.trim().toLowerCase() === (clientName || '燁輝').trim().toLowerCase();
+  });
+  const clientUserContacts = matchedClientUsers.map((u) => u.displayName || u.email);
+  const clientMainContact = clientList.find((c) => c.name === clientName)?.contactPerson;
+
+  const contactOptions = Array.from(
+    new Set([
+      ...clientUserContacts,
+      ...(clientMainContact ? [clientMainContact] : []),
+      // 若尚未建立任何對應成員，備援放入預設聯絡人
+      ...(clientUserContacts.length === 0 ? ['黃裕峰', '張簡'] : []),
+    ])
+  ).filter(Boolean);
 
   return (
     <>

@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   display_name TEXT,
   role TEXT DEFAULT 'viewer',
   status TEXT DEFAULT 'active',
+  department TEXT DEFAULT '',
+  client_name TEXT DEFAULT '燁輝',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

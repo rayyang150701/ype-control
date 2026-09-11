@@ -9,6 +9,8 @@ export interface User {
   displayName: string;
   role: UserRole;
   status: UserStatus;
+  department?: string;
+  clientName?: string;
   createdAt: Timestamp | Date | string;
 }
 

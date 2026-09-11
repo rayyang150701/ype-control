@@ -30,12 +30,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { User, UserRole, UserStatus } from '@/types';
+import { User, UserRole, UserStatus, Client } from '@/types';
 import { createUser, updateUser } from '@/lib/actions';
 
 const userSchema = z.object({
   displayName: z.string().min(1, '姓名為必填'),
   email: z.string().email('請輸入有效的 Email'),
+  department: z.string().optional(),
+  clientName: z.string().optional(),
   role: z.enum(['admin', 'editor', 'viewer'], {
     errorMap: () => ({ message: '請選擇一個角色' }),
   }),
@@ -50,9 +52,10 @@ interface UserFormProps {
   isOpen: boolean;
   onClose: () => void;
   initialData: User | null;
+  clients?: Client[];
 }
 
-export function UserForm({ isOpen, onClose, initialData }: UserFormProps) {
+export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFormProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const isEditMode = !!initialData;
@@ -63,12 +66,16 @@ export function UserForm({ isOpen, onClose, initialData }: UserFormProps) {
       ? {
           displayName: initialData.displayName,
           email: initialData.email,
+          department: initialData.department || '',
+          clientName: initialData.clientName || '燁輝',
           role: initialData.role,
           status: initialData.status,
         }
       : {
           displayName: '',
           email: '',
+          department: '',
+          clientName: '燁輝',
           role: 'viewer',
           status: 'active',
         },
@@ -136,6 +143,55 @@ export function UserForm({ isOpen, onClose, initialData }: UserFormProps) {
                 </FormItem>
               )}
             />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="clientName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>客戶 (所屬單位)</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value || '燁輝'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="選擇所屬客戶" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-48">
+                        {clients.length > 0 ? (
+                          clients.map((c) => (
+                            <SelectItem key={c.id} value={c.name}>
+                              {c.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="燁輝">燁輝</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="department"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>部門 (例如：PM、資訊部)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="例如：PM、研發部、品管部"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <FormField
               control={form.control}
               name="role"

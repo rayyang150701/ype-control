@@ -255,22 +255,12 @@ export function Header() {
           >
             <span>📋 內部專案與待辦追蹤 (對內跟催 & AI 診斷)</span>
           </Link>
-          {isAdmin && (
-            <Link
-              href="/clients"
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                pathname.startsWith('/clients')
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-              }`}
-            >
-              <span>🏢 客戶維護管理</span>
-            </Link>
-          )}
         </div>
         <div className="text-xs text-muted-foreground hidden md:block">
           {pathname.startsWith('/clients')
-            ? '🏢 客戶維護介面：管理所有合作客戶名單'
+            ? '🏢 客戶維護管理：管理所有合作客戶名單'
+            : pathname.startsWith('/users')
+            ? '👥 成員管理：維護系統使用者、所屬客戶與部門'
             : pathname.startsWith('/internal-tasks')
             ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}
