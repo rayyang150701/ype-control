@@ -66,7 +66,7 @@ export function InternalTasksClient({
 
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '已結案'>('all');
   const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'completed' | 'terminated'>('all');
   const [selectedProjectType, setSelectedProjectType] = useState<'all' | 'poc' | 'client'>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
@@ -149,16 +149,22 @@ export function InternalTasksClient({
     });
   }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn]);
 
-  // 統計評估案 vs 已開案
+  // 統計評估案 vs 已開案 vs 已結案
   const categoryCounts = useMemo(() => {
     let pocCount = 0;
     let activeCount = 0;
+    let completedCount = 0;
     projects.forEach((p) => {
-      const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
-      if (cat === '評估案') pocCount++;
-      else activeCount++;
+      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      if (status === 'completed') {
+        completedCount++;
+      } else {
+        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
+        if (cat === '評估案') pocCount++;
+        else activeCount++;
+      }
     });
-    return { all: projects.length, poc: pocCount, active: activeCount };
+    return { all: projects.length, poc: pocCount, active: activeCount, completed: completedCount };
   }, [projects]);
 
   // 統計內部專案狀態 (進行中/評估中、已結案、專案終止)
@@ -207,11 +213,23 @@ export function InternalTasksClient({
   const groupedByProject = useMemo(() => {
     let projectList = [...projects];
 
-    // 1. 類別篩選 (評估案 vs 已開案)
-    if (selectedCategory !== 'all') {
+    // 1. 類別與生命週期標籤篩選 (評估案 vs 已開案 vs 已結案)
+    if (selectedCategory === '評估案') {
       projectList = projectList.filter((p) => {
         const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
-        return cat === selectedCategory;
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        return cat === '評估案' && status !== 'completed' && status !== 'terminated';
+      });
+    } else if (selectedCategory === '已開案') {
+      projectList = projectList.filter((p) => {
+        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        return cat === '已開案' && status !== 'completed' && status !== 'terminated';
+      });
+    } else if (selectedCategory === '已結案') {
+      projectList = projectList.filter((p) => {
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        return status === 'completed';
       });
     }
 
@@ -574,6 +592,24 @@ export function InternalTasksClient({
               }`}
             >
               {categoryCounts.active}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('已結案')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedCategory === '已結案'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-emerald-800 hover:bg-emerald-100/70'
+            }`}
+          >
+            <span>✅ 已結案</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                selectedCategory === '已結案' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              {categoryCounts.completed}
             </span>
           </button>
         </div>
