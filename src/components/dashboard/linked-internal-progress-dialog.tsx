@@ -179,12 +179,21 @@ export function LinkedInternalProgressDialog({
                     )}
                   </div>
 
-                  {project.tpmOfficeContact && (
-                    <div className="text-xs text-muted-foreground flex items-center gap-1">
-                      <UserCheck className="h-3.5 w-3.5 text-slate-500" />
-                      <span>TPM 窗口: <strong>{project.tpmOfficeContact}</strong></span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {project.expectedCompletionDate && (
+                      <div className="text-xs text-slate-700 flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                        <span>專案預計完成: <strong>{project.expectedCompletionDate}</strong></span>
+                      </div>
+                    )}
+
+                    {project.tpmOfficeContact && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <UserCheck className="h-3.5 w-3.5 text-slate-500" />
+                        <span>TPM 窗口: <strong>{project.tpmOfficeContact}</strong></span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {project.projectPurpose && (

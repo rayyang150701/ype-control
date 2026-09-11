@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,35 +8,53 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { createPocProject } from '@/lib/actions';
-import { FolderPlus } from 'lucide-react';
-import type { User } from '@/types';
+import { updateInternalProject } from '@/lib/actions';
+import { Edit2, Calendar } from 'lucide-react';
+import type { FullProject, User } from '@/types';
 
-interface NewPocProjectDialogProps {
+interface EditInternalProjectDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  project: FullProject | null;
   users?: User[];
-  onSuccess: (newProject?: any) => void;
+  onSuccess: (updatedProject: any) => void;
 }
 
-export function NewPocProjectDialog({
+export function EditInternalProjectDialog({
   open,
   onOpenChange,
+  project,
   users = [],
   onSuccess,
-}: NewPocProjectDialogProps) {
+}: EditInternalProjectDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
   const [name, setName] = useState('');
   const [caseNumber, setCaseNumber] = useState('');
+  const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
+  const [internalStatus, setInternalStatus] = useState<'in_progress' | 'completed' | 'terminated'>('in_progress');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [tpmOfficeContact, setTpmOfficeContact] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
 
+  useEffect(() => {
+    if (project) {
+      setName(project.name || '');
+      setCaseNumber(project.caseNumber || '');
+      const cat = project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案');
+      setCategory(cat);
+      const st = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      setInternalStatus(st);
+      setExpectedCompletionDate(project.expectedCompletionDate || '');
+      setTpmOfficeContact(project.tpmOfficeContact || '');
+      setProjectPurpose(project.projectPurpose || '');
+    }
+  }, [project, open]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!project) return;
     if (!name.trim()) {
       toast({ title: '請輸入專案名稱', variant: 'destructive' });
       return;
@@ -44,30 +62,25 @@ export function NewPocProjectDialog({
 
     setIsSubmitting(true);
     try {
-      const res = await createPocProject({
-        name,
+      const res = await updateInternalProject(project.id, {
+        name: name.trim(),
+        caseNumber: caseNumber.trim() || undefined,
         category,
-        caseNumber: caseNumber || undefined,
-        expectedCompletionDate: expectedCompletionDate || undefined,
+        internalStatus,
+        expectedCompletionDate: expectedCompletionDate || null,
         tpmOfficeContact,
         projectPurpose,
       });
 
       if (res.success) {
-        toast({ title: '建立成功', description: `內部專案「${name}」已建立！` });
-        setName('');
-        setCaseNumber('');
-        setExpectedCompletionDate('');
-        setTpmOfficeContact('');
-        setProjectPurpose('');
-        setCategory('評估案');
+        toast({ title: '更新成功', description: `內部專案「${name}」已完成更新！` });
         onOpenChange(false);
         onSuccess(res.data);
       } else {
-        toast({ title: '建立失敗', description: res.message, variant: 'destructive' });
+        toast({ title: '更新失敗', description: res.message, variant: 'destructive' });
       }
     } catch (err: any) {
-      toast({ title: '建立異常', description: err.message, variant: 'destructive' });
+      toast({ title: '更新異常', description: err.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -75,14 +88,14 @@ export function NewPocProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold">
-            <FolderPlus className="h-5 w-5 text-purple-600" />
-            新增內部專案 (評估案 / 已開案)
+            <Edit2 className="h-5 w-5 text-indigo-600" />
+            編輯內部專案設定
           </DialogTitle>
           <p className="text-xs text-muted-foreground">
-            此專案供內部管制作業與待辦追蹤，<span className="text-purple-700 font-medium">不會公開於燁輝客戶端的進度管制總表</span>。
+            可調整專案名稱、案號、分類（評估案/已開案）、狀態、以及專案層級預估完成日。
           </p>
         </DialogHeader>
 
@@ -100,7 +113,7 @@ export function NewPocProjectDialog({
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>📝 評估案 (POC / 前期驗證)</span>
+                <span>📝 評估案 (POC / 前期)</span>
               </button>
 
               <button
@@ -108,32 +121,47 @@ export function NewPocProjectDialog({
                 onClick={() => setCategory('已開案')}
                 className={`py-2 px-3 rounded-md text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
                   category === '已開案'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>🚀 已開案 (自主立案執行)</span>
+                <span>🚀 已開案 (正式執行)</span>
               </button>
             </div>
           </div>
 
+          {/* 專案生命週期狀態 */}
+          <div>
+            <Label className="text-xs font-semibold">專案生命週期狀態 *</Label>
+            <Select value={internalStatus} onValueChange={(val: any) => setInternalStatus(val)}>
+              <SelectTrigger className="mt-1 text-xs">
+                <SelectValue placeholder="請選擇專案狀態" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="in_progress">⏳ 進行中 / 評估中</SelectItem>
+                <SelectItem value="completed">✅ 已結案 (手動完成)</SelectItem>
+                <SelectItem value="terminated">⛔ 專案終止 (不繼續執行)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 專案名稱 */}
           <div>
             <Label className="text-xs font-semibold">專案名稱 *</Label>
             <Input
-              className="mt-1"
-              placeholder={category === '評估案' ? "例如：POC-堆高機雙鏡頭自主防撞評估" : "例如：全廠設備連網通訊介面升級"}
+              className="mt-1 text-xs"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
             />
           </div>
 
+          {/* 案號代碼與負責人 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs font-semibold">案號代碼 (選填)</Label>
+              <Label className="text-xs font-semibold">案號代碼</Label>
               <Input
-                className="mt-1"
-                placeholder={category === '評估案' ? "例如：POC-01 (預設自動編號)" : "例如：PRJ-01 (預設自動編號)"}
+                className="mt-1 text-xs font-mono"
                 value={caseNumber}
                 onChange={(e) => setCaseNumber(e.target.value)}
               />
@@ -157,7 +185,7 @@ export function NewPocProjectDialog({
                 </Select>
               ) : (
                 <Input
-                  className="mt-1"
+                  className="mt-1 text-xs"
                   placeholder="例如：徐智宏、Winona"
                   value={tpmOfficeContact}
                   onChange={(e) => setTpmOfficeContact(e.target.value)}
@@ -166,16 +194,20 @@ export function NewPocProjectDialog({
             </div>
           </div>
 
+          {/* 專案預估完成日期 */}
           <div>
             <Label className="text-xs font-semibold flex items-center justify-between">
-              <span>📅 專案預估完成日期 (選填，綁定整個專案)</span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                專案預估完成日期 (選填，綁定整個專案)
+              </span>
               {expectedCompletionDate && (
                 <button
                   type="button"
                   onClick={() => setExpectedCompletionDate('')}
                   className="text-[11px] text-muted-foreground hover:text-foreground underline"
                 >
-                  清除
+                  清除日期
                 </button>
               )}
             </Label>
@@ -185,10 +217,14 @@ export function NewPocProjectDialog({
               value={expectedCompletionDate}
               onChange={(e) => setExpectedCompletionDate(e.target.value)}
             />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              設定此專案整體的目標交付日，專案卡片將會自動計算剩餘天數或逾期天數。
+            </p>
           </div>
 
+          {/* 專案目的說明 */}
           <div>
-            <Label className="text-xs font-semibold">專案目的 / 評估說明 (選填)</Label>
+            <Label className="text-xs font-semibold">專案目的 / 說明 (選填)</Label>
             <Textarea
               className="mt-1 min-h-[70px] text-xs"
               placeholder="簡要描述此案的目標、可行性驗證重點或預期效益..."
@@ -202,7 +238,7 @@ export function NewPocProjectDialog({
               取消
             </Button>
             <Button type="submit" size="sm" disabled={isSubmitting}>
-              {isSubmitting ? '建立中...' : '確認建立專案'}
+              {isSubmitting ? '儲存中...' : '儲存變更'}
             </Button>
           </DialogFooter>
         </form>

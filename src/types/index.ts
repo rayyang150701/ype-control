@@ -22,6 +22,7 @@ export interface Project {
   isInternal?: boolean;
   projectCategory?: '評估案' | '已開案';
   internalStatus?: 'in_progress' | 'completed' | 'terminated';
+  expectedCompletionDate?: string | null;
   autoCompletedByClient?: boolean;
   linkedInternalProjectId?: string;
   linkedInternalProjectName?: string;
@@ -49,6 +50,7 @@ export interface InternalProjectOption {
   name: string;
   category: '評估案' | '已開案';
   internalStatus: 'in_progress' | 'completed' | 'terminated';
+  expectedCompletionDate?: string | null;
   tpmOfficeContact?: string;
 }
 

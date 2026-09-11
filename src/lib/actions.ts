@@ -46,6 +46,7 @@ export interface ProjectMeta {
     isInternal?: boolean;
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    expectedCompletionDate?: string | null;
     autoCompletedByClient?: boolean;
     linkedInternalProjectId?: string;
     linkedCustomerProjectId?: string;
@@ -901,6 +902,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             isInternal: true,
             projectCategory: isEval ? '評估案' : '已開案',
             internalStatus,
+            expectedCompletionDate: meta.expectedCompletionDate || null,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: doc.project_purpose || '',
@@ -922,6 +924,7 @@ export async function createInternalProject(data: {
     category?: '評估案' | '已開案';
     projectPurpose?: string;
     tpmOfficeContact?: string;
+    expectedCompletionDate?: string | null;
 }) {
     const supabase = createClient();
     try {
@@ -934,6 +937,7 @@ export async function createInternalProject(data: {
             isInternal: true,
             category,
             internalStatus: 'in_progress',
+            expectedCompletionDate: data.expectedCompletionDate || null,
         };
 
         const { data: newProject, error } = await supabase.from('projects').insert({
@@ -960,12 +964,94 @@ export async function createInternalProject(data: {
                 isInternal: true,
                 projectCategory: category,
                 internalStatus: 'in_progress' as const,
+                expectedCompletionDate: meta.expectedCompletionDate || null,
                 subProjects: []
             } 
         };
     } catch (err: any) {
         console.error('建立內部專案失敗:', err);
         return { success: false, message: err?.message || '建立內部專案失敗' };
+    }
+}
+
+export async function updateInternalProject(projectId: string, data: {
+    name: string;
+    caseNumber?: string;
+    category?: '評估案' | '已開案';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    tpmOfficeContact?: string;
+    projectPurpose?: string;
+    expectedCompletionDate?: string | null;
+}) {
+    const supabase = createClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', projectId)
+            .single();
+
+        if (fetchErr || !proj) throw new Error('找不到專案');
+
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        meta.isInternal = true;
+        if (data.category) meta.category = data.category;
+        if (data.internalStatus) meta.internalStatus = data.internalStatus;
+        if (data.expectedCompletionDate !== undefined) meta.expectedCompletionDate = data.expectedCompletionDate;
+
+        const updateData: any = {
+            name: data.name.trim(),
+            on_hold_notes: serializeProjectMeta(meta),
+            updated_at: new Date().toISOString(),
+        };
+
+        if (data.caseNumber !== undefined) updateData.case_number = data.caseNumber.trim();
+        if (data.tpmOfficeContact !== undefined) updateData.tpm_office_contact = data.tpmOfficeContact;
+        if (data.projectPurpose !== undefined) updateData.project_purpose = data.projectPurpose;
+
+        if (data.category === '已開案') {
+            updateData.status = 'active';
+        } else if (data.category === '評估案') {
+            updateData.status = 'evaluation';
+        }
+
+        if (data.internalStatus === 'completed') {
+            updateData.status = 'completed';
+        } else if (data.internalStatus === 'terminated') {
+            updateData.status = 'cancelled';
+        } else if (data.internalStatus === 'in_progress') {
+            updateData.status = meta.category === '評估案' ? 'evaluation' : 'active';
+            meta.autoCompletedByClient = false;
+            updateData.on_hold_notes = serializeProjectMeta(meta);
+        }
+
+        const { error: updateErr } = await supabase
+            .from('projects')
+            .update(updateData)
+            .eq('id', projectId);
+
+        if (updateErr) throw updateErr;
+
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+
+        return { 
+            success: true, 
+            message: '內部專案資料已成功更新！',
+            data: {
+                id: projectId,
+                name: data.name.trim(),
+                caseNumber: data.caseNumber?.trim() ?? proj.case_number,
+                projectCategory: meta.category,
+                internalStatus: meta.internalStatus,
+                expectedCompletionDate: meta.expectedCompletionDate || null,
+                tpmOfficeContact: data.tpmOfficeContact ?? proj.tpm_office_contact,
+                projectPurpose: data.projectPurpose ?? proj.project_purpose,
+            }
+        };
+    } catch (err: any) {
+        console.error('更新內部專案失敗:', err);
+        return { success: false, message: err?.message || '更新內部專案失敗' };
     }
 }
 
@@ -1079,6 +1165,7 @@ export async function getInternalProjectsForDropdown(): Promise<InternalProjectO
         name: p.name,
         category: p.projectCategory || '已開案',
         internalStatus: p.internalStatus || 'in_progress',
+        expectedCompletionDate: p.expectedCompletionDate || null,
         tpmOfficeContact: p.tpmOfficeContact,
     }));
 }
@@ -1110,6 +1197,7 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
             isInternal: true,
             projectCategory: isEval ? '評估案' : '已開案',
             internalStatus: meta.internalStatus || (proj.status === 'completed' ? 'completed' : proj.status === 'terminated' || proj.status === 'cancelled' ? 'terminated' : 'in_progress'),
+            expectedCompletionDate: meta.expectedCompletionDate || null,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: proj.project_purpose || '',

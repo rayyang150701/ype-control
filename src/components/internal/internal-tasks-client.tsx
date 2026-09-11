@@ -34,6 +34,7 @@ import {
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
 import { NewPocProjectDialog } from './new-poc-project-dialog';
+import { EditInternalProjectDialog } from './edit-internal-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { useAdmin } from '@/components/admin-context';
 import { updateActionItem, deleteActionItem, updateInternalProjectStatus } from '@/lib/actions';
@@ -79,6 +80,8 @@ export function InternalTasksClient({
   // 彈窗狀態
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pocDialogOpen, setPocDialogOpen] = useState(false);
+  const [editProjectDialogOpen, setEditProjectDialogOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<FullProject | null>(null);
   const [editingItem, setEditingItem] = useState<ProjectActionItem | null>(null);
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>();
 
@@ -353,6 +356,11 @@ export function InternalTasksClient({
     setEditingItem(item);
     setDefaultProjectId(item.projectId);
     setDialogOpen(true);
+  };
+
+  const handleOpenEditProject = (proj: FullProject) => {
+    setProjectToEdit(proj);
+    setEditProjectDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -791,6 +799,11 @@ export function InternalTasksClient({
             const isTerminated = internalStatus === 'terminated';
             const isInProgress = !isCompleted && !isTerminated;
 
+            const projExpectedDate = project.expectedCompletionDate ? new Date(project.expectedCompletionDate) : null;
+            const projDiffDays = projExpectedDate ? differenceInCalendarDays(new Date(), projExpectedDate) : 0;
+            const isProjOverdue = !isCompleted && projExpectedDate && projDiffDays > 0;
+            const isProjUpcoming = !isCompleted && projExpectedDate && projDiffDays >= -7 && projDiffDays <= 0;
+
             return (
               <div
                 key={project.id}
@@ -871,6 +884,36 @@ export function InternalTasksClient({
                             TPM窗口: {project.tpmOfficeContact}
                           </span>
                         )}
+
+                        {/* 專案層級預估完成日 (綁定整個專案) */}
+                        {project.expectedCompletionDate && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="flex items-center gap-1 text-[11px] text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-300 font-medium shadow-2xs">
+                              <Calendar className="h-3 w-3 text-slate-500" />
+                              專案目標完成: {project.expectedCompletionDate}
+                            </span>
+                            {!isCompleted && isProjOverdue && (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 bg-rose-600 font-semibold shadow-2xs">
+                                🚨 專案已逾期 {projDiffDays} 天
+                              </Badge>
+                            )}
+                            {!isCompleted && isProjUpcoming && (
+                              <Badge className="text-[10px] px-1.5 py-0 bg-amber-500 text-white font-medium shadow-2xs">
+                                ⏳ 剩餘 {Math.abs(projDiffDays)} 天到期
+                              </Badge>
+                            )}
+                            {!isCompleted && projExpectedDate && !isProjOverdue && !isProjUpcoming && (
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                (剩餘 {Math.abs(projDiffDays)} 天)
+                              </span>
+                            )}
+                            {isCompleted && (
+                              <span className="text-[11px] text-emerald-600 font-medium">
+                                (專案已結案)
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* 專案待辦指標小徽章 */}
@@ -894,9 +937,21 @@ export function InternalTasksClient({
 
                   {/* 專案右側操作按鈕 */}
                   <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
-                    {/* 管理員專案狀態生命週期變更 */}
+                    {/* 管理員專案狀態生命週期變更與編輯 */}
                     {isAdmin && (
                       <div className="flex items-center gap-1">
+                        {/* 編輯專案設定 */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenEditProject(project)}
+                          className="gap-1 text-xs h-8 text-slate-700 bg-white hover:bg-slate-100 shadow-2xs font-medium"
+                          title="編輯專案名稱、案號、狀態與預估完成日"
+                        >
+                          <Edit2 className="h-3.5 w-3.5 text-indigo-600" />
+                          編輯專案
+                        </Button>
+
                         {/* 評估案專屬捷徑：一鍵轉為已開案 */}
                         {isEvalCategory && isInProgress && (
                           <Button
@@ -919,6 +974,14 @@ export function InternalTasksClient({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-52 text-xs">
+                            <DropdownMenuItem
+                              onClick={() => handleOpenEditProject(project)}
+                              className="cursor-pointer py-1.5 text-indigo-700 focus:text-indigo-800 focus:bg-indigo-50"
+                            >
+                              <Edit2 className="h-3.5 w-3.5 text-indigo-600 mr-2" />
+                              編輯專案設定與期限
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             {isEvalCategory && isInProgress && (
                               <DropdownMenuItem
                                 onClick={() => handleUpdateProjectStatus(project.id, { category: '已開案' })}
@@ -1200,6 +1263,25 @@ export function InternalTasksClient({
           } else {
             window.location.reload();
           }
+        }}
+      />
+
+      {/* 編輯內部專案彈窗 */}
+      <EditInternalProjectDialog
+        open={editProjectDialogOpen}
+        onOpenChange={setEditProjectDialogOpen}
+        project={projectToEdit}
+        users={users}
+        onSuccess={(updatedData) => {
+          setProjects((prev) =>
+            prev.map((p) => {
+              if (p.id !== updatedData.id) return p;
+              return {
+                ...p,
+                ...updatedData,
+              };
+            })
+          );
         }}
       />
 
