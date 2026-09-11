@@ -1255,7 +1255,6 @@ export async function updateInternalProject(projectId: string, data: {
         const updateData: any = {
             name: data.name.trim(),
             on_hold_notes: serializeProjectMeta(meta),
-            updated_at: new Date().toISOString(),
         };
 
         if (data.caseNumber !== undefined) updateData.case_number = data.caseNumber.trim();
