@@ -81,6 +81,7 @@ export function InternalTasksClient({
   const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [showCompletedMap, setShowCompletedMap] = useState<Record<string, boolean>>({});
 
   // 彈窗狀態
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -427,6 +428,10 @@ export function InternalTasksClient({
     setCollapsedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
   };
 
+  const toggleShowCompleted = (projectId: string) => {
+    setShowCompletedMap((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
+  };
+
   const handleOpenAdd = (projectId?: string) => {
     setEditingItem(null);
     setDefaultProjectId(projectId);
@@ -552,6 +557,178 @@ export function InternalTasksClient({
       default:
         return <Badge variant="outline">{phase}</Badge>;
     }
+  };
+
+  // 渲染單一待辦事項列 (未完成與已完成共用，等候標籤依完成狀態自適應配色)
+  const renderActionItemRow = (item: ProjectActionItem) => {
+    const isDone = item.status === 'completed';
+    const isBlocked = item.status === 'blocked';
+    const today = new Date();
+    const dueDateObj = item.dueDate ? new Date(item.dueDate) : null;
+    const diffDays = dueDateObj
+      ? differenceInCalendarDays(today, dueDateObj)
+      : 0;
+    const isOverdue = !isDone && dueDateObj && diffDays > 0;
+    const isUpcoming = !isDone && dueDateObj && diffDays >= -3 && diffDays <= 0;
+
+    return (
+      <div
+        key={item.id}
+        className={`py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row items-start justify-between gap-3 transition-colors ${
+          isDone ? 'opacity-70' : ''
+        }`}
+      >
+        {/* 左側：完成核選鈕 + 標題 + 標籤 + 歷程 */}
+        <div className="flex items-start gap-2.5 flex-1">
+          {/* 一鍵切換完成 */}
+          {isAdmin ? (
+            <button
+              onClick={() => handleQuickToggleComplete(item)}
+              className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${
+                isDone
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'border-slate-300 hover:border-slate-500 bg-white'
+              }`}
+              title={isDone ? '標記為未完成' : '標記為已完成'}
+            >
+              {isDone && <Check className="h-3.5 w-3.5" />}
+            </button>
+          ) : (
+            <div className="mt-1">
+              {isDone ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              ) : (
+                <Hourglass className="h-4 w-4 text-slate-400" />
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`text-sm font-semibold text-slate-900 ${
+                  isDone ? 'line-through text-slate-500' : ''
+                }`}
+              >
+                {item.title}
+              </span>
+
+              {/* 專案類別標籤 */}
+              {item.projectCategory && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] px-1.5 py-0 font-medium ${
+                    item.projectCategory === '評估案'
+                      ? 'border-purple-300 text-purple-700 bg-purple-50/60'
+                      : 'border-blue-300 text-blue-700 bg-blue-50/60'
+                  }`}
+                >
+                  {item.projectCategory === '評估案' ? '📝 評估' : '🚀 開案'}
+                </Badge>
+              )}
+
+              {getPhaseBadge(item.phase)}
+
+              {/* 卡關等候提示 (未完成時紅色明顯標註；已完成時淺灰色顯示) */}
+              {item.waitingOn && (
+                <Badge
+                  variant={isDone ? 'outline' : 'destructive'}
+                  className={
+                    isDone
+                      ? 'gap-1 font-normal text-xs px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200 shadow-none'
+                      : 'gap-1 font-medium text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs'
+                  }
+                >
+                  {!isDone && <AlertCircle className="h-3 w-3" />}
+                  等候：{item.waitingOn}
+                </Badge>
+              )}
+
+              {/* 責任歸屬 (客戶/單位) */}
+              {item.owner && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded">
+                  <UserCheck className="h-3 w-3" />
+                  責任歸屬: {item.owner}
+                </span>
+              )}
+            </div>
+
+            {/* 歷程說明 */}
+            {item.notes && (
+              <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200/60 leading-relaxed">
+                <span className="font-medium text-slate-700">歷程說明：</span>
+                {item.notes}
+              </p>
+            )}
+
+            {/* Lesson Learnt 經驗檢討 */}
+            {item.lessonLearnt && (
+              <p className="text-xs text-amber-900 bg-amber-50/70 p-2 rounded border border-amber-200/80 leading-relaxed">
+                <span className="font-semibold text-amber-950">💡 經驗檢討 (Lesson Learnt)：</span>
+                {item.lessonLearnt}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* 右側：預計完成日跟催燈號 + 操作按鈕 */}
+        <div className="flex items-center gap-3 sm:flex-col sm:items-end self-end sm:self-center shrink-0">
+          {/* 預計完成日與跟催燈號 */}
+          {item.dueDate ? (
+            <div className="text-right text-xs">
+              <div className="flex items-center gap-1 text-muted-foreground justify-end">
+                <Calendar className="h-3 w-3" />
+                <span>預計: {item.dueDate}</span>
+              </div>
+
+              {isOverdue && (
+                <span className="text-rose-600 font-bold text-[11px] block mt-0.5">
+                  🚨 已逾期 {diffDays} 天 (請跟催！)
+                </span>
+              )}
+
+              {isUpcoming && (
+                <span className="text-amber-600 font-semibold text-[11px] block mt-0.5">
+                  ⏳ 剩餘 {Math.abs(diffDays)} 天到期
+                </span>
+              )}
+
+              {isDone && (
+                <span className="text-emerald-600 font-medium text-[11px] block mt-0.5">
+                  ✅ 已於 {item.completedAt ? item.completedAt.slice(0, 10) : '近期'} 完成
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">未設預計日</span>
+          )}
+
+          {/* 管理員編輯/刪除按鈕 */}
+          {isAdmin && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleOpenEdit(item)}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900"
+                title="編輯事項"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleDelete(item.id)}
+                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600"
+                title="刪除事項"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -940,6 +1117,9 @@ export function InternalTasksClient({
         ) : (
           groupedByProject.map(({ project, items }) => {
             const isCollapsed = !!collapsedProjects[project.id];
+            const activeItems = items.filter((i) => i.status !== 'completed');
+            const completedItems = items.filter((i) => i.status === 'completed');
+            const isCompletedExpanded = !!showCompletedMap[project.id];
             const blockedItems = items.filter((i) => i.status === 'blocked');
             const overdueItems = items.filter((i) => {
               if (i.status === 'completed' || !i.dueDate) return false;
@@ -1199,10 +1379,10 @@ export function InternalTasksClient({
                   </div>
                 </div>
 
-                {/* 待辦事項清單 */}
+                {/* 待辦事項清單 (分層架構：未完成直接展示，已完成可收合) */}
                 {!isCollapsed && (
-                  <div className={`p-4 divide-y ${
-                    isCompleted ? 'bg-emerald-50/20 divide-emerald-100/60' : isTerminated ? 'bg-rose-50/20 divide-rose-100/60' : 'bg-white divide-slate-100'
+                  <div className={`p-4 space-y-2.5 ${
+                    isCompleted ? 'bg-emerald-50/20' : isTerminated ? 'bg-rose-50/20' : 'bg-white'
                   }`}>
                     {items.length === 0 ? (
                       <div className={`py-6 text-center text-xs rounded border border-dashed ${
@@ -1223,172 +1403,49 @@ export function InternalTasksClient({
                         )}
                       </div>
                     ) : (
-                      items.map((item) => {
-                        const isDone = item.status === 'completed';
-                        const isBlocked = item.status === 'blocked';
-                        const today = new Date();
-                        const dueDateObj = item.dueDate ? new Date(item.dueDate) : null;
-                        const diffDays = dueDateObj
-                          ? differenceInCalendarDays(today, dueDateObj)
-                          : 0;
-                        const isOverdue = !isDone && dueDateObj && diffDays > 0;
-                        const isUpcoming = !isDone && dueDateObj && diffDays >= -3 && diffDays <= 0;
-
-                        return (
-                          <div
-                            key={item.id}
-                            className={`py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row items-start justify-between gap-3 transition-colors ${
-                              isDone ? 'opacity-65' : ''
-                            }`}
-                          >
-                            {/* 左側：完成核選鈕 + 標題 + 標籤 + 歷程 */}
-                            <div className="flex items-start gap-2.5 flex-1">
-                              {/* 一鍵切換完成 */}
-                              {isAdmin ? (
-                                <button
-                                  onClick={() => handleQuickToggleComplete(item)}
-                                  className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors ${
-                                    isDone
-                                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                                      : 'border-slate-300 hover:border-slate-500 bg-white'
-                                  }`}
-                                  title={isDone ? '標記為未完成' : '標記為已完成'}
-                                >
-                                  {isDone && <Check className="h-3.5 w-3.5" />}
-                                </button>
-                              ) : (
-                                <div className="mt-1">
-                                  {isDone ? (
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                  ) : (
-                                    <Hourglass className="h-4 w-4 text-slate-400" />
-                                  )}
-                                </div>
-                              )}
-
-                              <div className="space-y-1.5 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span
-                                    className={`text-sm font-semibold text-slate-900 ${
-                                      isDone ? 'line-through text-slate-500' : ''
-                                    }`}
-                                  >
-                                    {item.title}
-                                  </span>
-
-                                  {/* 專案類別標籤 */}
-                                  {item.projectCategory && (
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-[10px] px-1.5 py-0 font-medium ${
-                                        item.projectCategory === '評估案'
-                                          ? 'border-purple-300 text-purple-700 bg-purple-50/60'
-                                          : 'border-blue-300 text-blue-700 bg-blue-50/60'
-                                      }`}
-                                    >
-                                      {item.projectCategory === '評估案' ? '📝 評估' : '🚀 開案'}
-                                    </Badge>
-                                  )}
-
-                                  {getPhaseBadge(item.phase)}
-
-                                  {/* 卡關等候提示 (超顯眼紅標) */}
-                                  {item.waitingOn && (
-                                    <Badge
-                                      variant="destructive"
-                                      className="gap-1 font-medium text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs"
-                                    >
-                                      <AlertCircle className="h-3 w-3" />
-                                      等候：{item.waitingOn}
-                                    </Badge>
-                                  )}
-
-                                  {/* 責任歸屬 (客戶/單位) */}
-                                  {item.owner && (
-                                    <span className="text-xs text-muted-foreground flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded">
-                                      <UserCheck className="h-3 w-3" />
-                                      責任歸屬: {item.owner}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* 歷程說明 */}
-                                {item.notes && (
-                                  <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200/60 leading-relaxed">
-                                    <span className="font-medium text-slate-700">歷程說明：</span>
-                                    {item.notes}
-                                  </p>
-                                )}
-
-                                {/* Lesson Learnt 經驗檢討 */}
-                                {item.lessonLearnt && (
-                                  <p className="text-xs text-amber-900 bg-amber-50/70 p-2 rounded border border-amber-200/80 leading-relaxed">
-                                    <span className="font-semibold text-amber-950">💡 經驗檢討 (Lesson Learnt)：</span>
-                                    {item.lessonLearnt}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* 右側：預計完成日跟催燈號 + 操作按鈕 */}
-                            <div className="flex items-center gap-3 sm:flex-col sm:items-end self-end sm:self-center shrink-0">
-                              {/* 預計完成日與跟催燈號 */}
-                              {item.dueDate ? (
-                                <div className="text-right text-xs">
-                                  <div className="flex items-center gap-1 text-muted-foreground justify-end">
-                                    <Calendar className="h-3 w-3" />
-                                    <span>預計: {item.dueDate}</span>
-                                  </div>
-
-                                  {isOverdue && (
-                                    <span className="text-rose-600 font-bold text-[11px] block mt-0.5">
-                                      🚨 已逾期 {diffDays} 天 (請跟催！)
-                                    </span>
-                                  )}
-
-                                  {isUpcoming && (
-                                    <span className="text-amber-600 font-semibold text-[11px] block mt-0.5">
-                                      ⏳ 剩餘 {Math.abs(diffDays)} 天到期
-                                    </span>
-                                  )}
-
-                                  {isDone && (
-                                    <span className="text-emerald-600 font-medium text-[11px] block mt-0.5">
-                                      ✅ 已於 {item.completedAt ? item.completedAt.slice(0, 10) : '近期'} 完成
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">未設預計日</span>
-                              )}
-
-                              {/* 管理員編輯/刪除按鈕 */}
-                              {isAdmin && (
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleOpenEdit(item)}
-                                    className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900"
-                                    title="編輯事項"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDelete(item.id)}
-                                    className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600"
-                                    title="刪除事項"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
+                      <>
+                        {/* 次層 1：未完成待辦事項 (不用縮放，直接一目了然條列) */}
+                        {activeItems.length === 0 ? (
+                          <div className="py-2.5 px-3 text-center text-xs rounded bg-slate-50 border border-slate-200/70 text-slate-500 flex items-center justify-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            <span>目前無未完成事項，所有待辦皆已全數結清。</span>
                           </div>
-                        );
-                      })
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {activeItems.map((item) => renderActionItemRow(item))}
+                          </div>
+                        )}
+
+                        {/* 次層 2：已完成待辦事項 (可以再縮一次，預設收合，點擊切換展開/隱藏) */}
+                        {completedItems.length > 0 && (
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleShowCompleted(project.id)}
+                              className="w-full flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-medium text-slate-600 bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/80 transition-colors cursor-pointer select-none"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>已完成事項 ({completedItems.length} 項)</span>
+                              </span>
+                              <span className="flex items-center gap-1 text-[11px] text-slate-500 font-normal">
+                                {isCompletedExpanded ? '點擊收合' : '點擊展開查看'}
+                                {isCompletedExpanded ? (
+                                  <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+                                ) : (
+                                  <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+                                )}
+                              </span>
+                            </button>
+
+                            {isCompletedExpanded && (
+                              <div className="mt-2 divide-y divide-slate-100 rounded-md border border-slate-200/60 bg-slate-50/50 px-3 py-1">
+                                {completedItems.map((item) => renderActionItemRow(item))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

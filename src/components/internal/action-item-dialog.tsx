@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
-import { createActionItem, updateActionItem, createPocProject } from '@/lib/actions';
+import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client } from '@/types';
 
 interface ActionItemDialogProps {
@@ -40,17 +40,27 @@ export function ActionItemDialog({
   defaultProjectId,
   projects,
   users = [],
-  clients = [],
+  clients: initialClients = [],
   onSuccess,
 }: ActionItemDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clientList, setClientList] = useState<Client[]>(initialClients);
 
-  // 客戶清單整合
-  const clientList: Client[] = clients.length > 0 ? clients : [
-    { id: 'c-1', name: '燁輝', code: 'YP', createdAt: '' },
-    { id: 'c-2', name: '億威', code: 'EW', createdAt: '' },
-  ];
+  // 若父層沒傳或需要更新 clients，主動載入客戶清單
+  useEffect(() => {
+    if (initialClients && initialClients.length > 0) {
+      setClientList(initialClients);
+    }
+  }, [initialClients]);
+
+  useEffect(() => {
+    if (open && clientList.length === 0) {
+      getClients().then((res) => {
+        if (res && res.length > 0) setClientList(res);
+      });
+    }
+  }, [open, clientList.length]);
 
   const [projectId, setProjectId] = useState(item?.projectId || defaultProjectId || '');
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
@@ -67,21 +77,66 @@ export function ActionItemDialog({
   const [notes, setNotes] = useState(item?.notes || '');
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
 
+  // 組合客戶選項清單 (保證同時相容資料庫真實名稱與億威/燁輝別名)
+  const effectiveClientOptions: Client[] = useMemo(() => {
+    const list: Client[] = clientList.length > 0 ? [...clientList] : [
+      { id: 'c-1', name: '燁輝', code: 'YP', createdAt: '' },
+      { id: 'c-2', name: '億威電子', code: 'emmt', createdAt: '' },
+    ];
+    if (!list.some((c: Client) => c.name.includes('億威'))) {
+      list.push({ id: 'c-emmt', name: '億威電子', code: 'emmt', createdAt: '' });
+    }
+    if (!list.some((c: Client) => c.name === '燁輝')) {
+      list.push({ id: 'c-yp', name: '燁輝', code: 'YP', createdAt: '' });
+    }
+    return list;
+  }, [clientList]);
+
+  // 智慧寬容客戶名稱比對 (如「億威」相容「億威電子」、「億威 (EW)」等)
+  const normalizeClientName = (name?: string) => {
+    if (!name) return '';
+    return name.toLowerCase().replace(/（.*）|\(.*\)/g, '').trim();
+  };
+
+  const isClientMatch = (userClient?: string, targetClient?: string) => {
+    if (!userClient || !targetClient) return false;
+    const u = normalizeClientName(userClient);
+    const t = normalizeClientName(targetClient);
+    if (!u || !t) return false;
+    if (u === t || u.includes(t) || t.includes(u)) return true;
+    if (u.includes('億威') && t.includes('億威')) return true;
+    if (u.includes('燁輝') && t.includes('燁輝')) return true;
+    return false;
+  };
+
   // 根據選擇的責任歸屬 (客戶/單位，如「億威」或「燁輝」)，從成員名單中挑選屬於該客戶的成員
   const selectedClientName = (owner || '燁輝').trim();
   const matchedMembers = users.filter((u) => {
-    if (!u.clientName) return false;
-    return u.clientName.trim().toLowerCase() === selectedClientName.toLowerCase();
+    if (u.clientName && isClientMatch(u.clientName, selectedClientName)) {
+      return true;
+    }
+    const emailLower = u.email?.toLowerCase() || '';
+    if (selectedClientName.includes('億威') && emailLower.includes('emmt.com.tw')) {
+      return true;
+    }
+    if (selectedClientName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) {
+      return true;
+    }
+    return false;
   });
 
-  // 如果該客戶目前還沒有在成員管理中維護成員，或尚未匹配到，備援提供該客戶的主要窗口或全部成員
-  const clientContactPerson = clientList.find((c) => c.name === selectedClientName)?.contactPerson;
+  // 如果該客戶目前還沒有在成員管理中維護專屬成員，備援顯示全部成員（標註部門與客戶），讓使用者永不卡關
+  const availableMembers = matchedMembers.length > 0 ? matchedMembers : users;
+
+  const clientContactPerson = effectiveClientOptions.find((c: Client) => isClientMatch(c.name, selectedClientName))?.contactPerson;
   const waitingOnMemberOptions = Array.from(
     new Set([
-      ...matchedMembers.map((u) => ({
+      ...availableMembers.map((u) => ({
         value: u.displayName || u.email,
         label: u.displayName || u.email,
-        hint: u.department ? `${u.department}` : (u.role === 'admin' ? '管理員' : '成員'),
+        hint: u.department
+          ? `${u.department}${u.clientName ? ` (${u.clientName})` : ''}`
+          : (u.clientName ? `${u.clientName}` : (u.role === 'admin' ? '管理員' : '成員')),
       })),
       ...(clientContactPerson ? [{ value: clientContactPerson, label: clientContactPerson, hint: '客戶主要窗口' }] : []),
     ])
@@ -364,7 +419,7 @@ export function ActionItemDialog({
                   <SelectValue placeholder="選擇責任歸屬客戶" />
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
-                  {clientList.map((c) => (
+                  {effectiveClientOptions.map((c: Client) => (
                     <SelectItem key={c.id} value={c.name}>
                       {c.name} {c.code ? `(${c.code})` : ''}
                     </SelectItem>

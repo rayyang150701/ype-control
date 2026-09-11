@@ -177,10 +177,25 @@ export function EditInternalProjectDialog({
     hint: u.department ? `部門: ${u.department}` : (u.role === 'admin' ? '管理員' : '成員'),
   }));
 
+  // 智慧寬容客戶名稱比對 (如「億威」相容「億威電子」、「億威 (EW)」等)
+  const isClientMatch = (userClient?: string, targetClient?: string) => {
+    if (!userClient || !targetClient) return false;
+    const u = userClient.toLowerCase().replace(/（.*）|\(.*\)/g, '').trim();
+    const t = targetClient.toLowerCase().replace(/（.*）|\(.*\)/g, '').trim();
+    if (!u || !t) return false;
+    if (u === t || u.includes(t) || t.includes(u)) return true;
+    if (u.includes('億威') && t.includes('億威')) return true;
+    if (u.includes('燁輝') && t.includes('燁輝')) return true;
+    return false;
+  };
+
   // 客戶窗口預設建議名單 (直接從成員管理中挑選「所屬客戶」符合該專案客戶的使用者；備援加上客戶表主要窗口)
   const matchedClientUsers = users.filter((u) => {
-    if (!u.clientName) return false;
-    return u.clientName.trim().toLowerCase() === (clientName || '燁輝').trim().toLowerCase();
+    if (u.clientName && isClientMatch(u.clientName, clientName || '燁輝')) return true;
+    const emailLower = u.email?.toLowerCase() || '';
+    if ((clientName || '燁輝').includes('億威') && emailLower.includes('emmt.com.tw')) return true;
+    if ((clientName || '燁輝').includes('燁輝') && emailLower.includes('yiehphui.com.tw')) return true;
+    return false;
   });
   const clientUserContacts = matchedClientUsers.map((u) => u.displayName || u.email);
   const clientMainContact = clientList.find((c) => c.name === clientName)?.contactPerson;
