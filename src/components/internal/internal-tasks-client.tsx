@@ -240,19 +240,23 @@ export function InternalTasksClient({
       const entry = map.get(item.projectId);
       if (entry) {
         entry.items.push(item);
-      } else if (selectedCategory === 'all' && selectedProjectType === 'all') {
-        // 若找不到對應專案，放進暫存專案
-        const dummyProj: FullProject = {
-          id: item.projectId,
-          caseNumber: item.projectCaseNumber || 'N/A',
-          name: item.projectName || '未分類專案',
-          status: 'active',
-          projectCategory: item.projectCategory || '已開案',
-          createdAt: item.createdAt,
-          createdBy: '',
-          subProjects: [],
-        };
-        map.set(item.projectId, { project: dummyProj, items: [item] });
+      } else {
+        // 若此待辦所屬專案存在於系統專案名單中，表示該專案已被目前條件 (如已結案/類別/專案類型) 過濾，不可重新加入！
+        const projectExists = projects.some((p) => p.id === item.projectId);
+        if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedProjectType === 'all') {
+          // 僅當為資料庫完全不存在的孤兒資料，且處於「全部無篩選」狀態時，才暫存為未分類專案
+          const dummyProj: FullProject = {
+            id: item.projectId,
+            caseNumber: item.projectCaseNumber || 'N/A',
+            name: item.projectName || '未分類專案',
+            status: 'active',
+            projectCategory: item.projectCategory || '已開案',
+            createdAt: item.createdAt,
+            createdBy: '',
+            subProjects: [],
+          };
+          map.set(item.projectId, { project: dummyProj, items: [item] });
+        }
       }
     });
 
