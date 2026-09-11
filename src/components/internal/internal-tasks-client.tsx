@@ -71,15 +71,37 @@ export function InternalTasksClient({
 
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '已結案'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '已結案' | '專案終止'>('all');
   const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'completed' | 'terminated'>('all');
   const [selectedSourceType, setSelectedSourceType] = useState<'all' | ProjectSourceType>('all');
+  const [selectedClient, setSelectedClient] = useState<string>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+
+  // 是否所有專案的待辦項目都已收合
+  const isAllCollapsed = useMemo(() => {
+    if (projects.length === 0) return false;
+    return projects.every((p) => collapsedProjects[p.id]);
+  }, [projects, collapsedProjects]);
+
+  // 一鍵切換：顯示/隱藏 所有專案待辦項目
+  const toggleAllCollapse = () => {
+    if (isAllCollapsed) {
+      // 目前全部收合中 -> 一鍵顯示 (展開) 所有專案待辦
+      setCollapsedProjects({});
+    } else {
+      // 目前有展開 -> 一鍵隱藏 (收合) 所有專案待辦
+      const next: Record<string, boolean> = {};
+      projects.forEach((p) => {
+        next[p.id] = true;
+      });
+      setCollapsedProjects(next);
+    }
+  };
 
   // 彈窗狀態
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -156,22 +178,35 @@ export function InternalTasksClient({
     });
   }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn]);
 
-  // 統計評估案 vs 已開案 vs 已結案
+  // 統計評估案 vs 已開案 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
     let pocCount = 0;
     let activeCount = 0;
     let completedCount = 0;
+    let terminatedCount = 0;
     projects.forEach((p) => {
-      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
       if (status === 'completed') {
         completedCount++;
+      } else if (status === 'terminated') {
+        terminatedCount++;
       } else {
-        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
+        const cat = p.projectCategory || ((p.status as any) === 'poc' ? '評估案' : '已開案');
         if (cat === '評估案') pocCount++;
         else activeCount++;
       }
     });
-    return { all: projects.length, poc: pocCount, active: activeCount, completed: completedCount };
+    return { all: projects.length, poc: pocCount, active: activeCount, completed: completedCount, terminated: terminatedCount };
+  }, [projects]);
+
+  // 整理所有客戶選項與專案數量統計
+  const clientFilterOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    projects.forEach((p) => {
+      const c = p.clientName || '燁輝';
+      map.set(c, (map.get(c) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
   }, [projects]);
 
   // 統計內部專案狀態 (進行中/評估中、已結案、專案終止)
@@ -235,15 +270,20 @@ export function InternalTasksClient({
       });
     } else if (selectedCategory === '已結案') {
       projectList = projectList.filter((p) => {
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
         return status === 'completed';
+      });
+    } else if (selectedCategory === '專案終止') {
+      projectList = projectList.filter((p) => {
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
+        return status === 'terminated';
       });
     }
 
     // 2. 專案生命週期狀態篩選 (進行中/評估中、已結案、專案終止)
     if (selectedInternalStatus !== 'all') {
       projectList = projectList.filter((p) => {
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
         return status === selectedInternalStatus;
       });
     }
@@ -251,9 +291,14 @@ export function InternalTasksClient({
     // 3. 專案來源型態篩選 (燁輝列管專案 vs 億威內部自建專案 vs 其他智慧製造專案)
     if (selectedSourceType !== 'all') {
       projectList = projectList.filter((p) => {
-        const src = p.sourceType || (p.projectCategory === '評估案' || p.status === 'poc' ? '億威內部自建專案' : '燁輝列管專案');
+        const src = p.sourceType || (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案');
         return src === selectedSourceType;
       });
+    }
+
+    // 4. 客戶篩選
+    if (selectedClient !== 'all') {
+      projectList = projectList.filter((p) => (p.clientName || '燁輝') === selectedClient);
     }
 
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
@@ -344,6 +389,7 @@ export function InternalTasksClient({
     selectedCategory,
     selectedInternalStatus,
     selectedSourceType,
+    selectedClient,
     selectedPhase,
     selectedStatus,
     selectedWaitingOn,
@@ -647,9 +693,27 @@ export function InternalTasksClient({
               {categoryCounts.completed}
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('專案終止')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              selectedCategory === '專案終止'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-rose-800 hover:bg-rose-100/70'
+            }`}
+          >
+            <span>⛔ 專案終止</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                selectedCategory === '專案終止' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-700'
+              }`}
+            >
+              {categoryCounts.terminated}
+            </span>
+          </button>
         </div>
 
-        {/* 排序方式與無待辦專案顯示開關 */}
+        {/* 排序方式與顯示/隱藏所有待辦開關 */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -669,13 +733,27 @@ export function InternalTasksClient({
           </div>
 
           <Button
-            variant={hideEmptyProjects ? 'secondary' : 'outline'}
+            variant="outline"
             size="sm"
-            onClick={() => setHideEmptyProjects((prev) => !prev)}
-            className="h-8 text-xs gap-1"
+            onClick={toggleAllCollapse}
+            className={`h-8 text-xs gap-1.5 font-medium transition-all ${
+              isAllCollapsed
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                : 'text-slate-700 bg-white hover:bg-slate-50'
+            }`}
+            title="一鍵展開或隱藏所有專案底下的待辦事項明細"
           >
-            <Filter className="h-3.5 w-3.5" />
-            {hideEmptyProjects ? '已隱藏無待辦專案' : '顯示所有專案 (含無待辦)'}
+            {isAllCollapsed ? (
+              <>
+                <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
+                <span>顯示所有專案待辦項目</span>
+              </>
+            ) : (
+              <>
+                <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+                <span>隱藏所有專案待辦項目</span>
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -693,6 +771,21 @@ export function InternalTasksClient({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* 客戶篩選 */}
+          <Select value={selectedClient} onValueChange={(val: any) => setSelectedClient(val)}>
+            <SelectTrigger className="w-[140px] h-9 text-xs font-medium">
+              <SelectValue placeholder="全部客戶" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部客戶 ({projects.length})</SelectItem>
+              {clientFilterOptions.map((c) => (
+                <SelectItem key={c.name} value={c.name}>
+                  🏢 {c.name} ({c.count})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {/* 專案來源型態篩選 */}
           <Select value={selectedSourceType} onValueChange={(val: any) => setSelectedSourceType(val)}>
             <SelectTrigger className="w-[165px] h-9 text-xs font-medium">
@@ -749,7 +842,7 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
-          {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedSourceType !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
+          {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedSourceType !== 'all' || selectedClient !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
             <Button
               variant="ghost"
               size="sm"
@@ -758,6 +851,7 @@ export function InternalTasksClient({
                 setSelectedCategory('all');
                 setSelectedInternalStatus('all');
                 setSelectedSourceType('all');
+                setSelectedClient('all');
                 setSelectedPhase('all');
                 setSelectedStatus('all');
                 setSelectedWaitingOn('all');
@@ -835,13 +929,21 @@ export function InternalTasksClient({
             return (
               <div
                 key={project.id}
-                className={`rounded-lg border bg-card shadow-sm transition-all overflow-hidden ${
-                  isCompleted ? 'border-emerald-200 bg-emerald-50/10' : isTerminated ? 'border-rose-200 opacity-80' : ''
+                className={`rounded-lg border shadow-sm transition-all overflow-hidden ${
+                  isCompleted
+                    ? 'border-emerald-300 bg-emerald-50/50'
+                    : isTerminated
+                    ? 'border-rose-300 bg-rose-50/50'
+                    : 'border-slate-200 bg-white'
                 }`}
               >
                 {/* 專案卡片標頭 */}
                 <div className={`flex flex-col lg:flex-row lg:items-center justify-between px-3.5 py-2.5 border-b gap-2.5 ${
-                  isCompleted ? 'bg-emerald-50/40' : isTerminated ? 'bg-rose-50/30' : 'bg-slate-50/80'
+                  isCompleted
+                    ? 'bg-emerald-100/70 border-emerald-200/90'
+                    : isTerminated
+                    ? 'bg-rose-100/70 border-rose-200/90'
+                    : 'bg-white border-slate-100'
                 }`}>
                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
                     <button
@@ -897,27 +999,6 @@ export function InternalTasksClient({
                         <Building2 className="h-3 w-3 text-slate-500" />
                         <span>客戶: {project.clientName || '燁輝'}</span>
                       </Badge>
-
-                      {/* 專案生命週期狀態標籤 */}
-                      {isCompleted ? (
-                        project.autoCompletedByClient ? (
-                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
-                            <span>🏆 客戶管制表已結案</span>
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
-                            <span>✅ 已結案</span>
-                          </Badge>
-                        )
-                      ) : isTerminated ? (
-                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 text-[11px] px-1.5 py-0.5 flex items-center gap-1 shrink-0">
-                          <span>⛔ 專案終止</span>
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-[11px] px-1.5 py-0.5 shrink-0">
-                          {isEvalCategory ? '評估中' : '執行中'}
-                        </Badge>
-                      )}
 
                       {/* 關聯客戶管制表標籤 */}
                       {project.linkedCustomerProjectId && (
@@ -1089,9 +1170,17 @@ export function InternalTasksClient({
 
                 {/* 待辦事項清單 */}
                 {!isCollapsed && (
-                  <div className="p-4 divide-y">
+                  <div className={`p-4 divide-y ${
+                    isCompleted ? 'bg-emerald-50/20 divide-emerald-100/60' : isTerminated ? 'bg-rose-50/20 divide-rose-100/60' : 'bg-white divide-slate-100'
+                  }`}>
                     {items.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-muted-foreground bg-slate-50/40 rounded border border-dashed border-slate-200">
+                      <div className={`py-6 text-center text-xs rounded border border-dashed ${
+                        isCompleted
+                          ? 'text-emerald-800/80 bg-emerald-50/40 border-emerald-200'
+                          : isTerminated
+                          ? 'text-rose-800/80 bg-rose-50/40 border-rose-200'
+                          : 'text-muted-foreground bg-slate-50/40 border-slate-200'
+                      }`}>
                         此專案尚未建立任何待辦或歷程項目。
                         {isAdmin && (
                           <button
