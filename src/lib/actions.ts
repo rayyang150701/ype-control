@@ -1014,9 +1014,17 @@ export async function updateActionItem(id: string, data: Partial<{
     const supabase = getSupabaseClient();
     try {
         const updatePayload: any = {
-            ...data,
             updated_at: new Date().toISOString()
         };
+
+        if (data.title !== undefined) updatePayload.title = data.title;
+        if (data.phase !== undefined) updatePayload.phase = data.phase;
+        if (data.status !== undefined) updatePayload.status = data.status;
+        if (data.owner !== undefined) updatePayload.owner = data.owner;
+        if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
+        if (data.dueDate !== undefined) updatePayload.due_date = data.dueDate || null;
+        if (data.notes !== undefined) updatePayload.notes = data.notes;
+        if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
         if (data.status === 'completed') {
             updatePayload.completed_at = new Date().toISOString();
