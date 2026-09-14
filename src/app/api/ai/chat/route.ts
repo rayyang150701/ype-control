@@ -137,7 +137,7 @@ function generateExpertResponse(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { projectId, messages = [], customApiKey, customProvider = 'gemini' } = body;
+    const { projectId, messages = [], customApiKey, customProvider, customModel } = body;
 
     const actionItems = await getActionItems(projectId === 'all' ? undefined : projectId);
     const projects = await getFullProjects();
@@ -260,22 +260,68 @@ ${projectSummary}
 ${JSON.stringify(formattedItems, null, 2)}
 `;
 
-    // 檢查使用的 API Key
+    // 檢查使用的 API Key 與 Provider
     const apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    const provider = customProvider || (customApiKey ? 'gemini' : (process.env.GEMINI_API_KEY ? 'gemini' : 'openai'));
+    const provider = customProvider || (customApiKey ? (customApiKey.startsWith('AIza') ? 'gemini' : 'openai') : (process.env.OPENAI_API_KEY ? 'openai' : 'gemini'));
+
+    // 模型指定：優先使用前端傳入之 customModel，其次取環境變數，最後使用預設模型
+    const defaultModel = provider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5.6-luna') : (process.env.GEMINI_MODEL || 'gemini-1.5-flash');
+    const selectedModel = (customModel && customModel.trim()) || defaultModel;
 
     let replyText = '';
+    let usedModel = '';
+    let apiErrorMessage = '';
 
-    // 1. 若有 Google Gemini API Key
-    if (apiKey && (provider === 'gemini' || apiKey.startsWith('AIza'))) {
+    // 1. 若為 OpenAI (或提供 OpenAI API Key)
+    if (apiKey && provider === 'openai') {
       try {
+        usedModel = selectedModel;
+        const openaiMessages = [
+          { role: 'system', content: systemPrompt },
+          ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+        ];
+
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: openaiMessages,
+            temperature: 0.4,
+          }),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          replyText = json?.choices?.[0]?.message?.content || '';
+        } else {
+          const errBody = await res.text();
+          console.error(`OpenAI API 回傳錯誤 (${selectedModel}):`, res.status, errBody);
+          try {
+            const parsed = JSON.parse(errBody);
+            apiErrorMessage = parsed?.error?.message || errBody;
+          } catch {
+            apiErrorMessage = errBody;
+          }
+        }
+      } catch (err: any) {
+        console.error('OpenAI API 請求例外:', err);
+        apiErrorMessage = err?.message || String(err);
+      }
+    } else if (apiKey && (provider === 'gemini' || apiKey.startsWith('AIza'))) {
+      // 2. 若為 Google Gemini API
+      try {
+        usedModel = selectedModel;
         const geminiContents = messages.map((m: any) => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }],
         }));
 
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -297,48 +343,25 @@ ${JSON.stringify(formattedItems, null, 2)}
           replyText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else {
           const errBody = await res.text();
-          console.error('Gemini API 回傳錯誤:', res.status, errBody);
+          console.error(`Gemini API 回傳錯誤 (${selectedModel}):`, res.status, errBody);
+          try {
+            const parsed = JSON.parse(errBody);
+            apiErrorMessage = parsed?.error?.message || errBody;
+          } catch {
+            apiErrorMessage = errBody;
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Gemini API 請求例外:', err);
-      }
-    } else if (apiKey && provider === 'openai') {
-      // 2. 若有 OpenAI API Key
-      try {
-        const openaiMessages = [
-          { role: 'system', content: systemPrompt },
-          ...messages.map((m: any) => ({ role: m.role, content: m.content })),
-        ];
-
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: openaiMessages,
-            temperature: 0.4,
-          }),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          replyText = json?.choices?.[0]?.message?.content || '';
-        } else {
-          const errBody = await res.text();
-          console.error('OpenAI API 回傳錯誤:', res.status, errBody);
-        }
-      } catch (err) {
-        console.error('OpenAI API 請求例外:', err);
+        apiErrorMessage = err?.message || String(err);
       }
     }
 
     // 3. 若未設定 API Key 或 API 呼叫失敗，啟用內建專家規則推理引擎
     if (!replyText) {
+      usedModel = '內建專家規則引擎';
       const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop()?.content || '';
-      replyText = generateExpertResponse(
+      const expertText = generateExpertResponse(
         lastUserMsg,
         targetProject,
         actionItems,
@@ -349,11 +372,18 @@ ${JSON.stringify(formattedItems, null, 2)}
         totalDelayedDays,
         lessons
       );
+
+      if (apiErrorMessage) {
+        replyText = `> ⚠️ **模型調用提示 (${selectedModel})**：${apiErrorMessage}\n>\n> *系統已自動切換至內建專家規則引擎為您提供本專案診斷：*\n\n${expertText}`;
+      } else {
+        replyText = expertText;
+      }
     }
 
     return NextResponse.json({
       success: true,
       reply: replyText,
+      usedModel,
       hasApiKey: !!apiKey,
     });
   } catch (error: any) {

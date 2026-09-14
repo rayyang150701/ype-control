@@ -25,6 +25,7 @@ import {
   Check,
   RotateCcw,
   User,
+  Zap,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -91,11 +92,15 @@ export function AIAnalysisDialog({
   const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const [currentProjectId, setCurrentProjectId] = useState<string>(projectId || 'all');
 
-  // API Key 與 Provider 設定狀態
+  // API Key、Provider 與 Model 設定狀態
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiProviderInput, setApiProviderInput] = useState<'gemini' | 'openai'>('gemini');
+  const [apiProviderInput, setApiProviderInput] = useState<'gemini' | 'openai'>('openai');
+  const [apiModelInput, setApiModelInput] = useState('gpt-5.6-luna');
   const [savedApiKey, setSavedApiKey] = useState('');
+  const [savedProvider, setSavedProvider] = useState<'gemini' | 'openai'>('openai');
+  const [savedModel, setSavedModel] = useState('');
+  const [activeModelName, setActiveModelName] = useState('');
 
   // 診斷報告狀態
   const [reportLoading, setReportLoading] = useState(false);
@@ -107,14 +112,21 @@ export function AIAnalysisDialog({
   const [isThinking, setIsThinking] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // 載入本地保存之 API Key
+  // 載入本地保存之 API 設定
   useEffect(() => {
     try {
       const storedKey = localStorage.getItem('user_ai_api_key') || '';
-      const storedProvider = (localStorage.getItem('user_ai_provider') as 'gemini' | 'openai') || 'gemini';
+      const storedProvider = (localStorage.getItem('user_ai_provider') as 'gemini' | 'openai') || (storedKey.startsWith('AIza') ? 'gemini' : 'openai');
+      const defaultModel = storedProvider === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash';
+      const storedModel = localStorage.getItem('user_ai_model') || defaultModel;
+
       setSavedApiKey(storedKey);
       setApiKeyInput(storedKey);
+      setSavedProvider(storedProvider);
       setApiProviderInput(storedProvider);
+      setSavedModel(storedModel);
+      setApiModelInput(storedModel);
+      setActiveModelName(storedKey ? storedModel : '內建專家規則引擎');
     } catch {}
   }, []);
 
@@ -182,7 +194,8 @@ export function AIAnalysisDialog({
           projectId: currentProjectId === 'all' ? undefined : currentProjectId,
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           customApiKey: savedApiKey || undefined,
-          customProvider: apiProviderInput,
+          customProvider: savedProvider,
+          customModel: savedModel || undefined,
         }),
       });
 
@@ -195,6 +208,9 @@ export function AIAnalysisDialog({
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
         setMessages((prev) => [...prev, assistantMsg]);
+        if (json.usedModel) {
+          setActiveModelName(json.usedModel);
+        }
       } else {
         toast({ title: 'AI 分析異常', description: json.message || '無法取得回答', variant: 'destructive' });
       }
@@ -233,70 +249,88 @@ export function AIAnalysisDialog({
     }
   }, [messages, isThinking, activeTab]);
 
-  // 儲存 API Key
+  // 儲存 API 設定
   const handleSaveApiKey = () => {
-    const trimmed = apiKeyInput.trim();
     try {
-      localStorage.setItem('user_ai_api_key', trimmed);
+      const trimmedKey = apiKeyInput.trim();
+      const trimmedModel = apiModelInput.trim() || (apiProviderInput === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash');
+
+      if (trimmedKey) {
+        localStorage.setItem('user_ai_api_key', trimmedKey);
+        setSavedApiKey(trimmedKey);
+      }
       localStorage.setItem('user_ai_provider', apiProviderInput);
-      setSavedApiKey(trimmed);
-      setSettingsOpen(false);
+      setSavedProvider(apiProviderInput);
+      localStorage.setItem('user_ai_model', trimmedModel);
+      setSavedModel(trimmedModel);
+      setApiModelInput(trimmedModel);
+      setActiveModelName(trimmedKey ? trimmedModel : '內建專家規則引擎');
+
       toast({
-        title: trimmed ? '✅ API Key 已成功儲存！' : '已清除自訂 API Key',
-        description: trimmed ? `後續將優先使用您的 ${apiProviderInput === 'gemini' ? 'Google Gemini' : 'OpenAI'} 金鑰進行對話與診斷。` : '系統將使用伺服器 .env 預設配置。',
+        title: 'API 設定已儲存',
+        description: `供應商: ${apiProviderInput === 'openai' ? 'OpenAI' : 'Google Gemini'} | 模型: ${trimmedModel}`,
       });
-    } catch (err) {
-      toast({ title: '儲存失敗', variant: 'destructive' });
+      setSettingsOpen(false);
+    } catch (e: any) {
+      toast({ title: '儲存失敗', description: e.message, variant: 'destructive' });
     }
+  };
+
+  // 清除 API 設定
+  const handleClearSettings = () => {
+    setApiKeyInput('');
+    setSavedApiKey('');
+    localStorage.removeItem('user_ai_api_key');
+    localStorage.removeItem('user_ai_model');
+    localStorage.removeItem('user_ai_provider');
+    setSavedModel('');
+    setActiveModelName('內建專家規則引擎');
+    toast({ title: '已清除本機 API 設定' });
   };
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
-          {/* 頂部標題區 */}
-          <DialogHeader className="p-4 pb-3 border-b bg-slate-50/80">
-            <div className="flex items-center justify-between gap-3 pr-6">
+        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden bg-slate-50/50">
+          {/* 頂部 Header */}
+          <DialogHeader className="p-4 bg-white border-b shrink-0 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <div className="h-9 w-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                <div className="h-8 w-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
                   <Bot className="h-5 w-5" />
                 </div>
                 <div>
-                  <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <span>AI 專案智慧診斷與對話顧問</span>
-                    {savedApiKey ? (
-                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px] py-0">
-                        ⚡ 自訂 API 啟用中
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-[10px] py-0 font-normal">
-                        專家推理引擎
-                      </Badge>
-                    )}
+                  <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900">
+                    <span>AI 智慧診斷顧問</span>
+                    <Badge variant="secondary" className="text-[11px] font-normal bg-indigo-50 text-indigo-700 border-indigo-200">
+                      專案歷程深度分析
+                    </Badge>
                   </DialogTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    結合真實待辦歷程、時程調整紀錄、實際工期與等候卡關數據進行互動式深度問答
-                  </p>
                 </div>
               </div>
 
-              {/* 頂部按鈕：API 設定 */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSettingsOpen(true)}
-                className="gap-1.5 text-xs h-8 bg-white border-slate-300 hover:bg-slate-100"
-              >
-                <Settings className="h-3.5 w-3.5 text-slate-600" />
-                <span>API 設定</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                {/* API 設定按鈕 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSettingsOpen(true)}
+                  className="gap-1.5 text-xs h-8 text-slate-700 border-slate-300 hover:bg-slate-50 cursor-pointer"
+                >
+                  <Settings className="h-3.5 w-3.5 text-slate-500" />
+                  <span>⚙️ API 與模型設定</span>
+                  {savedApiKey && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  )}
+                </Button>
+              </div>
             </div>
 
-            {/* 專案選擇列與模式切換標籤 */}
-            <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
-              {/* 診斷標的選單 */}
-              <div className="flex items-center gap-2 flex-1">
-                <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+            {/* 專案選單列與頁籤切換 */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+              {/* 專案選擇器 */}
+              <div className="flex items-center gap-2 flex-1 max-w-md">
+                <span className="text-xs font-semibold text-slate-700 whitespace-nowrap shrink-0">
                   診斷標的：
                 </span>
                 <Select value={currentProjectId} onValueChange={handleProjectChange}>
@@ -345,10 +379,38 @@ export function AIAnalysisDialog({
                 </button>
               </div>
             </div>
+
+            {/* 目前使用的模型資訊條 */}
+            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100/90 rounded-md border text-[11px] text-slate-600">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <span>目前引擎：</span>
+                <span className="font-mono font-bold text-indigo-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                  {activeModelName || savedModel || (savedProvider === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash')}
+                </span>
+                {savedApiKey ? (
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-50 text-emerald-700 border-emerald-300">
+                    {savedProvider === 'openai' ? 'OpenAI' : 'Gemini'} 連線中
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-amber-50 text-amber-700 border-amber-300">
+                    規則引擎 (未設 Key)
+                  </Badge>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline cursor-pointer flex items-center gap-1 shrink-0 ml-2"
+              >
+                <Settings className="h-3 w-3" />
+                <span>切換模型</span>
+              </button>
+            </div>
           </DialogHeader>
 
           {/* 內容本體 */}
-          <div className="flex-1 overflow-y-auto min-h-[420px] max-h-[62vh] p-4">
+          <div className="flex-1 overflow-y-auto min-h-[420px] max-h-[60vh] p-4">
             {activeTab === 'chat' ? (
               /* ─── 模式 1：對話式 AI 顧問 ─── */
               <div className="flex flex-col h-full space-y-3.5">
@@ -379,23 +441,23 @@ export function AIAnalysisDialog({
                           >
                             {msg.content}
                           </div>
-                          <span className="text-[10px] text-muted-foreground block px-1">
+                          <div className={`text-[10px] text-slate-400 px-1 ${isUser ? 'text-right' : 'text-left'}`}>
                             {msg.timestamp}
-                          </span>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
 
-                  {/* 思考中動畫 */}
+                  {/* AI 思考中指示 */}
                   {isThinking && (
                     <div className="flex items-start gap-2.5">
-                      <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 animate-pulse">
-                        <Bot className="h-4 w-4" />
+                      <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                        <Bot className="h-4 w-4 animate-pulse" />
                       </div>
-                      <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-xl rounded-tl-none p-3 text-xs text-indigo-900 flex items-center gap-2">
+                      <div className="bg-white border border-indigo-200 p-3 rounded-xl rounded-tl-none text-xs text-indigo-900 flex items-center gap-2 shadow-2xs">
                         <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
-                        <span>AI 正在深入剖析【{currentProjectDisplayName}】所有待辦事項、時程落差與卡關紀錄...</span>
+                        <span>AI 顧問正在比對【{currentProjectDisplayName}】的所有歷史待辦與工期數據...</span>
                       </div>
                     </div>
                   )}
@@ -403,20 +465,20 @@ export function AIAnalysisDialog({
                   <div ref={chatBottomRef} />
                 </div>
 
-                {/* 快捷發問建議 Chips */}
-                <div className="pt-2 border-t">
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium mb-1.5">
+                {/* 快捷推薦問題 Chips */}
+                <div className="pt-2 border-t border-slate-200/80">
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 mb-1.5">
                     <Sparkles className="h-3 w-3 text-amber-500" />
-                    <span>快捷提問推薦（點擊直接發問）：</span>
+                    <span>快速請教 AI（點擊即發問）：</span>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex flex-wrap gap-1.5">
                     {QUICK_PROMPTS.map((prompt, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => handleSendMessage(prompt)}
                         disabled={isThinking}
-                        className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition-colors disabled:opacity-50 text-left cursor-pointer"
+                        className="text-[11px] px-2.5 py-1 bg-white hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 border border-slate-200 rounded-full text-slate-600 transition-colors text-left cursor-pointer shadow-2xs disabled:opacity-50"
                       >
                         {prompt}
                       </button>
@@ -425,46 +487,72 @@ export function AIAnalysisDialog({
                 </div>
               </div>
             ) : (
-              /* ─── 模式 2：專案歷程診斷指標報告 ─── */
-              <div>
+              /* ─── 模式 2：歷程診斷報告 (圖表與量化分析) ─── */
+              <div className="space-y-4">
                 {reportLoading ? (
-                  <div className="flex flex-col items-center justify-center py-16 space-y-3">
-                    <RefreshCw className="h-8 w-8 text-primary animate-spin" />
-                    <p className="text-xs font-medium text-muted-foreground">
-                      AI 正在盤點專案歷程、計算延遲天數與歸納卡關熱點...
-                    </p>
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+                    <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
+                    <p className="text-sm">正在深度分析【{currentProjectDisplayName}】的待辦時程數據...</p>
                   </div>
                 ) : reportData ? (
                   <div className="space-y-4">
-                    {/* 核心指標卡片 */}
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      <div className="rounded-lg border bg-slate-50 p-2 text-center">
-                        <div className="text-[11px] text-muted-foreground">總待辦歷程</div>
-                        <div className="text-base font-bold text-slate-800">{reportData.totalItems} 項</div>
-                      </div>
-                      <div className="rounded-lg border bg-blue-50 p-2 text-center border-blue-200">
-                        <div className="text-[11px] text-blue-700">平均施作工期</div>
-                        <div className="text-base font-bold text-blue-800">
-                          {reportData.avgWorkDays !== null && reportData.avgWorkDays !== undefined ? `${reportData.avgWorkDays} 天` : '統計中'}
+                    {/* 數據總覽小卡 */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className="rounded-lg border bg-white p-3 shadow-2xs">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span className="text-xs">總待辦項目</span>
+                          <CheckCircle2 className="h-4 w-4 text-indigo-600" />
+                        </div>
+                        <div className="mt-1.5 text-xl font-bold text-slate-900">
+                          {reportData.totalItems}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">項</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          完成率 {reportData.totalItems > 0 ? Math.round((reportData.completedCount / reportData.totalItems) * 100) : 0}%
                         </div>
                       </div>
-                      <div className="rounded-lg border bg-orange-50 p-2 text-center border-orange-200">
-                        <div className="text-[11px] text-orange-700">時程調整次數</div>
-                        <div className="text-base font-bold text-orange-800">
-                          {reportData.totalRescheduledCount || 0} 次
+
+                      <div className="rounded-lg border bg-white p-3 shadow-2xs">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span className="text-xs">卡關等候中</span>
+                          <Clock className="h-4 w-4 text-amber-500" />
+                        </div>
+                        <div className="mt-1.5 text-xl font-bold text-amber-600">
+                          {reportData.blockedCount}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">項</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          需要跨單位介入協調
                         </div>
                       </div>
-                      <div className="rounded-lg border bg-rose-50 p-2 text-center border-rose-200">
-                        <div className="text-[11px] text-rose-700">累計延誤天數</div>
-                        <div className="text-base font-bold text-rose-600">{reportData.totalDelayedDays} 天</div>
+
+                      <div className="rounded-lg border bg-white p-3 shadow-2xs">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span className="text-xs">平均施作工期</span>
+                          <Clock className="h-4 w-4 text-emerald-500" />
+                        </div>
+                        <div className="mt-1.5 text-xl font-bold text-emerald-600">
+                          {reportData.avgWorkDays !== null && reportData.avgWorkDays !== undefined
+                            ? `${reportData.avgWorkDays} 天`
+                            : '計算中'}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          累計調整 {reportData.totalRescheduledCount || 0} 次時程
+                        </div>
                       </div>
-                      <div className="rounded-lg border bg-amber-50 p-2 text-center border-amber-200">
-                        <div className="text-[11px] text-amber-700">卡關等候中</div>
-                        <div className="text-base font-bold text-amber-600">{reportData.blockedCount} 項</div>
-                      </div>
-                      <div className="rounded-lg border bg-emerald-50 p-2 text-center border-emerald-200">
-                        <div className="text-[11px] text-emerald-700">已完結項目</div>
-                        <div className="text-base font-bold text-emerald-600">{reportData.completedCount} 項</div>
+
+                      <div className="rounded-lg border bg-white p-3 shadow-2xs">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span className="text-xs">累計延誤天數</span>
+                          <AlertTriangle className="h-4 w-4 text-rose-500" />
+                        </div>
+                        <div className="mt-1.5 text-xl font-bold text-rose-600">
+                          {reportData.totalDelayedDays}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">天</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          共 {reportData.delayedItemsCount} 項曾發生逾期
+                        </div>
                       </div>
                     </div>
 
@@ -600,48 +688,119 @@ export function AIAnalysisDialog({
         </DialogContent>
       </Dialog>
 
-      {/* ─── API Key 設定面板彈窗 ─── */}
+      {/* ─── API Key 與模型指定設定面板彈窗 ─── */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <Key className="h-5 w-5 text-indigo-600" />
-              <span>AI 智慧診斷 API 設定</span>
+              <span>AI 智慧診斷 API 與模型設定</span>
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
             {/* 說明文字 */}
-            <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-1 text-blue-950">
-              <p className="font-semibold">💡 API 設定說明與金鑰申請：</p>
-              <p className="leading-relaxed text-blue-900">
-                本系統支援 **Google Gemini**（推薦）或 **OpenAI**。即使未輸入金鑰，系統亦內建智慧專家推理引擎為您分析。
-              </p>
-              <div className="pt-1">
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-blue-700 hover:underline font-semibold"
-                >
-                  <span>👉 點此免費獲取 Google Gemini API Key</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+            <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-1.5 text-blue-950">
+              <div className="flex items-center gap-1.5 font-semibold text-blue-900">
+                <Zap className="h-4 w-4 text-amber-500 fill-amber-500" />
+                <span>支援 OpenAI 全系列與 Google Gemini 模型</span>
               </div>
+              <p className="leading-relaxed text-blue-900">
+                若您的 OpenAI 帳號支援 <strong className="font-mono bg-blue-100 px-1 py-0.5 rounded text-indigo-800">gpt-5.6-luna</strong>（擁有高達 5,000,000 TPD 的充裕額度），可直接於下方指定使用！
+              </p>
             </div>
 
-            {/* 模型選擇 */}
+            {/* 模型提供商選擇 */}
             <div className="space-y-1.5">
               <label className="font-semibold text-slate-800">模型提供商 (Provider)</label>
-              <Select value={apiProviderInput} onValueChange={(val: any) => setApiProviderInput(val)}>
+              <Select
+                value={apiProviderInput}
+                onValueChange={(val: 'gemini' | 'openai') => {
+                  setApiProviderInput(val);
+                  if (val === 'openai' && (!apiModelInput || apiModelInput.includes('gemini'))) {
+                    setApiModelInput('gpt-5.6-luna');
+                  } else if (val === 'gemini' && (!apiModelInput || apiModelInput.includes('gpt'))) {
+                    setApiModelInput('gemini-1.5-flash');
+                  }
+                }}
+              >
                 <SelectTrigger className="bg-white text-xs h-9">
                   <SelectValue placeholder="請選擇模型提供商" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gemini">Google Gemini (Gemini 1.5 Flash - 推薦，免費額度充足)</SelectItem>
-                  <SelectItem value="openai">OpenAI (GPT-4o-mini)</SelectItem>
+                  <SelectItem value="openai">OpenAI (支援 gpt-5.6-luna, gpt-4o-mini 等)</SelectItem>
+                  <SelectItem value="gemini">Google Gemini (支援 1.5 Flash, 2.0 Flash 等)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* 指定模型名稱與快速標籤 Chips */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-slate-800">指定模型名稱 (Model ID)</label>
+                <span className="text-[11px] text-muted-foreground">點選下方標籤快速填入</span>
+              </div>
+
+              {/* 快速標籤 Chips */}
+              {apiProviderInput === 'openai' ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'gpt-5.6-luna', label: '⭐ gpt-5.6-luna (500萬 TPD 首選)', hot: true },
+                    { id: 'gpt-4o-mini', label: 'gpt-4o-mini (200萬 TPD)' },
+                    { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra (90萬 TPD)' },
+                    { id: 'gpt-4o', label: 'gpt-4o (旗艦版)' },
+                    { id: 'o3-mini', label: 'o3-mini (深度推理)' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setApiModelInput(m.id)}
+                      className={`px-2 py-1 rounded border text-[11px] transition-colors cursor-pointer ${
+                        apiModelInput === m.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-2xs'
+                          : m.hot
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 font-medium'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'gemini-1.5-flash', label: '⭐ gemini-1.5-flash (推薦免費)', hot: true },
+                    { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (最新極速)' },
+                    { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (深度長文)' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setApiModelInput(m.id)}
+                      className={`px-2 py-1 rounded border text-[11px] transition-colors cursor-pointer ${
+                        apiModelInput === m.id
+                          ? 'bg-indigo-600 text-white border-indigo-600 font-semibold shadow-2xs'
+                          : m.hot
+                          ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 font-medium'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <Input
+                placeholder={apiProviderInput === 'openai' ? '例如: gpt-5.6-luna' : '例如: gemini-1.5-flash'}
+                value={apiModelInput}
+                onChange={(e) => setApiModelInput(e.target.value)}
+                className="bg-white text-xs font-mono h-9"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                亦可自行手動輸入任何專屬或客製模型 ID。
+              </p>
             </div>
 
             {/* API Key 輸入框 */}
@@ -662,7 +821,7 @@ export function AIAnalysisDialog({
                 className="bg-white text-xs font-mono h-9"
               />
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                金鑰僅儲存於您目前的瀏覽器中，或您亦可由伺服端管理員直接寫入根目錄 <code>.env</code> 檔案（<code>GEMINI_API_KEY=...</code>）。
+                金鑰僅儲存於您個人的瀏覽器中，亦可由系統管理者直接寫入 <code>.env</code> 檔案。
               </p>
             </div>
           </div>
@@ -672,18 +831,13 @@ export function AIAnalysisDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setApiKeyInput('');
-                  localStorage.removeItem('user_ai_api_key');
-                  setSavedApiKey('');
-                  toast({ title: '已清除本機金鑰' });
-                }}
-                className="text-xs text-rose-600 hover:text-rose-700"
+                onClick={handleClearSettings}
+                className="text-xs text-rose-600 hover:text-rose-700 cursor-pointer"
               >
-                清除金鑰
+                清除金鑰與自訂
               </Button>
             )}
-            <Button size="sm" onClick={handleSaveApiKey} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white">
+            <Button size="sm" onClick={handleSaveApiKey} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">
               儲存設定
             </Button>
           </DialogFooter>
