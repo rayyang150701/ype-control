@@ -115,7 +115,13 @@ export function AIAnalysisDialog({
   // 載入本地保存之 API 設定
   useEffect(() => {
     try {
-      const storedKey = localStorage.getItem('user_ai_api_key') || '';
+      let storedKey = localStorage.getItem('user_ai_api_key') || '';
+      // 防呆：若儲存的金鑰格式不符 (例如被瀏覽器自動填入帳號密碼)，自動清除
+      if (storedKey && !storedKey.startsWith('sk-') && !storedKey.startsWith('AIza')) {
+        localStorage.removeItem('user_ai_api_key');
+        storedKey = '';
+      }
+
       const storedProvider = (localStorage.getItem('user_ai_provider') as 'gemini' | 'openai') || (storedKey.startsWith('AIza') ? 'gemini' : 'openai');
       const defaultModel = storedProvider === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash';
       const storedModel = localStorage.getItem('user_ai_model') || defaultModel;
@@ -255,20 +261,35 @@ export function AIAnalysisDialog({
       const trimmedKey = apiKeyInput.trim();
       const trimmedModel = apiModelInput.trim() || (apiProviderInput === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash');
 
+      // 檢查金鑰格式 (若有輸入)
       if (trimmedKey) {
+        if (!trimmedKey.startsWith('sk-') && !trimmedKey.startsWith('AIza')) {
+          toast({
+            title: '金鑰格式不正確',
+            description: apiProviderInput === 'openai' ? 'OpenAI 金鑰請以 sk-... 完整輸入' : 'Gemini 金鑰請以 AIza... 完整輸入',
+            variant: 'destructive',
+          });
+          return;
+        }
         localStorage.setItem('user_ai_api_key', trimmedKey);
         setSavedApiKey(trimmedKey);
+      } else {
+        localStorage.removeItem('user_ai_api_key');
+        setSavedApiKey('');
       }
+
       localStorage.setItem('user_ai_provider', apiProviderInput);
       setSavedProvider(apiProviderInput);
       localStorage.setItem('user_ai_model', trimmedModel);
       setSavedModel(trimmedModel);
       setApiModelInput(trimmedModel);
-      setActiveModelName(trimmedKey ? trimmedModel : '內建專家規則引擎');
+      setActiveModelName(trimmedModel);
 
       toast({
-        title: 'API 設定已儲存',
-        description: `供應商: ${apiProviderInput === 'openai' ? 'OpenAI' : 'Google Gemini'} | 模型: ${trimmedModel}`,
+        title: 'API 與模型設定已儲存',
+        description: trimmedKey
+          ? `已儲存個人金鑰 (${apiProviderInput === 'openai' ? 'OpenAI' : 'Google Gemini'}) | 模型: ${trimmedModel}`
+          : `採用伺服端 .env 預設金鑰 | 模型: ${trimmedModel}`,
       });
       setSettingsOpen(false);
     } catch (e: any) {
@@ -284,8 +305,8 @@ export function AIAnalysisDialog({
     localStorage.removeItem('user_ai_model');
     localStorage.removeItem('user_ai_provider');
     setSavedModel('');
-    setActiveModelName('內建專家規則引擎');
-    toast({ title: '已清除本機 API 設定' });
+    setActiveModelName('gpt-5.6-luna');
+    toast({ title: '已清除本機自訂設定，恢復伺服器 .env 預設' });
   };
 
   return (
@@ -815,13 +836,15 @@ export function AIAnalysisDialog({
               </div>
               <Input
                 type="password"
-                placeholder={apiProviderInput === 'gemini' ? '貼上 AIzaSy... 格式金鑰' : '貼上 sk-... 格式金鑰'}
+                autoComplete="new-password"
+                name="openai_api_key_custom"
+                placeholder={apiProviderInput === 'gemini' ? '貼上 AIzaSy... 金鑰（留空則使用伺服端預設）' : '貼上 sk-... 金鑰（留空則使用伺服端預設）'}
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
                 className="bg-white text-xs font-mono h-9"
               />
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                金鑰僅儲存於您個人的瀏覽器中，亦可由系統管理者直接寫入 <code>.env</code> 檔案。
+                💡 若您已在伺服端 <code>.env</code> 寫入 <code>OPENAI_API_KEY</code>，此處<strong>直接留空</strong>即可，系統會自動呼叫伺服端的 <code>gpt-5.6-luna</code>！
               </p>
             </div>
           </div>
