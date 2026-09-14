@@ -381,7 +381,7 @@ export function ActionItemDialog({
           {/* 階段與狀態 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm font-semibold">專案階段</Label>
+              <Label className="text-sm font-semibold flex items-center h-5">專案階段</Label>
               <Select value={phase} onValueChange={(val) => setPhase(val as ActionItemPhase)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
@@ -397,7 +397,7 @@ export function ActionItemDialog({
             </div>
 
             <div>
-              <Label className="text-sm font-semibold">目前狀態</Label>
+              <Label className="text-sm font-semibold flex items-center h-5">目前狀態</Label>
               <Select value={status} onValueChange={(val) => setStatus(val as ActionItemStatus)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
@@ -415,9 +415,9 @@ export function ActionItemDialog({
           {/* 責任歸屬 & 目前等誰處理 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm font-semibold flex items-center gap-1">
-                <Building2 className="h-3.5 w-3.5 text-slate-500" />
-                責任歸屬 (客戶/單位)
+              <Label className="text-sm font-semibold flex items-center gap-1.5 h-5">
+                <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                <span>責任歸屬</span>
               </Label>
               <Select value={owner || '燁輝'} onValueChange={setOwner}>
                 <SelectTrigger className="mt-1">
@@ -434,9 +434,9 @@ export function ActionItemDialog({
             </div>
 
             <div>
-              <Label className="text-sm font-semibold text-rose-600 flex items-center justify-between">
-                <span>目前等誰處理 (卡關跟催對象)</span>
-                {owner && <span className="text-[11px] font-normal text-rose-500 font-sans">({owner} 成員)</span>}
+              <Label className="text-sm font-semibold text-rose-600 flex items-center justify-between h-5">
+                <span className="truncate">等誰處理</span>
+                {owner && <span className="text-[11px] font-normal text-rose-500 font-sans truncate ml-1">({owner} 成員)</span>}
               </Label>
               <div className="mt-1">
                 <SearchableCombobox
@@ -456,7 +456,7 @@ export function ActionItemDialog({
           {/* 預計完成日 與 實際完成日 */}
           <div className={`grid ${status === 'completed' ? 'grid-cols-2 gap-3' : 'grid-cols-1'}`}>
             <div>
-              <Label className="text-sm font-semibold">預計完成日 (跟催基準點)</Label>
+              <Label className="text-sm font-semibold flex items-center h-5">預計完成日</Label>
               <Input
                 type="date"
                 className="mt-1"
@@ -472,9 +472,9 @@ export function ActionItemDialog({
 
             {status === 'completed' && (
               <div>
-                <Label className="text-sm font-semibold text-emerald-700 flex items-center justify-between">
+                <Label className="text-sm font-semibold text-emerald-700 flex items-center justify-between h-5">
                   <span>實際完成日</span>
-                  <span className="text-[10px] font-normal text-muted-foreground">(留空以系統打勾日為準)</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">(留空以系統為準)</span>
                 </Label>
                 <Input
                   type="date"
