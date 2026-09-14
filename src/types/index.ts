@@ -134,6 +134,19 @@ export type ActionItemPhase =
 
 export type ActionItemStatus = 'pending' | 'in_progress' | 'blocked' | 'completed';
 
+export interface DueDateChange {
+  from: string | null;
+  to: string | null;
+  changedAt: string;
+  delayDays: number;
+}
+
+export interface StatusChange {
+  from: string;
+  to: string;
+  at: string;
+}
+
 export interface ProjectActionItem {
   id: string;
   projectId: string;
@@ -144,7 +157,11 @@ export interface ProjectActionItem {
   owner: string;
   waitingOn?: string;
   dueDate?: string | null;
+  originalDueDate?: string | null;
+  startedAt?: string | null;
   completedAt?: string | null;
+  dueDateHistory?: DueDateChange[];
+  statusHistory?: StatusChange[];
   notes?: string;
   lessonLearnt?: string;
   createdAt: string;

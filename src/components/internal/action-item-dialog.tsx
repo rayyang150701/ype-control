@@ -74,6 +74,7 @@ export function ActionItemDialog({
   const [owner, setOwner] = useState(item?.owner || '');
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
+  const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [notes, setNotes] = useState(item?.notes || '');
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
 
@@ -153,6 +154,7 @@ export function ActionItemDialog({
         setOwner(item.owner || '');
         setWaitingOn(item.waitingOn || '');
         setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
+        setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
         setNotes(item.notes || '');
         setLessonLearnt(item.lessonLearnt || '');
       } else {
@@ -168,6 +170,7 @@ export function ActionItemDialog({
         setOwner(targetProj?.clientName || '燁輝');
         setWaitingOn('');
         setDueDate('');
+        setCompletedAt('');
         setNotes('');
         setLessonLearnt('');
       }
@@ -219,6 +222,7 @@ export function ActionItemDialog({
           owner: owner === '未指定' ? '' : owner,
           waitingOn,
           dueDate: dueDate || null,
+          completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           notes,
           lessonLearnt,
         });
@@ -238,6 +242,7 @@ export function ActionItemDialog({
           owner: owner === '未指定' ? '' : owner,
           waitingOn,
           dueDate: dueDate || null,
+          completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           notes,
           lessonLearnt,
         });
@@ -448,15 +453,37 @@ export function ActionItemDialog({
             </div>
           </div>
 
-          {/* 預計完成日 */}
-          <div>
-            <Label className="text-sm font-semibold">預計完成日 (跟催基準點)</Label>
-            <Input
-              type="date"
-              className="mt-1"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+          {/* 預計完成日 與 實際完成日 */}
+          <div className={`grid ${status === 'completed' ? 'grid-cols-2 gap-3' : 'grid-cols-1'}`}>
+            <div>
+              <Label className="text-sm font-semibold">預計完成日 (跟催基準點)</Label>
+              <Input
+                type="date"
+                className="mt-1"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              {item?.originalDueDate && item.originalDueDate !== dueDate && (
+                <span className="text-[11px] text-amber-600 block mt-0.5">
+                  📌 最初基準日：{item.originalDueDate}
+                </span>
+              )}
+            </div>
+
+            {status === 'completed' && (
+              <div>
+                <Label className="text-sm font-semibold text-emerald-700 flex items-center justify-between">
+                  <span>實際完成日</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">(留空以系統打勾日為準)</span>
+                </Label>
+                <Input
+                  type="date"
+                  className="mt-1 border-emerald-300 focus-visible:ring-emerald-500"
+                  value={completedAt}
+                  onChange={(e) => setCompletedAt(e.target.value)}
+                />
+              </div>
+            )}
           </div>
 
           {/* 歷程紀錄說明 */}

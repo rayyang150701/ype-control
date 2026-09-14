@@ -571,6 +571,17 @@ export function InternalTasksClient({
     const isOverdue = !isDone && dueDateObj && diffDays > 0;
     const isUpcoming = !isDone && dueDateObj && diffDays >= -3 && diffDays <= 0;
 
+    // 工期計算（自動，無需人工維護）
+    const startedAtObj = item.startedAt ? new Date(item.startedAt) : null;
+    const completedAtObj = item.completedAt ? new Date(item.completedAt) : null;
+    const workDays = startedAtObj
+      ? differenceInCalendarDays(isDone && completedAtObj ? completedAtObj : today, startedAtObj)
+      : null;
+    const delayCount = item.dueDateHistory?.length || 0;
+    const delayTotalDays = item.originalDueDate && item.dueDate && item.originalDueDate !== item.dueDate
+      ? differenceInCalendarDays(new Date(item.dueDate), new Date(item.originalDueDate))
+      : 0;
+
     return (
       <div
         key={item.id}
@@ -698,9 +709,28 @@ export function InternalTasksClient({
                   ✅ 已於 {item.completedAt ? item.completedAt.slice(0, 10) : '近期'} 完成
                 </span>
               )}
+
+              {/* 工期與延期資訊（系統自動計算） */}
+              {workDays !== null && workDays >= 0 && (
+                <span className={`text-[11px] block mt-0.5 font-medium ${isDone ? 'text-slate-500' : 'text-blue-600'}`}>
+                  ⏱ {isDone ? `工期 ${workDays} 天` : `已執行 ${workDays} 天`}
+                </span>
+              )}
+              {delayCount > 0 && (
+                <span className="text-[11px] block mt-0.5 text-orange-600 font-medium">
+                  📅 延期 {delayCount} 次{delayTotalDays > 0 ? ` (+${delayTotalDays}天)` : ''}
+                </span>
+              )}
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">未設預計日</span>
+          )}
+
+          {/* 未設預計日但有工期資訊時仍顯示 */}
+          {!item.dueDate && workDays !== null && workDays >= 0 && (
+            <span className={`text-[11px] font-medium ${isDone ? 'text-slate-500' : 'text-blue-600'}`}>
+              ⏱ {isDone ? `工期 ${workDays} 天` : `已執行 ${workDays} 天`}
+            </span>
           )}
 
           {/* 管理員編輯/刪除按鈕 */}

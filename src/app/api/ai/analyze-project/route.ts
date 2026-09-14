@@ -41,9 +41,27 @@ export async function POST(request: NextRequest) {
     const phaseMap: Record<string, { count: number; delayedDays: number }> = {};
     const lessons: string[] = [];
 
+    let totalWorkDays = 0;
+    let completedWithWorkDaysCount = 0;
+    let totalRescheduledCount = 0;
+
     for (const item of actionItems) {
       if (item.lessonLearnt && item.lessonLearnt.trim()) {
         lessons.push(item.lessonLearnt.trim());
+      }
+
+      // 累計實際工作天數
+      if (item.startedAt && item.completedAt) {
+        const days = differenceInCalendarDays(new Date(item.completedAt), new Date(item.startedAt));
+        if (days >= 0) {
+          totalWorkDays += days;
+          completedWithWorkDaysCount++;
+        }
+      }
+
+      // 累計延期調整次數
+      if (item.dueDateHistory && item.dueDateHistory.length > 0) {
+        totalRescheduledCount += item.dueDateHistory.length;
       }
 
       if (item.dueDate) {
@@ -76,6 +94,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const avgWorkDays = completedWithWorkDaysCount > 0 ? Math.round(totalWorkDays / completedWithWorkDaysCount) : 0;
+
     // 依卡關延誤天數排序
     const bottlenecks = Object.entries(waitingMap)
       .map(([party, stat]) => ({
@@ -98,7 +118,7 @@ export async function POST(request: NextRequest) {
     if (geminiKey) {
       try {
         const prompt = `你是一位資深的製造業專案管理與智慧製造專家。請依據以下專案歷程數據，提供簡潔扼要的：
-1. 延誤與瓶頸原因分析 (50字以內)
+1. 實際施作時間與延誤瓶頸分析 (60字以內，包含平均工期與延期頻率之解讀)
 2. 具體可執行的跟催行動建議 (100字以內)
 3. 歷程經驗檢討 (Lesson Learnt) 總結 (100字以內)
 
@@ -106,6 +126,8 @@ export async function POST(request: NextRequest) {
 總待辦項目: ${actionItems.length}
 已完成: ${completedCount}
 卡關中: ${blockedCount}
+已完成項目平均施作天數: ${completedWithWorkDaysCount > 0 ? `${avgWorkDays} 天 (${completedWithWorkDaysCount} 項有紀錄)` : '尚無足夠施作天數紀錄'}
+項目時程調整/延期累計次數: ${totalRescheduledCount} 次
 總累計延誤天數: ${totalDelayedDays} 天
 延誤項目數: ${delayedItemsCount}
 主要卡關對象與天數: ${JSON.stringify(bottlenecks)}
@@ -134,6 +156,9 @@ export async function POST(request: NextRequest) {
       // 內建智慧專家引擎分析
       const topBottleneck = bottlenecks[0];
       const adviceParts = [];
+      if (avgWorkDays > 0) {
+        adviceParts.push(`已完成項目平均施作工期為 ${avgWorkDays} 天，累計發生 ${totalRescheduledCount} 次時程調整。`);
+      }
       if (topBottleneck) {
         adviceParts.push(`目前最大卡關熱點為「${topBottleneck.party}」，已累計卡關延遲 ${topBottleneck.delayedDays} 天，建議立即安排主管階層介入或發出公文/會議追蹤。`);
       }
@@ -159,6 +184,8 @@ export async function POST(request: NextRequest) {
         blockedCount,
         totalDelayedDays,
         delayedItemsCount,
+        avgWorkDays: completedWithWorkDaysCount > 0 ? avgWorkDays : null,
+        totalRescheduledCount,
         topDelayReasons: delayedReasons.slice(0, 5),
         bottlenecks,
         lessonsLearnedSummary: aiLessonsSummary,

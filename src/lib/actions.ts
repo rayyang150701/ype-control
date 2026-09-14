@@ -954,7 +954,11 @@ export async function getActionItems(projectId?: string): Promise<ProjectActionI
                 owner: item.owner || '',
                 waitingOn: item.waiting_on || '',
                 dueDate: item.due_date ? String(item.due_date) : null,
+                originalDueDate: item.original_due_date ? String(item.original_due_date) : null,
+                startedAt: item.started_at ? String(item.started_at) : null,
                 completedAt: item.completed_at ? String(item.completed_at) : null,
+                dueDateHistory: Array.isArray(item.due_date_history) ? item.due_date_history : (item.due_date_history ? JSON.parse(item.due_date_history) : []),
+                statusHistory: Array.isArray(item.status_history) ? item.status_history : (item.status_history ? JSON.parse(item.status_history) : []),
                 notes: item.notes || '',
                 lessonLearnt: item.lesson_learnt || '',
                 createdAt: formatISO(item.created_at),
@@ -979,22 +983,31 @@ export async function createActionItem(data: {
     owner: string;
     waitingOn?: string;
     dueDate?: string | null;
+    completedAt?: string | null;
     notes?: string;
     lessonLearnt?: string;
 }) {
     const supabase = getSupabaseClient();
     try {
         const nowIso = new Date().toISOString();
+        const initialStatus = data.status || 'pending';
+        const isStarting = initialStatus === 'in_progress' || initialStatus === 'blocked';
+        const initialStatusHistory = [{ from: 'new', to: initialStatus, at: nowIso }];
+
         const { data: inserted, error } = await supabase.from('project_action_items').insert({
             project_id: data.projectId,
             sub_project_id: data.subProjectId || null,
             title: data.title,
             phase: data.phase || '開發階段',
-            status: data.status || 'pending',
+            status: initialStatus,
             owner: data.owner || '',
             waiting_on: data.waitingOn || '',
             due_date: data.dueDate || null,
-            completed_at: data.status === 'completed' ? nowIso : null,
+            original_due_date: data.dueDate || null,
+            started_at: isStarting ? nowIso : null,
+            completed_at: initialStatus === 'completed' ? (data.completedAt || nowIso) : null,
+            due_date_history: JSON.stringify([]),
+            status_history: JSON.stringify(initialStatusHistory),
             notes: data.notes || '',
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
@@ -1020,7 +1033,11 @@ export async function createActionItem(data: {
             owner: inserted.owner || '',
             waitingOn: inserted.waiting_on || '',
             dueDate: inserted.due_date ? String(inserted.due_date) : null,
+            originalDueDate: inserted.original_due_date ? String(inserted.original_due_date) : null,
+            startedAt: inserted.started_at ? String(inserted.started_at) : null,
             completedAt: inserted.completed_at ? String(inserted.completed_at) : null,
+            dueDateHistory: [],
+            statusHistory: initialStatusHistory,
             notes: inserted.notes || '',
             lessonLearnt: inserted.lesson_learnt || '',
             createdAt: nowIso,
@@ -1045,12 +1062,22 @@ export async function updateActionItem(id: string, data: Partial<{
     owner: string;
     waitingOn: string;
     dueDate: string | null;
+    completedAt: string | null;
     notes: string;
     lessonLearnt: string;
 }>) {
     const supabase = getSupabaseClient();
     try {
         const nowIso = new Date().toISOString();
+
+        // 先讀取現有記錄，以便比對變更並自動追蹤時程歷程
+        const { data: existing, error: fetchErr } = await supabase
+            .from('project_action_items')
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (fetchErr || !existing) throw fetchErr || new Error('找不到待辦事項');
+
         const updatePayload: any = {
             updated_at: nowIso
         };
@@ -1060,12 +1087,61 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.status !== undefined) updatePayload.status = data.status;
         if (data.owner !== undefined) updatePayload.owner = data.owner;
         if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
-        if (data.dueDate !== undefined) updatePayload.due_date = data.dueDate || null;
         if (data.notes !== undefined) updatePayload.notes = data.notes;
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
+        // ─── 自動追蹤：due_date 變更歷程 ───
+        if (data.dueDate !== undefined) {
+            const newDueDate = data.dueDate || null;
+            const oldDueDate = existing.due_date ? String(existing.due_date) : null;
+            updatePayload.due_date = newDueDate;
+
+            // 首次設定 original_due_date（鎖定初版基準日，此後永不覆寫）
+            if (!existing.original_due_date && newDueDate) {
+                updatePayload.original_due_date = newDueDate;
+            }
+
+            // 若日期有實質變更，自動追加到 due_date_history
+            if (oldDueDate !== newDueDate && (oldDueDate || newDueDate)) {
+                const history = Array.isArray(existing.due_date_history) 
+                    ? [...existing.due_date_history] 
+                    : [];
+                const delayDays = (oldDueDate && newDueDate)
+                    ? Math.round((new Date(newDueDate).getTime() - new Date(oldDueDate).getTime()) / (1000 * 60 * 60 * 24))
+                    : 0;
+                history.push({
+                    from: oldDueDate,
+                    to: newDueDate,
+                    changedAt: nowIso,
+                    delayDays,
+                });
+                updatePayload.due_date_history = JSON.stringify(history);
+            }
+        }
+
+        // ─── 自動追蹤：status 變更歷程 ───
+        if (data.status !== undefined && data.status !== existing.status) {
+            const statusHist = Array.isArray(existing.status_history) 
+                ? [...existing.status_history] 
+                : [];
+            statusHist.push({
+                from: existing.status,
+                to: data.status,
+                at: nowIso,
+            });
+            updatePayload.status_history = JSON.stringify(statusHist);
+
+            // 自動偵測開始日：首次離開 pending → 記錄 started_at
+            if (!existing.started_at && existing.status === 'pending' && 
+                (data.status === 'in_progress' || data.status === 'blocked')) {
+                updatePayload.started_at = nowIso;
+            }
+        }
+
+        // ─── 自動追蹤：completed_at ───
         if (data.status === 'completed') {
-            updatePayload.completed_at = nowIso;
+            // 若前端有傳入手動修正的完成日期，優先使用；否則用系統當下時間
+            updatePayload.completed_at = data.completedAt || nowIso;
         } else if (data.status && data.status !== 'completed') {
             updatePayload.completed_at = null;
         }
@@ -1092,7 +1168,11 @@ export async function updateActionItem(id: string, data: Partial<{
                 owner: updated.owner || '',
                 waitingOn: updated.waiting_on || '',
                 dueDate: updated.due_date ? String(updated.due_date) : null,
+                originalDueDate: updated.original_due_date ? String(updated.original_due_date) : null,
+                startedAt: updated.started_at ? String(updated.started_at) : null,
                 completedAt: updated.completed_at ? String(updated.completed_at) : null,
+                dueDateHistory: Array.isArray(updated.due_date_history) ? updated.due_date_history : [],
+                statusHistory: Array.isArray(updated.status_history) ? updated.status_history : [],
                 notes: updated.notes || '',
                 lessonLearnt: updated.lesson_learnt || '',
                 createdAt: formatISO(updated.created_at),

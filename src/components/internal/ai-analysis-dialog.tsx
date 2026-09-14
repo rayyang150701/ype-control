@@ -31,6 +31,8 @@ interface AnalysisData {
   blockedCount: number;
   totalDelayedDays: number;
   delayedItemsCount: number;
+  avgWorkDays?: number | null;
+  totalRescheduledCount?: number;
   topDelayReasons: string[];
   bottlenecks: Array<{
     party: string;
@@ -141,22 +143,34 @@ export function AIAnalysisDialog({
         ) : data ? (
           <div className="space-y-4 pt-2">
             {/* 核心指標卡片 */}
-            <div className="grid grid-cols-4 gap-2">
-              <div className="rounded-lg border bg-slate-50 p-2.5 text-center">
-                <div className="text-xs text-muted-foreground">總待辦歷程</div>
-                <div className="text-lg font-bold text-slate-800">{data.totalItems} 項</div>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="rounded-lg border bg-slate-50 p-2 text-center">
+                <div className="text-[11px] text-muted-foreground">總待辦歷程</div>
+                <div className="text-base font-bold text-slate-800">{data.totalItems} 項</div>
               </div>
-              <div className="rounded-lg border bg-rose-50 p-2.5 text-center border-rose-200">
-                <div className="text-xs text-rose-700">累計延誤天數</div>
-                <div className="text-lg font-bold text-rose-600">{data.totalDelayedDays} 天</div>
+              <div className="rounded-lg border bg-blue-50 p-2 text-center border-blue-200">
+                <div className="text-[11px] text-blue-700">平均施作工期</div>
+                <div className="text-base font-bold text-blue-800">
+                  {data.avgWorkDays !== null && data.avgWorkDays !== undefined ? `${data.avgWorkDays} 天` : '統計中'}
+                </div>
               </div>
-              <div className="rounded-lg border bg-amber-50 p-2.5 text-center border-amber-200">
-                <div className="text-xs text-amber-700">卡關等候中</div>
-                <div className="text-lg font-bold text-amber-600">{data.blockedCount} 項</div>
+              <div className="rounded-lg border bg-orange-50 p-2 text-center border-orange-200">
+                <div className="text-[11px] text-orange-700">時程調整次數</div>
+                <div className="text-base font-bold text-orange-800">
+                  {data.totalRescheduledCount || 0} 次
+                </div>
               </div>
-              <div className="rounded-lg border bg-emerald-50 p-2.5 text-center border-emerald-200">
-                <div className="text-xs text-emerald-700">已完結項目</div>
-                <div className="text-lg font-bold text-emerald-600">{data.completedCount} 項</div>
+              <div className="rounded-lg border bg-rose-50 p-2 text-center border-rose-200">
+                <div className="text-[11px] text-rose-700">累計延誤天數</div>
+                <div className="text-base font-bold text-rose-600">{data.totalDelayedDays} 天</div>
+              </div>
+              <div className="rounded-lg border bg-amber-50 p-2 text-center border-amber-200">
+                <div className="text-[11px] text-amber-700">卡關等候中</div>
+                <div className="text-base font-bold text-amber-600">{data.blockedCount} 項</div>
+              </div>
+              <div className="rounded-lg border bg-emerald-50 p-2 text-center border-emerald-200">
+                <div className="text-[11px] text-emerald-700">已完結項目</div>
+                <div className="text-base font-bold text-emerald-600">{data.completedCount} 項</div>
               </div>
             </div>
 
