@@ -62,6 +62,7 @@ export function UsersClient({ data, clients = [] }: UsersClientProps) {
         columns={columns({ onEdit: handleOpenForm })}
         data={data}
         searchKey="displayName"
+        clients={clients}
       />
       {isFormOpen && (
          <UserForm

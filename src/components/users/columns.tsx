@@ -136,6 +136,11 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
         <span className="text-muted-foreground text-xs">未設定</span>
       );
     },
+    filterFn: (row, id, value) => {
+      if (!value || value === 'all') return true;
+      const rowVal = (row.getValue(id) as string) || '';
+      return rowVal === value;
+    },
   },
   {
     accessorKey: 'department',
@@ -149,6 +154,11 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
       ) : (
         <span className="text-muted-foreground text-xs">未設定</span>
       );
+    },
+    filterFn: (row, id, value) => {
+      if (!value || value === 'all') return true;
+      const rowVal = (row.getValue(id) as string) || '';
+      return rowVal === value;
     },
   },
   {
