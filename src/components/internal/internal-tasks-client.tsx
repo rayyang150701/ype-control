@@ -1181,6 +1181,21 @@ export function InternalTasksClient({
             </SelectContent>
           </Select>
 
+          {/* 待處理者 (等候對象) 篩選 */}
+          <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
+            <SelectTrigger className={`w-[145px] h-9 text-xs transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
+              <SelectValue placeholder="篩選待處理者" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">全部待處理者</SelectItem>
+              {uniqueWaitingOns.map((party) => (
+                <SelectItem key={party} value={party} className="text-xs">
+                  等候: {party}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {(searchQuery || selectedCategory !== 'all' || selectedInternalStatus !== 'all' || selectedSourceType !== 'all' || selectedClient !== 'all' || selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all' || hideEmptyProjects) && (
             <Button
               variant="ghost"

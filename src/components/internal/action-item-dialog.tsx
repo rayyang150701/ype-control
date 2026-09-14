@@ -263,7 +263,7 @@ export function ActionItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">
             {item ? '編輯專案待辦與歷程' : '新增專案待辦與歷程'}
@@ -487,24 +487,34 @@ export function ActionItemDialog({
           </div>
 
           {/* 歷程紀錄說明 */}
-          <div>
-            <Label className="text-sm font-semibold">歷程紀錄 / 說明</Label>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <span>📝 歷程紀錄 / 追蹤說明</span>
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                可記錄詳細進程（支援自由拖拉展開高度）
+              </span>
+            </div>
             <Textarea
-              className="mt-1 min-h-[70px]"
-              placeholder="記錄事件經過、會議結論、重要溝通紀錄..."
+              className="min-h-[160px] text-sm leading-relaxed font-sans p-3 resize-y bg-slate-50/40 focus:bg-white border-slate-300 focus:border-indigo-400 transition-colors shadow-2xs"
+              placeholder="詳細記錄事件經過、會勘會議結論、重要溝通紀錄或待突破事項..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
           {/* 經驗檢討 (Lesson Learnt) */}
-          <div className="rounded-md bg-amber-50/60 p-3 border border-amber-200">
-            <Label className="text-sm font-semibold text-amber-900">
-              💡 經驗檢討與改善對策 (Lesson Learnt)
-            </Label>
+          <div className="rounded-lg bg-amber-50/70 p-3.5 border border-amber-200 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <span>💡 經驗檢討與改善對策 (Lesson Learnt)</span>
+              </Label>
+              <span className="text-[11px] text-amber-700/80">結案或里程碑檢討填寫</span>
+            </div>
             <Textarea
-              className="mt-1 min-h-[60px] bg-white"
-              placeholder="結案或里程碑檢討：未來遇類似專案可採取的改善對策..."
+              className="min-h-[85px] text-xs leading-relaxed bg-white border-amber-200 focus-visible:ring-amber-400 resize-y p-2.5 shadow-2xs"
+              placeholder="未來若遇類似專案時，可採取的防範或改善對策（供後續專案傳承參考）..."
               value={lessonLearnt}
               onChange={(e) => setLessonLearnt(e.target.value)}
             />

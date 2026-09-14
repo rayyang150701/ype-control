@@ -357,6 +357,7 @@ export function TaskCentricView({
           </div>
 
           {/* 所屬專案下拉篩選 */}
+          {/* 所屬專案下拉 */}
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
             <SelectTrigger className="w-[180px] h-9 text-xs bg-white">
               <SelectValue placeholder="所屬專案" />
@@ -369,6 +370,26 @@ export function TaskCentricView({
                   {p.name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+
+          {/* 篩選待處理者 (等候對象) 下拉 */}
+          <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
+            <SelectTrigger className={`w-[165px] h-9 text-xs bg-white transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
+              <Clock className="h-3 w-3 mr-1 text-rose-500 shrink-0" />
+              <SelectValue placeholder="篩選待處理者" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">全部待處理者 (等候對象)</SelectItem>
+              {uniqueWaitingOns.map((party) => {
+                const count = items.filter((i) => i.waitingOn === party).length;
+                return (
+                  <SelectItem key={party} value={party} className="text-xs">
+                    <span className="font-semibold text-rose-700">等候: {party}</span>
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">({count} 項)</span>
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
 
