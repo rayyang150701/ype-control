@@ -19,7 +19,6 @@ import {
   ExternalLink,
   FolderGit2,
   ArrowUpDown,
-  UserCheck,
   Clock,
   Building2,
   RotateCcw,
@@ -70,21 +69,8 @@ export function TaskCentricView({
   // 細部篩選條件
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
-  const [selectedOwner, setSelectedOwner] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
-  const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'dueDate' | 'projectCase' | 'statusPriority'>('newest');
-
-  // 提取所有不重複的責任歸屬選項
-  const uniqueOwners = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((item) => {
-      if (item.owner && item.owner.trim()) {
-        set.add(item.owner.trim());
-      }
-    });
-    return Array.from(set);
-  }, [items]);
 
   // 計算各狀態分頁項目數量
   const tabCounts = useMemo(() => {
@@ -136,26 +122,6 @@ export function TaskCentricView({
       : b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
   };
 
-  // 階段配色 Badge
-  const getPhaseBadge = (phase: string) => {
-    switch (phase) {
-      case '評估階段':
-        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">評估階段</Badge>;
-      case '報價/設計':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">報價/設計</Badge>;
-      case '簽呈核決':
-        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">簽呈核決</Badge>;
-      case '開發/施工':
-        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">開發/施工</Badge>;
-      case '驗證測試':
-        return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs">驗證測試</Badge>;
-      case '驗收結案':
-        return <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-xs">驗收結案</Badge>;
-      default:
-        return <Badge variant="outline" className="text-xs">{phase}</Badge>;
-    }
-  };
-
   // 篩選與排序後的待辦項目列表
   const filteredAndSortedItems = useMemo(() => {
     const today = new Date();
@@ -191,9 +157,7 @@ export function TaskCentricView({
 
       // 3. 下拉欄位篩選
       if (selectedProjectId !== 'all' && item.projectId !== selectedProjectId) return false;
-      if (selectedOwner !== 'all' && item.owner !== selectedOwner) return false;
       if (selectedWaitingOn !== 'all' && item.waitingOn !== selectedWaitingOn) return false;
-      if (selectedPhase !== 'all' && item.phase !== selectedPhase) return false;
 
       return true;
     });
@@ -241,9 +205,7 @@ export function TaskCentricView({
     activeTab,
     searchQuery,
     selectedProjectId,
-    selectedOwner,
     selectedWaitingOn,
-    selectedPhase,
     sortBy,
     projectMap,
   ]);
@@ -251,23 +213,19 @@ export function TaskCentricView({
   const hasActiveFilters =
     searchQuery ||
     selectedProjectId !== 'all' ||
-    selectedOwner !== 'all' ||
     selectedWaitingOn !== 'all' ||
-    selectedPhase !== 'all' ||
     activeTab !== 'all';
 
   const handleResetFilters = () => {
     setActiveTab('all');
     setSearchQuery('');
     setSelectedProjectId('all');
-    setSelectedOwner('all');
     setSelectedWaitingOn('all');
-    setSelectedPhase('all');
     setSortBy('newest');
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       {/* 待辦事項快捷狀態頁籤列 */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
@@ -384,14 +342,14 @@ export function TaskCentricView({
         )}
       </div>
 
-      {/* 搜尋與多重篩選列 */}
-      <div className="bg-slate-50/80 p-3 rounded-lg border border-slate-200/90 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
+      {/* 搜尋與篩選列 */}
+      <div className="bg-slate-50/90 p-2.5 rounded-lg border border-slate-200/90 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           {/* 搜尋框 */}
           <div className="relative min-w-[200px] max-w-sm flex-1">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜尋待辦、專案名稱、案號、窗口..."
+              placeholder="搜尋議題、專案名稱、案號、等候窗口..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 text-xs h-9 bg-white"
@@ -400,7 +358,7 @@ export function TaskCentricView({
 
           {/* 所屬專案下拉篩選 */}
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="w-[160px] h-9 text-xs bg-white">
+            <SelectTrigger className="w-[180px] h-9 text-xs bg-white">
               <SelectValue placeholder="所屬專案" />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
@@ -411,37 +369,6 @@ export function TaskCentricView({
                   {p.name}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-
-          {/* 責任歸屬下拉 */}
-          <Select value={selectedOwner} onValueChange={setSelectedOwner}>
-            <SelectTrigger className="w-[125px] h-9 text-xs bg-white">
-              <SelectValue placeholder="責任歸屬" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部責任歸屬</SelectItem>
-              {uniqueOwners.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 專案階段下拉 */}
-          <Select value={selectedPhase} onValueChange={setSelectedPhase}>
-            <SelectTrigger className="w-[115px] h-9 text-xs bg-white">
-              <SelectValue placeholder="階段篩選" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部階段</SelectItem>
-              <SelectItem value="評估階段">評估階段</SelectItem>
-              <SelectItem value="報價/設計">報價/設計</SelectItem>
-              <SelectItem value="簽呈核決">簽呈核決</SelectItem>
-              <SelectItem value="開發/施工">開發/施工</SelectItem>
-              <SelectItem value="驗證測試">驗證測試</SelectItem>
-              <SelectItem value="驗收結案">驗收結案</SelectItem>
             </SelectContent>
           </Select>
 
@@ -473,7 +400,7 @@ export function TaskCentricView({
         </div>
 
         <div className="text-xs text-muted-foreground font-medium shrink-0 text-right">
-          顯示 <span className="text-slate-900 font-bold">{filteredAndSortedItems.length}</span> 項待辦
+          共 <span className="text-slate-900 font-bold">{filteredAndSortedItems.length}</span> 項待辦
         </div>
       </div>
 
@@ -509,7 +436,7 @@ export function TaskCentricView({
         </div>
       )}
 
-      {/* 待辦事項清單主體 */}
+      {/* 待辦事項清單主體：簡約兩行呈現 */}
       {filteredAndSortedItems.length === 0 ? (
         <div className="text-center py-16 border rounded-lg bg-white shadow-2xs">
           <Layers className="h-10 w-10 text-muted-foreground mx-auto mb-2 opacity-40" />
@@ -529,249 +456,177 @@ export function TaskCentricView({
           )}
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {filteredAndSortedItems.map((item) => {
             const isDone = item.status === 'completed';
             const proj = projectMap.get(item.projectId);
             const projName = proj?.name || item.projectName || '未指定專案';
             const projCase = proj?.caseNumber || item.projectCaseNumber;
             const projClient = proj?.clientName || '燁輝';
-            const projSource = proj?.sourceType;
-            const projCategory = proj?.projectCategory || item.projectCategory || ((proj?.status as any) === 'poc' ? '評估案' : '已開案');
 
             const today = new Date();
             const dueDateObj = item.dueDate ? new Date(item.dueDate) : null;
             const diffDays = dueDateObj ? differenceInCalendarDays(today, dueDateObj) : 0;
             const isOverdue = !isDone && dueDateObj && diffDays > 0;
-            const isUpcoming = !isDone && dueDateObj && diffDays >= -3 && diffDays <= 0;
-
-            // 工期計算（自動，無需人工維護）
-            const startedAtObj = item.startedAt ? new Date(item.startedAt) : null;
-            const completedAtObj = item.completedAt ? new Date(item.completedAt) : null;
-            const workDays = startedAtObj
-              ? differenceInCalendarDays(isDone && completedAtObj ? completedAtObj : today, startedAtObj)
-              : null;
-            const delayCount = item.dueDateHistory?.length || 0;
-            const delayTotalDays =
-              item.originalDueDate && item.dueDate && item.originalDueDate !== item.dueDate
-                ? differenceInCalendarDays(new Date(item.dueDate), new Date(item.originalDueDate))
-                : 0;
 
             return (
               <div
                 key={item.id}
                 id={`task-item-${item.id}`}
-                className={`p-3.5 rounded-lg border transition-all ${
+                className={`px-3.5 py-2.5 rounded-lg border transition-all ${
                   isDone
                     ? 'bg-slate-50/70 border-slate-200/80 opacity-75'
                     : item.status === 'blocked'
-                    ? 'bg-rose-50/30 border-rose-200 hover:border-rose-300 shadow-2xs'
+                    ? 'bg-rose-50/25 border-rose-200 hover:border-rose-300 shadow-2xs'
                     : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
                 }`}
               >
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                  {/* 左側：完成核取方塊 + 待辦標題 + 標籤 */}
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    {/* 一鍵切換完成 (Checkbox) */}
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={() => onToggleComplete(item)}
-                        className={`mt-0.5 h-5 w-5 rounded border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
-                          isDone
-                            ? 'bg-emerald-600 border-emerald-600 text-white'
-                            : 'border-slate-300 hover:border-emerald-600 bg-white'
-                        }`}
-                        title={isDone ? '標記為未完成 (重新開啟)' : '標記為已完成'}
-                      >
-                        {isDone && <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
-                      </button>
-                    ) : (
-                      <div className="mt-0.5 shrink-0">
-                        {isDone ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <Hourglass className="h-4 w-4 text-slate-400" />
-                        )}
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5 flex-1 min-w-0">
-                      {/* 對應專案標籤列 (清楚連結至所屬專案) */}
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => onSwitchToProjectView(item.projectId)}
-                          className="inline-flex items-center gap-1 font-semibold text-xs px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors border border-slate-200/90 group cursor-pointer"
-                          title="點選切換至專案檢視並定位此專案"
-                        >
-                          <FolderGit2 className="h-3 w-3 text-slate-500 group-hover:text-slate-900" />
-                          {projCase && <span className="font-mono text-slate-600">[{projCase}]</span>}
-                          <span className="truncate max-w-[200px] sm:max-w-[320px]">{projName}</span>
-                          <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
-                        </button>
-
-                        {/* 客戶名稱標籤 */}
-                        <span className="text-[11px] text-muted-foreground flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60">
-                          <Building2 className="h-2.5 w-2.5 text-slate-400" />
-                          {projClient}
-                        </span>
-
-                        {/* 專案來源型態 */}
-                        {projSource === '億威內部自建專案' ? (
-                          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-200 text-[10px] px-1.5 py-0 shadow-none font-medium">
-                            🏭 億威自建
-                          </Badge>
-                        ) : (projSource === '其他專案' || projSource === '其他智慧製造專案') ? (
-                          <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-200 border border-teal-200 text-[10px] px-1.5 py-0 shadow-none font-medium">
-                            ⚙️ 其他專案
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-200 text-[10px] px-1.5 py-0 shadow-none font-medium">
-                            🏢 燁輝列管
-                          </Badge>
-                        )}
-
-                        {/* 評估案 vs 已開案 */}
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] px-1.5 py-0 font-medium ${
-                            projCategory === '評估案'
-                              ? 'border-purple-300 text-purple-700 bg-purple-50/60'
-                              : 'border-blue-300 text-blue-700 bg-blue-50/60'
-                          }`}
-                        >
-                          {projCategory === '評估案' ? '📝 評估' : '🚀 開案'}
-                        </Badge>
-                      </div>
-
-                      {/* 待辦項目標題與狀態 Badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`text-sm font-semibold text-slate-900 ${
-                            isDone ? 'line-through text-slate-400' : ''
-                          }`}
-                        >
-                          {item.title}
-                        </span>
-
-                        {getPhaseBadge(item.phase)}
-
-                        {/* 卡關等候提示 (未完成時紅色明顯標註；已完成時淺灰色顯示) */}
-                        {item.waitingOn && (
-                          <Badge
-                            variant={isDone ? 'outline' : 'destructive'}
-                            className={
-                              isDone
-                                ? 'gap-1 font-normal text-xs px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200 shadow-none'
-                                : 'gap-1 font-medium text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs'
-                            }
-                          >
-                            {!isDone && <AlertCircle className="h-3 w-3" />}
-                            等候：{item.waitingOn}
-                          </Badge>
-                        )}
-
-                        {/* 責任歸屬 (單位/成員) */}
-                        {item.owner && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded">
-                            <UserCheck className="h-3 w-3" />
-                            責任: {item.owner}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 歷程說明 */}
-                      {item.notes && (
-                        <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200/60 leading-relaxed max-w-3xl">
-                          <span className="font-medium text-slate-700">歷程說明：</span>
-                          {item.notes}
-                        </p>
-                      )}
-
-                      {/* Lesson Learnt 經驗檢討 */}
-                      {item.lessonLearnt && (
-                        <p className="text-xs text-amber-900 bg-amber-50/70 p-2 rounded border border-amber-200/80 leading-relaxed max-w-3xl">
-                          <span className="font-semibold text-amber-950">💡 經驗檢討 (Lesson Learnt)：</span>
-                          {item.lessonLearnt}
-                        </p>
+                <div className="flex items-start gap-3">
+                  {/* 一鍵切換完成 (Checkbox) */}
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggleComplete(item)}
+                      className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                        isDone
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'border-slate-300 hover:border-emerald-600 bg-white'
+                      }`}
+                      title={isDone ? '標記為未完成 (重新開啟)' : '標記為已完成'}
+                    >
+                      {isDone && <Check className="h-3.5 w-3.5 stroke-[2.5]" />}
+                    </button>
+                  ) : (
+                    <div className="mt-1 shrink-0">
+                      {isDone ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Hourglass className="h-4 w-4 text-slate-400" />
                       )}
                     </div>
-                  </div>
+                  )}
 
-                  {/* 右側：時程跟催 + 工期 + 操作按鈕 */}
-                  <div className="flex items-center gap-3 sm:flex-col sm:items-end self-end sm:self-center shrink-0">
-                    {item.dueDate ? (
-                      <div className="text-right text-xs">
-                        <div className="flex items-center gap-1 text-muted-foreground justify-end">
-                          <Calendar className="h-3 w-3" />
-                          <span>預計: {item.dueDate}</span>
-                        </div>
+                  {/* 核心內容區 (精簡兩行) */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {/* 第一行：(議題、等候誰、客戶、專案名) */}
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      {/* 議題 (標題) */}
+                      <span
+                        className={`text-sm font-bold text-slate-900 ${
+                          isDone ? 'line-through text-slate-400' : ''
+                        }`}
+                      >
+                        {item.title}
+                      </span>
 
-                        {isOverdue && (
-                          <span className="text-rose-600 font-bold text-[11px] block mt-0.5">
-                            🚨 已逾期 {diffDays} 天 (請跟催！)
-                          </span>
-                        )}
-
-                        {isUpcoming && (
-                          <span className="text-amber-600 font-semibold text-[11px] block mt-0.5">
-                            ⏳ 剩餘 {Math.abs(diffDays)} 天到期
-                          </span>
-                        )}
-
-                        {isDone && (
-                          <span className="text-emerald-600 font-medium text-[11px] block mt-0.5">
-                            ✅ 於 {item.completedAt ? item.completedAt.slice(0, 10) : '近期'} 完成
-                          </span>
-                        )}
-
-                        {/* 工期與延期資訊（系統自動計算） */}
-                        {workDays !== null && workDays >= 0 && (
-                          <span className={`text-[11px] block mt-0.5 font-medium ${isDone ? 'text-slate-500' : 'text-blue-600'}`}>
-                            ⏱ {isDone ? `工期 ${workDays} 天` : `已執行 ${workDays} 天`}
-                          </span>
-                        )}
-                        {delayCount > 0 && (
-                          <span className="text-[11px] block mt-0.5 text-orange-600 font-medium">
-                            📅 延期 {delayCount} 次{delayTotalDays > 0 ? ` (+${delayTotalDays}天)` : ''}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-right text-xs text-muted-foreground">
-                        <span>未設預計日</span>
-                        {workDays !== null && workDays >= 0 && (
-                          <span className={`text-[11px] block mt-0.5 font-medium ${isDone ? 'text-slate-500' : 'text-blue-600'}`}>
-                            ⏱ {isDone ? `工期 ${workDays} 天` : `已執行 ${workDays} 天`}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 操作按鈕 */}
-                    {isAdmin && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onEditItem(item)}
-                          className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 cursor-pointer"
-                          title="編輯待辦事項"
+                      {/* 等候誰 */}
+                      {item.waitingOn ? (
+                        <Badge
+                          variant={isDone ? 'outline' : 'destructive'}
+                          className={
+                            isDone
+                              ? 'font-normal text-xs px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200 shadow-none shrink-0'
+                              : 'font-semibold text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs gap-1 shrink-0'
+                          }
                         >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDeleteItem(item.id)}
-                          className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 cursor-pointer"
-                          title="刪除事項"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                          {!isDone && <AlertCircle className="h-3 w-3" />}
+                          等候：{item.waitingOn}
+                        </Badge>
+                      ) : null}
+
+                      {/* 客戶 */}
+                      <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 flex items-center gap-1 font-medium shrink-0">
+                        <Building2 className="h-3 w-3 text-slate-400" />
+                        {projClient}
+                      </span>
+
+                      {/* 專案名 */}
+                      <button
+                        type="button"
+                        onClick={() => onSwitchToProjectView(item.projectId)}
+                        className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 hover:underline font-semibold bg-blue-50/70 px-2 py-0.5 rounded border border-blue-200/70 transition-colors cursor-pointer shrink-0 group"
+                        title="點選切換至專案檢視"
+                      >
+                        <FolderGit2 className="h-3 w-3 text-blue-500 group-hover:text-blue-700" />
+                        <span className="truncate max-w-[240px] sm:max-w-[400px]">
+                          {projCase ? `[${projCase}] ` : ''}{projName}
+                        </span>
+                        <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
+                      </button>
+                    </div>
+
+                    {/* 第二行：工作事項內容 + 預計完成日 (延誤、超前) + 操作 */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
+                      {/* 工作事項內容 */}
+                      <div className="text-xs text-slate-600 leading-relaxed flex-1 min-w-0 pr-2">
+                        {item.notes ? (
+                          <span>{item.notes}</span>
+                        ) : (
+                          <span className="text-slate-400 italic">無補充事項內容</span>
+                        )}
+                        {item.lessonLearnt && (
+                          <span className="ml-2 inline-flex items-center text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[11px]">
+                            💡 檢討: {item.lessonLearnt}
+                          </span>
+                        )}
                       </div>
-                    )}
+
+                      {/* 預計完成日 (延誤、超前) + 操作按鈕 */}
+                      <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                        {item.dueDate ? (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              預計: {item.dueDate}
+                            </span>
+
+                            {isDone ? (
+                              <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                ✅ 已完成
+                              </span>
+                            ) : isOverdue ? (
+                              <span className="text-rose-700 font-bold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                🚨 延誤 {diffDays} 天
+                              </span>
+                            ) : diffDays === 0 ? (
+                              <span className="text-amber-800 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                ⚠️ 今日到期
+                              </span>
+                            ) : (
+                              <span className="text-blue-700 font-semibold text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                ⏳ 剩餘 {Math.abs(diffDays)} 天
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">未設預計日</span>
+                        )}
+
+                        {/* 編輯 / 刪除 按鈕 */}
+                        {isAdmin && (
+                          <div className="flex items-center gap-0.5 ml-1 border-l pl-1.5 border-slate-200">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onEditItem(item)}
+                              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 cursor-pointer"
+                              title="編輯待辦事項"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onDeleteItem(item.id)}
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 cursor-pointer"
+                              title="刪除事項"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
