@@ -554,16 +554,14 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeletingProject}>取消返回</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleDeleteProject();
-              }}
+            <Button
+              type="button"
+              onClick={handleDeleteProject}
               disabled={isDeletingProject}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeletingProject ? '正在刪除專案項目...' : '確認刪除此專案'}
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
