@@ -39,6 +39,7 @@ import { ActionItemDialog } from './action-item-dialog';
 import { NewPocProjectDialog } from './new-poc-project-dialog';
 import { EditInternalProjectDialog } from './edit-internal-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
+import { TaskCentricView } from './task-centric-view';
 import { useAdmin } from '@/components/admin-context';
 import { updateActionItem, deleteActionItem, updateInternalProjectStatus } from '@/lib/actions';
 import {
@@ -70,6 +71,25 @@ export function InternalTasksClient({
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
+
+  // 視圖模式：'project' (依專案分組檢視) vs 'task' (以待辦項目為主總覽)
+  const [viewMode, setViewMode] = useState<'project' | 'task'>('project');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('internal_tasks_view_mode');
+      if (saved === 'project' || saved === 'task') {
+        setViewMode(saved);
+      }
+    } catch {}
+  }, []);
+
+  const handleSetViewMode = (mode: 'project' | 'task') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('internal_tasks_view_mode', mode);
+    } catch {}
+  };
 
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
@@ -434,6 +454,19 @@ export function InternalTasksClient({
     setShowCompletedMap((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
   };
 
+  const handleSwitchToProjectView = (projectId: string) => {
+    handleSetViewMode('project');
+    setCollapsedProjects((prev) => ({ ...prev, [projectId]: false }));
+    setTimeout(() => {
+      const el = document.getElementById(`project-${projectId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-blue-500', 'transition-all');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-blue-500'), 2500);
+      }
+    }, 150);
+  };
+
   const handleOpenAdd = (projectId?: string) => {
     setEditingItem(null);
     setDefaultProjectId(projectId);
@@ -587,6 +620,7 @@ export function InternalTasksClient({
     return (
       <div
         key={item.id}
+        id={`item-${item.id}`}
         className={`py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row items-start justify-between gap-3 transition-colors ${
           isDone ? 'opacity-70' : ''
         }`}
@@ -864,8 +898,73 @@ export function InternalTasksClient({
         </Card>
       </div>
 
-      {/* 專案類別快速切換標籤 (評估案 vs 已開案) 與排序設定 */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+      {/* 視圖切換器：依專案分組檢視 vs 待辦工作總覽 */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b pb-3 gap-3">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 w-fit">
+          <button
+            type="button"
+            onClick={() => handleSetViewMode('project')}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+              viewMode === 'project'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FolderGit2 className="h-4 w-4 text-slate-600" />
+            <span>🗂️ 依專案分組檢視</span>
+            <Badge variant="secondary" className="text-[11px] px-1.5 py-0 font-normal">
+              {projects.length} 案
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSetViewMode('task')}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+              viewMode === 'task'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>📋 待辦工作總覽</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                viewMode === 'task' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {actionItems.length} 項
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center text-xs text-muted-foreground">
+          {viewMode === 'project' ? (
+            <span>💡 專案視角：掌握各案進度、POC評估與分層歷程</span>
+          ) : (
+            <span>💡 待辦視角：以工作項目為出發點，直接勾選處理、追蹤卡關與跟催</span>
+          )}
+        </div>
+      </div>
+
+      {viewMode === 'task' ? (
+        <TaskCentricView
+          items={actionItems}
+          projects={projects}
+          users={users}
+          clients={clients}
+          isAdmin={isAdmin}
+          onEditItem={handleOpenEdit}
+          onDeleteItem={handleDelete}
+          onToggleComplete={handleQuickToggleComplete}
+          onAddNewItem={(projId) => handleOpenAdd(projId)}
+          onSwitchToProjectView={handleSwitchToProjectView}
+          uniqueWaitingOns={uniqueWaitingOns}
+        />
+      ) : (
+        <>
+          {/* 專案類別快速切換標籤 (評估案 vs 已開案) 與排序設定 */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
         {/* 類別分頁按鈕 */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200/80 w-fit">
           <button
@@ -1172,6 +1271,7 @@ export function InternalTasksClient({
             return (
               <div
                 key={project.id}
+                id={`project-${project.id}`}
                 className={`rounded-lg border shadow-sm transition-all overflow-hidden ${
                   isCompleted
                     ? 'border-emerald-300 bg-emerald-50/50'
@@ -1486,6 +1586,8 @@ export function InternalTasksClient({
           })
         )}
       </div>
+        </>
+      )}
 
       {/* 待辦事項彈窗 */}
       <ActionItemDialog
@@ -1497,19 +1599,39 @@ export function InternalTasksClient({
         users={users}
         onSuccess={(savedItem) => {
           if (savedItem) {
+            const targetProj = projects.find((p) => p.id === savedItem.projectId);
+            const enrichedItem: ProjectActionItem = {
+              ...savedItem,
+              projectName: savedItem.projectName || targetProj?.name || '',
+              projectCaseNumber: savedItem.projectCaseNumber || targetProj?.caseNumber || '',
+              projectCategory: savedItem.projectCategory || targetProj?.projectCategory || ((targetProj?.status as any) === 'poc' ? '評估案' : '已開案'),
+            };
+
             if (editingItem) {
               setActionItems((prev) =>
-                prev.map((i) => (i.id === savedItem.id ? { ...i, ...savedItem } : i))
+                prev.map((i) => (i.id === savedItem.id ? { ...i, ...enrichedItem } : i))
               );
             } else {
               // 新增項目：永遠放在最前面！
-              setActionItems((prev) => [savedItem, ...prev.filter((i) => i.id !== savedItem.id)]);
+              setActionItems((prev) => [enrichedItem, ...prev.filter((i) => i.id !== savedItem.id)]);
               // 自動展開所屬專案
               setCollapsedProjects((prev) => ({ ...prev, [savedItem.projectId]: false }));
             }
+
+            // 背景更新伺服端快取 (不重整頁面，不遺失目前捲動軸位置)
+            router.refresh();
+
+            // 平滑定位到該專案或待辦項目，保持畫面視角不跳回頂部
+            setTimeout(() => {
+              const targetEl =
+                document.getElementById(`item-${savedItem.id}`) ||
+                document.getElementById(`task-item-${savedItem.id}`) ||
+                document.getElementById(`project-${savedItem.projectId}`);
+              if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }, 100);
           }
-          // 重新載入以同步資料庫最新資料
-          window.location.reload();
         }}
       />
 
@@ -1522,9 +1644,8 @@ export function InternalTasksClient({
         onSuccess={(newProj) => {
           if (newProj) {
             setProjects((prev) => [newProj, ...prev]);
-          } else {
-            window.location.reload();
           }
+          router.refresh();
         }}
       />
 
