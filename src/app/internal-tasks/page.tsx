@@ -2,7 +2,7 @@ import { getAllProjectsForInternal, getActionItems, getUsers, getClients } from 
 import { InternalTasksClient } from '@/components/internal/internal-tasks-client';
 import { Suspense } from 'react';
 
-export const revalidate = 0;
+export const revalidate = 15;
 export const maxDuration = 60;
 
 export default async function InternalTasksPage() {

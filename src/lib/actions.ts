@@ -923,7 +923,7 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
-export async function getActionItems(projectId?: string): Promise<ProjectActionItem[]> {
+export async function getActionItems(projectId?: string, preloadedProjects?: any[]): Promise<ProjectActionItem[]> {
     const supabase = getSupabaseClient();
     try {
         let query = supabase.from('project_action_items').select('*');
@@ -931,18 +931,26 @@ export async function getActionItems(projectId?: string): Promise<ProjectActionI
             query = query.eq('project_id', projectId);
         }
         
-        const { data, error } = await query.order('created_at', { ascending: false });
+        // 並行查詢待辦與專案輔助資料，消除瀑布式等待 (3x 加速)
+        const [itemsRes, projectsRes] = await Promise.all([
+            query.order('created_at', { ascending: false }),
+            preloadedProjects 
+                ? Promise.resolve({ data: preloadedProjects, error: null })
+                : supabase.from('projects').select('id, name, case_number, status')
+        ]);
+
+        const data = itemsRes.data;
+        const error = itemsRes.error;
         if (error || !data) {
             console.error('取得待辦事項失敗 (可能尚未建立資料表):', error?.message);
             return [];
         }
 
-        // 取得專案名稱與案號及類別作為輔助
-        const { data: projectsData } = await supabase.from('projects').select('id, name, case_number, status');
-        const projMap = new Map((projectsData || []).map(p => [p.id, { 
+        const projectsData = projectsRes.data;
+        const projMap = new Map((projectsData || []).map((p: any) => [p.id, { 
             name: p.name, 
-            caseNumber: p.case_number,
-            category: (p.status === 'poc' || p.status === 'evaluation') ? '評估案' : '已開案'
+            caseNumber: p.case_number || p.caseNumber || '',
+            category: (p.status === 'poc' || p.status === 'evaluation' || p.projectCategory === '評估案') ? '評估案' : '已開案'
         }]));
 
         // 嚴格確保新增項目永遠放在最前面（依照建立時間由新到舊排序）

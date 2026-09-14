@@ -3,7 +3,7 @@ import { DashboardClient } from '@/components/dashboard/dashboard-client';
 import { Suspense } from 'react';
 import DashboardLoading from './loading';
 
-export const revalidate = 0;
+export const revalidate = 15;
 export const maxDuration = 60; // Set max duration for server actions on this page
 
 export default async function DashboardPage() {

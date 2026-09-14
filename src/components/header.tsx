@@ -238,6 +238,7 @@ export function Header() {
         <div className="flex items-center gap-2 flex-wrap">
           <Link
             href="/dashboard"
+            prefetch={true}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
               pathname.startsWith('/dashboard') || pathname === '/'
                 ? 'bg-primary text-white shadow-xs'
@@ -248,6 +249,7 @@ export function Header() {
           </Link>
           <Link
             href="/internal-tasks"
+            prefetch={true}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
               pathname.startsWith('/internal-tasks')
                 ? 'bg-primary text-white shadow-xs'
