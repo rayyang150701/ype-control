@@ -76,12 +76,30 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [cachedProject, setCachedProject] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    if (project) {
+      setCachedProject({ id: project.id, name: project.name });
+    }
+  }, [project, isOpen]);
+
+  const handleDialogOpenChange = (newOpen: boolean) => {
+    if (!newOpen && (showDeleteConfirm || isDeletingProject)) {
+      return;
+    }
+    setIsOpen(newOpen);
+  };
 
   const handleDeleteProject = async () => {
-    if (!project) return;
+    const targetProject = project || cachedProject;
+    if (!targetProject) {
+      toast({ title: '刪除失敗', description: '找不到專案資料，請重新整理頁面後再試', variant: 'destructive' });
+      return;
+    }
     setIsDeletingProject(true);
     try {
-      const res = await deleteProject(project.id);
+      const res = await deleteProject(targetProject.id);
       if (res.success) {
         toast({ title: '專案已刪除', description: res.message });
         setShowDeleteConfirm(false);
@@ -218,8 +236,16 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-4xl">
+      <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent
+          className="sm:max-w-4xl"
+          onPointerDownOutside={(e) => {
+            if (showDeleteConfirm || isDeletingProject) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (showDeleteConfirm || isDeletingProject) e.preventDefault();
+          }}
+        >
           <form onSubmit={handleSubmit(onSubmit)}>
             <DialogHeader>
               <DialogTitle className="font-headline text-xl">編輯專案</DialogTitle>
@@ -509,7 +535,12 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                 type="button"
                 variant="destructive"
                 size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => {
+                  if (project) {
+                    setCachedProject({ id: project.id, name: project.name });
+                  }
+                  setShowDeleteConfirm(true);
+                }}
                 className="gap-1 text-xs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -530,12 +561,18 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
       </Dialog>
 
       {/* 刪除專案確認對話框 */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isDeletingProject) return;
+          setShowDeleteConfirm(nextOpen);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
-              確認刪除專案「{project?.name}」？
+              確認刪除專案「{project?.name || cachedProject?.name || ''}」？
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2 text-xs">
               <p>
@@ -553,7 +590,14 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingProject}>取消返回</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeletingProject}
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              取消返回
+            </Button>
             <Button
               type="button"
               onClick={handleDeleteProject}

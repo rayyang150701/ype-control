@@ -46,6 +46,7 @@ export function EditInternalProjectDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [cachedProject, setCachedProject] = useState<{ id: string; name: string } | null>(null);
   const [clientList, setClientList] = useState<Client[]>(initialClients);
 
   const [name, setName] = useState('');
@@ -70,6 +71,7 @@ export function EditInternalProjectDialog({
 
   useEffect(() => {
     if (project) {
+      setCachedProject({ id: project.id, name: project.name });
       setName(project.name || '');
       setCaseNumber(project.caseNumber || '');
       const cat = project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案');
@@ -148,16 +150,27 @@ export function EditInternalProjectDialog({
     }
   };
 
+  const handleDialogChange = (newOpen: boolean) => {
+    if (!newOpen && (showDeleteConfirm || isDeleting)) {
+      return; // 正在刪除或確認時，禁止關閉主對話框
+    }
+    onOpenChange(newOpen);
+  };
+
   const handleDeleteProject = async () => {
-    if (!project) return;
+    const targetProject = project || cachedProject;
+    if (!targetProject) {
+      toast({ title: '刪除失敗', description: '找不到專案資料，請重新整理頁面後再試', variant: 'destructive' });
+      return;
+    }
     setIsDeleting(true);
     try {
-      const res = await deleteProject(project.id);
+      const res = await deleteProject(targetProject.id);
       if (res.success) {
-        toast({ title: '刪除成功', description: `專案「${project.name}」及所屬項目已全數刪除！` });
+        toast({ title: '刪除成功', description: `專案「${targetProject.name}」及所屬項目已全數刪除！` });
         setShowDeleteConfirm(false);
         onOpenChange(false);
-        onDeleted?.(project.id);
+        onDeleted?.(targetProject.id);
 
         setTimeout(() => {
           document.body.style.pointerEvents = '';
@@ -216,8 +229,20 @@ export function EditInternalProjectDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={open} onOpenChange={handleDialogChange}>
+        <DialogContent
+          className="max-w-lg max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => {
+            if (showDeleteConfirm || isDeleting) {
+              e.preventDefault();
+            }
+          }}
+          onInteractOutside={(e) => {
+            if (showDeleteConfirm || isDeleting) {
+              e.preventDefault();
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Edit2 className="h-5 w-5 text-indigo-600" />
@@ -441,7 +466,12 @@ export function EditInternalProjectDialog({
                 type="button"
                 variant="destructive"
                 size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => {
+                  if (project) {
+                    setCachedProject({ id: project.id, name: project.name });
+                  }
+                  setShowDeleteConfirm(true);
+                }}
                 className="gap-1 text-xs h-8"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -462,12 +492,18 @@ export function EditInternalProjectDialog({
       </Dialog>
 
       {/* 刪除專案二次防呆確認對話框 */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isDeleting) return;
+          setShowDeleteConfirm(nextOpen);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
-              確認刪除專案「{project?.name}」？
+              確認刪除專案「{project?.name || cachedProject?.name || ''}」？
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2 text-xs">
               <p>
@@ -485,7 +521,14 @@ export function EditInternalProjectDialog({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>取消返回</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              取消返回
+            </Button>
             <Button
               type="button"
               onClick={handleDeleteProject}
