@@ -39,6 +39,8 @@ interface TaskCentricViewProps {
   onAddNewItem: (defaultProjectId?: string) => void;
   onSwitchToProjectView: (projectId: string) => void;
   uniqueWaitingOns: string[];
+  activeTab?: 'all' | 'blocked' | 'overdue' | 'active' | 'completed';
+  onTabChange?: (tab: 'all' | 'blocked' | 'overdue' | 'active' | 'completed') => void;
 }
 
 export function TaskCentricView({
@@ -53,6 +55,8 @@ export function TaskCentricView({
   onAddNewItem,
   onSwitchToProjectView,
   uniqueWaitingOns,
+  activeTab: propActiveTab,
+  onTabChange,
 }: TaskCentricViewProps) {
   // 建立專案快速查找 Map (以 projectId 為 key)
   const projectMap = useMemo(() => {
@@ -64,13 +68,29 @@ export function TaskCentricView({
   }, [projects]);
 
   // 快捷狀態分頁：全部、卡關等候、逾期/即將到期、處理中、已完成
-  const [activeTab, setActiveTab] = useState<'all' | 'blocked' | 'overdue' | 'active' | 'completed'>('all');
+  const [localActiveTab, setLocalActiveTab] = useState<'all' | 'blocked' | 'overdue' | 'active' | 'completed'>('all');
+  const activeTab = propActiveTab !== undefined ? propActiveTab : localActiveTab;
+  const setActiveTab = onTabChange || setLocalActiveTab;
 
   // 細部篩選條件
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'dueDate' | 'projectCase' | 'statusPriority'>('newest');
+
+  // 需求1: 整理所有未結案、未完成的「等候對象」清單
+  const activeWaitingOns = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      if (item.waitingOn && item.waitingOn.trim()) {
+        set.add(item.waitingOn.trim());
+      }
+    });
+    return Array.from(set);
+  }, [items, projectMap]);
 
   // 計算各狀態分頁項目數量
   const tabCounts = useMemo(() => {
@@ -157,7 +177,13 @@ export function TaskCentricView({
 
       // 3. 下拉欄位篩選
       if (selectedProjectId !== 'all' && item.projectId !== selectedProjectId) return false;
-      if (selectedWaitingOn !== 'all' && item.waitingOn !== selectedWaitingOn) return false;
+      if (selectedWaitingOn !== 'all') {
+        if (item.waitingOn !== selectedWaitingOn) return false;
+        // 需求1: 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
+        if (item.status === 'completed') return false;
+        const proj = projectMap.get(item.projectId);
+        if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
+      }
 
       return true;
     });
@@ -225,141 +251,38 @@ export function TaskCentricView({
   };
 
   return (
-    <div className="space-y-3.5">
-      {/* 待辦事項快捷狀態頁籤列 */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              activeTab === 'all'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <span>全部待辦</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                activeTab === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {tabCounts.all}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('blocked')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              activeTab === 'blocked'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-rose-700 hover:bg-rose-50'
-            }`}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            <span>🚨 卡關等候中</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                activeTab === 'blocked' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'
-              }`}
-            >
-              {tabCounts.blocked}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('overdue')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              activeTab === 'overdue'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-amber-700 hover:bg-amber-50'
-            }`}
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            <span>⚠️ 逾期 / 即將到期</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                activeTab === 'overdue' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              {tabCounts.overdue}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('active')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              activeTab === 'active'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-blue-700 hover:bg-blue-50'
-            }`}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            <span>🔄 處理中 / 待辦</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                activeTab === 'active' ? 'bg-blue-700 text-white' : 'bg-blue-100 text-blue-800'
-              }`}
-            >
-              {tabCounts.active}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('completed')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              activeTab === 'completed'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-emerald-700 hover:bg-emerald-50'
-            }`}
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>✅ 已完成</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                activeTab === 'completed' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
-              }`}
-            >
-              {tabCounts.completed}
-            </span>
-          </button>
-        </div>
-
-        {/* 快速新增按鈕 */}
-        {isAdmin && (
-          <Button
-            size="sm"
-            onClick={() => onAddNewItem()}
-            className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs shrink-0 self-start md:self-auto cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>新增待辦事項</span>
-          </Button>
-        )}
-      </div>
-
-      {/* 搜尋與篩選列 */}
+    <div className="space-y-3">
+      {/* 搜尋與複合篩選列 (整合待辦狀態下拉 - 需求2 方法2) */}
       <div className="bg-slate-50/90 p-2.5 rounded-lg border border-slate-200/90 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           {/* 搜尋框 */}
-          <div className="relative min-w-[200px] max-w-sm flex-1">
+          <div className="relative min-w-[200px] max-w-xs flex-1">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜尋議題、專案名稱、案號、等候窗口..."
+              placeholder="搜尋議題、專案、案號、等候窗口..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 text-xs h-9 bg-white"
             />
           </div>
 
-          {/* 所屬專案下拉篩選 */}
+          {/* 需求2 方法2: 待辦狀態下拉篩選 */}
+          <Select value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
+            <SelectTrigger className={`w-[155px] h-9 text-xs bg-white ${activeTab !== 'all' ? 'border-blue-400 font-semibold text-blue-900 bg-blue-50/50' : ''}`}>
+              <SelectValue placeholder="待辦狀態" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">📋 全部待辦 ({tabCounts.all})</SelectItem>
+              <SelectItem value="blocked" className="text-rose-700 font-medium">🚨 卡關等候中 ({tabCounts.blocked})</SelectItem>
+              <SelectItem value="overdue" className="text-amber-700 font-medium">⚠️ 逾期/到期 ({tabCounts.overdue})</SelectItem>
+              <SelectItem value="active" className="text-blue-700 font-medium">🔄 處理中/待辦 ({tabCounts.active})</SelectItem>
+              <SelectItem value="completed" className="text-emerald-700 font-medium">✅ 已完成 ({tabCounts.completed})</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* 所屬專案下拉 */}
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="w-[180px] h-9 text-xs bg-white">
+            <SelectTrigger className="w-[170px] h-9 text-xs bg-white">
               <SelectValue placeholder="所屬專案" />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
@@ -373,20 +296,26 @@ export function TaskCentricView({
             </SelectContent>
           </Select>
 
-          {/* 篩選待處理者 (等候對象) 下拉 */}
+          {/* 篩選待處理者 (等候對象) 下拉 (需求1: 排除已結案/已完成) */}
           <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
             <SelectTrigger className={`w-[165px] h-9 text-xs bg-white transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
               <Clock className="h-3 w-3 mr-1 text-rose-500 shrink-0" />
               <SelectValue placeholder="篩選待處理者" />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">全部待處理者 (等候對象)</SelectItem>
-              {uniqueWaitingOns.map((party) => {
-                const count = items.filter((i) => i.waitingOn === party).length;
+              <SelectItem value="all">全部待處理者 (等候中)</SelectItem>
+              {activeWaitingOns.map((party) => {
+                const count = items.filter((i) => {
+                  if (i.waitingOn !== party) return false;
+                  if (i.status === 'completed') return false;
+                  const proj = projectMap.get(i.projectId);
+                  if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
+                  return true;
+                }).length;
                 return (
                   <SelectItem key={party} value={party} className="text-xs">
                     <span className="font-semibold text-rose-700">等候: {party}</span>
-                    <span className="ml-1.5 text-[11px] text-muted-foreground">({count} 項)</span>
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">({count} 項未結)</span>
                   </SelectItem>
                 );
               })}
@@ -425,8 +354,8 @@ export function TaskCentricView({
         </div>
       </div>
 
-      {/* 快捷等候對象標籤列 */}
-      {uniqueWaitingOns.length > 0 && (
+      {/* 快捷等候對象標籤列 (需求1: 僅顯示未結案且未完成之等候者) */}
+      {activeWaitingOns.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap text-xs px-1">
           <span className="text-muted-foreground font-medium mr-1">🔍 快速過濾等候:</span>
           <button
@@ -440,20 +369,36 @@ export function TaskCentricView({
           >
             全部
           </button>
-          {uniqueWaitingOns.map((party) => (
-            <button
-              key={party}
-              type="button"
-              onClick={() => setSelectedWaitingOn(selectedWaitingOn === party ? 'all' : party)}
-              className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
-                selectedWaitingOn === party
-                  ? 'bg-rose-600 text-white border-rose-600 font-medium'
-                  : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
-              }`}
-            >
-              <span>等候：{party}</span>
-            </button>
-          ))}
+          {activeWaitingOns.map((party) => {
+            const count = items.filter((i) => {
+              if (i.waitingOn !== party) return false;
+              if (i.status === 'completed') return false;
+              const proj = projectMap.get(i.projectId);
+              if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
+              return true;
+            }).length;
+            return (
+              <button
+                key={party}
+                type="button"
+                onClick={() => setSelectedWaitingOn(selectedWaitingOn === party ? 'all' : party)}
+                className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                  selectedWaitingOn === party
+                    ? 'bg-rose-600 text-white border-rose-600 font-medium'
+                    : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
+                }`}
+              >
+                <span>等候：{party}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${
+                    selectedWaitingOn === party ? 'bg-rose-700 text-white' : 'bg-rose-200/80 text-rose-800'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 

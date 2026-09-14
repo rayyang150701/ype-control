@@ -117,16 +117,64 @@ export function InternalTasksClient({
   const [aiTargetProjectId, setAiTargetProjectId] = useState<string | undefined>();
   const [aiTargetProjectName, setAiTargetProjectName] = useState<string | undefined>();
 
-  // 整理所有不重複的「等候對象」標籤供快捷點選
+  // 建立專案快速查找 Map (以 projectId 為 key)
+  const projectMap = useMemo(() => {
+    const map = new Map<string, FullProject>();
+    projects.forEach((p) => {
+      map.set(p.id, p);
+    });
+    return map;
+  }, [projects]);
+
+  // 待辦工作總覽的狀態頁籤 (需求2 方法1)
+  const [activeTaskTab, setActiveTaskTab] = useState<'all' | 'blocked' | 'overdue' | 'active' | 'completed'>('all');
+
+  // 計算待辦工作總覽各狀態數量 (用於頂部快速選項)
+  const taskTabCounts = useMemo(() => {
+    const today = new Date();
+    let blockedCount = 0;
+    let overdueCount = 0;
+    let activeCount = 0;
+    let completedCount = 0;
+
+    actionItems.forEach((item) => {
+      if (item.status === 'completed') {
+        completedCount++;
+      } else {
+        activeCount++;
+        if (item.status === 'blocked') blockedCount++;
+        if (item.dueDate) {
+          const due = new Date(item.dueDate);
+          const diff = differenceInCalendarDays(today, due);
+          if (diff > 0 || (diff >= -3 && diff <= 0)) {
+            overdueCount++;
+          }
+        }
+      }
+    });
+
+    return {
+      all: actionItems.length,
+      blocked: blockedCount,
+      overdue: overdueCount,
+      active: activeCount,
+      completed: completedCount,
+    };
+  }, [actionItems]);
+
+  // 需求1: 整理所有不重複且未結案、未完成的「等候對象」標籤供快捷點選
   const uniqueWaitingOns = useMemo(() => {
     const set = new Set<string>();
     actionItems.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
       if (item.waitingOn && item.waitingOn.trim()) {
         set.add(item.waitingOn.trim());
       }
     });
     return Array.from(set);
-  }, [actionItems]);
+  }, [actionItems, projectMap]);
 
   // KPI 總覽指標
   const kpiStats = useMemo(() => {
@@ -174,11 +222,17 @@ export function InternalTasksClient({
 
       const matchesPhase = selectedPhase === 'all' || item.phase === selectedPhase;
       const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
-      const matchesWaiting = selectedWaitingOn === 'all' || item.waitingOn === selectedWaitingOn;
+      
+      // 需求1: 等候處理篩選時，過濾已完成的待辦與已結案專案
+      const matchesWaiting = selectedWaitingOn === 'all' || (
+        item.waitingOn === selectedWaitingOn &&
+        item.status !== 'completed' &&
+        !(projectMap.get(item.projectId)?.internalStatus === 'completed' || projectMap.get(item.projectId)?.status === 'completed')
+      );
 
       return matchesSearch && matchesPhase && matchesStatus && matchesWaiting;
     });
-  }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn]);
+  }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn, projectMap]);
 
   // 統計評估案 vs 已開案 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
@@ -422,17 +476,26 @@ export function InternalTasksClient({
     hideEmptyProjects,
   ]);
 
-  // 是否所有目前畫面上顯示的專案待辦項目都已收合
+  // 是否所有目前畫面上顯示的專案待辦項目都已收合 (需求3: 預設全部隱藏收合)
   const isAllCollapsed = useMemo(() => {
-    if (groupedByProject.length === 0) return false;
-    return groupedByProject.every((g) => !!collapsedProjects[g.project.id]);
+    if (groupedByProject.length === 0) return true;
+    return groupedByProject.every((g) => {
+      return collapsedProjects[g.project.id] !== undefined ? collapsedProjects[g.project.id] : true;
+    });
   }, [groupedByProject, collapsedProjects]);
 
-  // 一鍵切換：顯示/隱藏 所有專案待辦項目
+  // 一鍵切換：顯示/隱藏 所有專案待辦項目 (需求3)
   const toggleAllCollapse = () => {
     if (isAllCollapsed) {
       // 目前全部收合中 -> 一鍵顯示 (展開) 所有專案待辦
-      setCollapsedProjects({});
+      const next: Record<string, boolean> = {};
+      groupedByProject.forEach((g) => {
+        next[g.project.id] = false;
+      });
+      projects.forEach((p) => {
+        next[p.id] = false;
+      });
+      setCollapsedProjects(next);
     } else {
       // 目前有展開 -> 一鍵隱藏 (收合) 所有專案待辦
       const next: Record<string, boolean> = {};
@@ -447,7 +510,10 @@ export function InternalTasksClient({
   };
 
   const toggleCollapse = (projectId: string) => {
-    setCollapsedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
+    setCollapsedProjects((prev) => {
+      const current = prev[projectId] !== undefined ? prev[projectId] : true;
+      return { ...prev, [projectId]: !current };
+    });
   };
 
   const toggleShowCompleted = (projectId: string) => {
@@ -898,51 +964,295 @@ export function InternalTasksClient({
         </Card>
       </div>
 
-      {/* 視圖切換器：依專案分組檢視 vs 待辦工作總覽 */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b pb-3 gap-3">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 w-fit">
-          <button
-            type="button"
-            onClick={() => handleSetViewMode('project')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-              viewMode === 'project'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FolderGit2 className="h-4 w-4 text-slate-600" />
-            <span>🗂️ 依專案分組檢視</span>
-            <Badge variant="secondary" className="text-[11px] px-1.5 py-0 font-normal">
-              {projects.length} 案
-            </Badge>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSetViewMode('task')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-              viewMode === 'task'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Layers className="h-4 w-4" />
-            <span>📋 待辦工作總覽</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                viewMode === 'task' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+      {/* 視圖切換器與快速選項 (需求2 方法1 + 需求4) */}
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between border-b pb-3 gap-3">
+        {/* 左側：視圖切換 + 依視圖顯示的快速選項標籤 */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 主視圖切換 */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => handleSetViewMode('project')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'project'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {actionItems.length} 項
-            </span>
-          </button>
+              <FolderGit2 className="h-4 w-4 text-slate-600" />
+              <span>🗂️ 依專案分組檢視</span>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-normal">
+                {projects.length} 案
+              </Badge>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSetViewMode('task')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'task'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="h-4 w-4" />
+              <span>📋 待辦工作總覽</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                  viewMode === 'task' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+                }`}
+              >
+                {actionItems.length} 項
+              </span>
+            </button>
+          </div>
+
+          <div className="hidden sm:block h-6 w-[1px] bg-slate-200 mx-1" />
+
+          {/* 需求4: 依專案分組檢視時，在旁邊放置專案類別快速過濾，用不同顏色區隔 */}
+          {viewMode === 'project' && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('all')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                  selectedCategory === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70'
+                }`}
+              >
+                全部專案 ({categoryCounts.all})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('評估案')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  selectedCategory === '評估案'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                    : 'text-purple-700 bg-purple-50/80 hover:bg-purple-100 border-purple-200'
+                }`}
+              >
+                <span>📝 評估案 (POC)</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    selectedCategory === '評估案' ? 'bg-purple-700 text-white' : 'bg-purple-200 text-purple-800'
+                  }`}
+                >
+                  {categoryCounts.poc}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('已開案')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  selectedCategory === '已開案'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'text-blue-700 bg-blue-50/80 hover:bg-blue-100 border-blue-200'
+                }`}
+              >
+                <span>🚀 已開案 (執行中)</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    selectedCategory === '已開案' ? 'bg-blue-700 text-white' : 'bg-blue-200 text-blue-800'
+                  }`}
+                >
+                  {categoryCounts.active}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('已結案')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  selectedCategory === '已結案'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100 border-emerald-200'
+                }`}
+              >
+                <span>✅ 已結案</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    selectedCategory === '已結案' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-800'
+                  }`}
+                >
+                  {categoryCounts.completed}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('專案終止')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  selectedCategory === '專案終止'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                    : 'text-rose-700 bg-rose-50/80 hover:bg-rose-100 border-rose-200'
+                }`}
+              >
+                <span>⛔ 專案終止</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    selectedCategory === '專案終止' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-800'
+                  }`}
+                >
+                  {categoryCounts.terminated}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* 需求2 方法1: 待辦工作總覽時，在旁邊放置待辦狀態快速選項，用不同顏色區隔 */}
+          {viewMode === 'task' && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setActiveTaskTab('all')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                  activeTaskTab === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70'
+                }`}
+              >
+                全部待辦 ({taskTabCounts.all})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTaskTab('blocked')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  activeTaskTab === 'blocked'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                    : 'text-rose-700 bg-rose-50/80 hover:bg-rose-100 border-rose-200'
+                }`}
+              >
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>🚨 卡關等候中</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    activeTaskTab === 'blocked' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-800'
+                  }`}
+                >
+                  {taskTabCounts.blocked}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTaskTab('overdue')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  activeTaskTab === 'overdue'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'text-amber-700 bg-amber-50/80 hover:bg-amber-100 border-amber-200'
+                }`}
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>⚠️ 逾期/到期</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    activeTaskTab === 'overdue' ? 'bg-amber-700 text-white' : 'bg-amber-200 text-amber-800'
+                  }`}
+                >
+                  {taskTabCounts.overdue}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTaskTab('active')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  activeTaskTab === 'active'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'text-blue-700 bg-blue-50/80 hover:bg-blue-100 border-blue-200'
+                }`}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>🔄 處理中/待辦</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    activeTaskTab === 'active' ? 'bg-blue-700 text-white' : 'bg-blue-200 text-blue-800'
+                  }`}
+                >
+                  {taskTabCounts.active}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTaskTab('completed')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  activeTaskTab === 'completed'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100 border-emerald-200'
+                }`}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>✅ 已完成</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    activeTaskTab === 'completed' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-800'
+                  }`}
+                >
+                  {taskTabCounts.completed}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center text-xs text-muted-foreground">
+        {/* 右側：動作按鈕與工具 */}
+        <div className="flex items-center gap-2 self-end xl:self-auto shrink-0">
           {viewMode === 'project' ? (
-            <span>💡 專案視角：掌握各案進度、POC評估與分層歷程</span>
+            <>
+              <div className="flex items-center gap-1.5">
+                <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+                  <SelectTrigger className="w-[160px] h-8 text-xs bg-white">
+                    <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                    <SelectValue placeholder="排序方式" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="caseNumberAsc">🔢 案號由小到大 (1→55)</SelectItem>
+                    <SelectItem value="caseNumberDesc">🔢 案號由大到小 (55→1)</SelectItem>
+                    <SelectItem value="recentUpdated">🕒 依照最近更新/待辦</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleAllCollapse}
+                className={`h-8 text-xs gap-1.5 font-medium transition-all cursor-pointer ${
+                  isAllCollapsed
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                    : 'text-slate-700 bg-white hover:bg-slate-50'
+                }`}
+                title="一鍵展開或隱藏所有專案底下的待辦事項明細"
+              >
+                {isAllCollapsed ? (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>顯示所有專案待辦項目</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
+                    <span>隱藏所有專案待辦項目</span>
+                  </>
+                )}
+              </Button>
+            </>
           ) : (
-            <span>💡 待辦視角：以工作項目為出發點，直接勾選處理、追蹤卡關與跟催</span>
+            isAdmin && (
+              <Button
+                size="sm"
+                onClick={() => handleOpenAdd()}
+                className="h-8 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs cursor-pointer text-xs"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>新增待辦事項</span>
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -960,142 +1270,11 @@ export function InternalTasksClient({
           onAddNewItem={(projId) => handleOpenAdd(projId)}
           onSwitchToProjectView={handleSwitchToProjectView}
           uniqueWaitingOns={uniqueWaitingOns}
+          activeTab={activeTaskTab}
+          onTabChange={setActiveTaskTab}
         />
       ) : (
         <>
-          {/* 專案類別快速切換標籤 (評估案 vs 已開案) 與排序設定 */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-        {/* 類別分頁按鈕 */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200/80 w-fit">
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('all')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-              selectedCategory === 'all'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            全部專案 ({categoryCounts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('評估案')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedCategory === '評估案'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-purple-800 hover:bg-purple-100/70'
-            }`}
-          >
-            <span>📝 評估案 (POC)</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                selectedCategory === '評估案' ? 'bg-purple-700 text-white' : 'bg-purple-100 text-purple-700'
-              }`}
-            >
-              {categoryCounts.poc}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('已開案')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedCategory === '已開案'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-blue-800 hover:bg-blue-100/70'
-            }`}
-          >
-            <span>🚀 已開案 (執行中)</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                selectedCategory === '已開案' ? 'bg-blue-700 text-white' : 'bg-blue-100 text-blue-700'
-              }`}
-            >
-              {categoryCounts.active}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('已結案')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedCategory === '已結案'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-emerald-800 hover:bg-emerald-100/70'
-            }`}
-          >
-            <span>✅ 已結案</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                selectedCategory === '已結案' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700'
-              }`}
-            >
-              {categoryCounts.completed}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('專案終止')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
-              selectedCategory === '專案終止'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-rose-800 hover:bg-rose-100/70'
-            }`}
-          >
-            <span>⛔ 專案終止</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
-                selectedCategory === '專案終止' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-700'
-              }`}
-            >
-              {categoryCounts.terminated}
-            </span>
-          </button>
-        </div>
-
-        {/* 排序方式與顯示/隱藏所有待辦開關 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <ArrowUpDown className="h-3.5 w-3.5" />
-              排序:
-            </span>
-            <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-              <SelectTrigger className="w-[170px] h-8 text-xs bg-white">
-                <SelectValue placeholder="排序方式" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="caseNumberAsc">🔢 案號由小到大 (1→55)</SelectItem>
-                <SelectItem value="caseNumberDesc">🔢 案號由大到小 (55→1)</SelectItem>
-                <SelectItem value="recentUpdated">🕒 依照最近更新/待辦</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleAllCollapse}
-            className={`h-8 text-xs gap-1.5 font-medium transition-all ${
-              isAllCollapsed
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                : 'text-slate-700 bg-white hover:bg-slate-50'
-            }`}
-            title="一鍵展開或隱藏所有專案底下的待辦事項明細"
-          >
-            {isAllCollapsed ? (
-              <>
-                <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
-                <span>顯示所有專案待辦項目</span>
-              </>
-            ) : (
-              <>
-                <ChevronUp className="h-3.5 w-3.5 text-slate-500" />
-                <span>隱藏所有專案待辦項目</span>
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
 
       {/* 搜尋與複合過濾列 */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 bg-card p-3 rounded-lg border shadow-sm">
@@ -1262,7 +1441,7 @@ export function InternalTasksClient({
           </div>
         ) : (
           groupedByProject.map(({ project, items }) => {
-            const isCollapsed = !!collapsedProjects[project.id];
+            const isCollapsed = collapsedProjects[project.id] !== undefined ? collapsedProjects[project.id] : true;
             const activeItems = items.filter((i) => i.status !== 'completed');
             const completedItems = items.filter((i) => i.status === 'completed');
             const isCompletedExpanded = !!showCompletedMap[project.id];
