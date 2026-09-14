@@ -158,6 +158,11 @@ export function EditInternalProjectDialog({
         setShowDeleteConfirm(false);
         onOpenChange(false);
         onDeleted?.(project.id);
+
+        setTimeout(() => {
+          document.body.style.pointerEvents = '';
+          document.body.style.overflow = '';
+        }, 50);
       } else {
         toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
       }

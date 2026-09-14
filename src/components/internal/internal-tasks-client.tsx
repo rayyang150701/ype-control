@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +66,7 @@ export function InternalTasksClient({
 }: InternalTasksClientProps) {
   const { isAdmin } = useAdmin();
   const { toast } = useToast();
+  const router = useRouter();
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
@@ -1529,7 +1531,16 @@ export function InternalTasksClient({
       {/* 編輯內部專案彈窗 */}
       <EditInternalProjectDialog
         open={editProjectDialogOpen}
-        onOpenChange={setEditProjectDialogOpen}
+        onOpenChange={(open) => {
+          setEditProjectDialogOpen(open);
+          if (!open) {
+            setProjectToEdit(null);
+            setTimeout(() => {
+              document.body.style.pointerEvents = '';
+              document.body.style.overflow = '';
+            }, 50);
+          }
+        }}
         project={projectToEdit}
         users={users}
         clients={clients}
@@ -1547,6 +1558,14 @@ export function InternalTasksClient({
         onDeleted={(deletedProjectId) => {
           setProjects((prev) => prev.filter((p) => p.id !== deletedProjectId));
           setActionItems((prev) => prev.filter((item) => item.projectId !== deletedProjectId));
+          setProjectToEdit(null);
+          setEditProjectDialogOpen(false);
+          router.refresh();
+
+          setTimeout(() => {
+            document.body.style.pointerEvents = '';
+            document.body.style.overflow = '';
+          }, 50);
         }}
       />
 

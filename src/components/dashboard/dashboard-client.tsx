@@ -154,6 +154,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
     isResumeProjectOpen && setIsResumeProjectOpen(false);
     setIsNewLogOpen(false);
     refreshData();
+    setTimeout(() => {
+      document.body.style.pointerEvents = '';
+      document.body.style.overflow = '';
+    }, 50);
   };
 
   return (
