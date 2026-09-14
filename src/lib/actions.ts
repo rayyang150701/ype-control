@@ -97,7 +97,7 @@ export async function createUser(data: any) {
     const supabase = getSupabaseClient();
     try {
         const { error } = await supabase.from('users').insert({
-            firebase_uid: crypto.randomUUID(), // placeholder since no longer using firebase auth
+            uid: crypto.randomUUID(),
             email: data.email,
             display_name: data.displayName,
             role: data.role,
@@ -109,8 +109,9 @@ export async function createUser(data: any) {
         if (error) throw error;
         revalidatePath('/users');
         return { success: true, message: '成員已成功建立！' };
-    } catch (error) {
-        return { success: false, message: '建立成員時發生錯誤。' };
+    } catch (error: any) {
+        console.error('建立成員失敗:', error);
+        return { success: false, message: error?.message || '建立成員時發生錯誤。' };
     }
 }
 
@@ -128,8 +129,9 @@ export async function updateUser(uid: string, data: any) {
         if (error) throw error;
         revalidatePath('/users');
         return { success: true, message: '成員已成功更新！' };
-    } catch (error) {
-        return { success: false, message: '更新成員時發生錯誤。' };
+    } catch (error: any) {
+        console.error('更新成員失敗:', error);
+        return { success: false, message: error?.message || '更新成員時發生錯誤。' };
     }
 }
 
@@ -140,8 +142,9 @@ export async function deleteUser(uid: string) {
         if (error) throw error;
         revalidatePath('/users');
         return { success: true, message: '成員已成功刪除！' };
-    } catch (error) {
-        return { success: false, message: '刪除成員時發生錯誤。' };
+    } catch (error: any) {
+        console.error('刪除成員失敗:', error);
+        return { success: false, message: error?.message || '刪除成員時發生錯誤。' };
     }
 }
 
