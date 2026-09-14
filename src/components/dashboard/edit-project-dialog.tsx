@@ -555,7 +555,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeletingProject}>取消返回</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteProject}
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteProject();
+              }}
               disabled={isDeletingProject}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >

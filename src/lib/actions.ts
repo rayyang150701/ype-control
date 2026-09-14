@@ -316,8 +316,11 @@ export async function deleteProject(projectId: string) {
         }
 
         // 4. 刪除主專案
-        const { error: deleteErr } = await supabase.from('projects').delete().eq('id', projectId);
+        const { data: deletedRows, error: deleteErr } = await supabase.from('projects').delete().eq('id', projectId).select();
         if (deleteErr) throw deleteErr;
+        if (!deletedRows || deletedRows.length === 0) {
+            throw new Error('刪除失敗：資料庫權限不足未能真正刪除。請確認 Vercel 環境變數是否已加入 SUPABASE_SERVICE_ROLE_KEY！');
+        }
 
         revalidatePath('/internal-tasks');
         revalidatePath('/dashboard');
@@ -1191,12 +1194,16 @@ export async function updateActionItem(id: string, data: Partial<{
 export async function deleteActionItem(id: string) {
     const supabase = getSupabaseClient();
     try {
-        const { error } = await supabase
+        const { data: deletedRows, error } = await supabase
             .from('project_action_items')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .select();
 
         if (error) throw error;
+        if (!deletedRows || deletedRows.length === 0) {
+            throw new Error('刪除失敗：資料庫權限不足未能真正刪除。請確認 Vercel 環境變數是否已加入 SUPABASE_SERVICE_ROLE_KEY！');
+        }
         revalidatePath('/internal-tasks');
         return { success: true, message: '待辦事項已刪除！' };
     } catch (err: any) {

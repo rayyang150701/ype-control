@@ -487,7 +487,10 @@ export function EditInternalProjectDialog({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>取消返回</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteProject}
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteProject();
+              }}
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
