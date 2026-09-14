@@ -7,23 +7,35 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get('id');
   
   if (!projectId) {
-    return NextResponse.json({ error: '請提供 ?id=專案ID' });
+    // 列出所有專案
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.from('projects').select('id, name, source_type').order('created_at', { ascending: false });
+    return NextResponse.json({
+      mode: 'list',
+      projectCount: data?.length || 0,
+      projects: data?.map(p => ({ id: p.id, name: p.name, source: p.source_type })),
+      error: error?.message || null,
+    });
   }
 
   const supabase = getSupabaseClient();
   const results: any = { projectId, steps: [] };
 
   try {
-    // Step 0: 確認專案存在
-    const { data: project, error: findErr } = await supabase
+    // Step 0: 確認專案存在 (不用 .single())
+    const { data: projects, error: findErr } = await supabase
       .from('projects')
       .select('id, name')
-      .eq('id', projectId)
-      .single();
-    results.steps.push({ step: '0-find', project, error: findErr?.message || null });
+      .eq('id', projectId);
+    results.steps.push({ 
+      step: '0-find', 
+      matchCount: projects?.length || 0, 
+      project: projects?.[0] || null, 
+      error: findErr?.message || null 
+    });
 
-    if (!project) {
-      results.conclusion = '專案不存在或無法查詢';
+    if (!projects || projects.length === 0) {
+      results.conclusion = '❌ 專案不存在（可能已被刪除或 ID 錯誤）';
       return NextResponse.json(results);
     }
 
@@ -75,7 +87,7 @@ export async function GET(request: NextRequest) {
     } else if (deleteErr) {
       results.conclusion = `❌ 刪除失敗：${deleteErr.message}`;
     } else {
-      results.conclusion = '❌ 刪除回傳 0 筆，可能是 RLS 阻擋或專案不存在';
+      results.conclusion = '❌ 刪除回傳 0 筆，RLS 可能阻擋了刪除操作';
     }
 
   } catch (err: any) {
