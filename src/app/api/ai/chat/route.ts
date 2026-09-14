@@ -327,17 +327,22 @@ ${JSON.stringify(formattedItems, null, 2)}
           ...messages.map((m: any) => ({ role: m.role, content: m.content })),
         ];
 
+        const requestPayload: any = {
+          model: selectedModel,
+          messages: openaiMessages,
+        };
+        // gpt-5.6 / luna / o1 / o3 等新世代推理模型不支援自訂 temperature (僅支援預設 1)
+        if (!selectedModel.includes('5.6') && !selectedModel.includes('luna') && !selectedModel.includes('o1') && !selectedModel.includes('o3')) {
+          requestPayload.temperature = 0.4;
+        }
+
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({
-            model: selectedModel,
-            messages: openaiMessages,
-            temperature: 0.4,
-          }),
+          body: JSON.stringify(requestPayload),
         });
 
         if (res.ok) {
