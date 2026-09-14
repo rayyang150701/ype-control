@@ -126,7 +126,7 @@ export function AIAnalysisDialog({
       setApiProviderInput(storedProvider);
       setSavedModel(storedModel);
       setApiModelInput(storedModel);
-      setActiveModelName(storedKey ? storedModel : '內建專家規則引擎');
+      setActiveModelName(storedModel);
     } catch {}
   }, []);
 
@@ -390,11 +390,11 @@ export function AIAnalysisDialog({
                 </span>
                 {savedApiKey ? (
                   <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-emerald-50 text-emerald-700 border-emerald-300">
-                    {savedProvider === 'openai' ? 'OpenAI' : 'Gemini'} 連線中
+                    {savedProvider === 'openai' ? 'OpenAI' : 'Gemini'} (個人金鑰)
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-amber-50 text-amber-700 border-amber-300">
-                    規則引擎 (未設 Key)
+                  <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-blue-50 text-blue-700 border-blue-300">
+                    伺服端環境預設
                   </Badge>
                 )}
               </div>
