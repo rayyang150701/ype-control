@@ -194,8 +194,8 @@ export function AIAnalysisDialog({
           projectId: currentProjectId === 'all' ? undefined : currentProjectId,
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           customApiKey: savedApiKey || undefined,
-          customProvider: savedProvider,
-          customModel: savedModel || undefined,
+          customProvider: savedApiKey ? savedProvider : undefined,
+          customModel: savedApiKey ? (savedModel || undefined) : undefined,
         }),
       });
 

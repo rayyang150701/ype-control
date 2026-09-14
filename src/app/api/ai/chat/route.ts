@@ -261,12 +261,58 @@ ${JSON.stringify(formattedItems, null, 2)}
 `;
 
     // 檢查使用的 API Key 與 Provider
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    const provider = customProvider || (customApiKey ? (customApiKey.startsWith('AIza') ? 'gemini' : 'openai') : (process.env.OPENAI_API_KEY ? 'openai' : 'gemini'));
+    // 優先順序：前端自訂 Key > 伺服器環境變數
+    const customKey = (customApiKey && typeof customApiKey === 'string') ? customApiKey.trim() : '';
+    const envOpenAI = process.env.OPENAI_API_KEY?.trim() || '';
+    const envGemini = process.env.GEMINI_API_KEY?.trim() || '';
 
-    // 模型指定：優先使用前端傳入之 customModel，其次取環境變數，最後使用預設模型
-    const defaultModel = provider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-5.6-luna') : (process.env.GEMINI_MODEL || 'gemini-1.5-flash');
-    const selectedModel = (customModel && customModel.trim()) || defaultModel;
+    let apiKey = '';
+    let provider: 'openai' | 'gemini' = 'openai';
+
+    if (customKey) {
+      apiKey = customKey;
+      if (customKey.startsWith('AIza')) {
+        provider = 'gemini';
+      } else if (customKey.startsWith('sk-')) {
+        provider = 'openai';
+      } else {
+        provider = customProvider === 'gemini' ? 'gemini' : 'openai';
+      }
+    } else if (envOpenAI) {
+      apiKey = envOpenAI;
+      provider = 'openai';
+    } else if (envGemini) {
+      apiKey = envGemini;
+      provider = 'gemini';
+    }
+
+    // 依據金鑰特徵嚴格校正 Provider（防止 sk- 金鑰誤走 gemini 路由）
+    if (apiKey.startsWith('sk-')) {
+      provider = 'openai';
+    } else if (apiKey.startsWith('AIza')) {
+      provider = 'gemini';
+    }
+
+    // 模型指定：
+    let defaultModel = 'gpt-5.6-luna';
+    if (provider === 'openai') {
+      defaultModel = process.env.OPENAI_MODEL?.trim() || 'gpt-5.6-luna';
+    } else {
+      defaultModel = process.env.GEMINI_MODEL?.trim() || 'gemini-1.5-flash';
+    }
+
+    // 檢查自訂模型是否相符（防止傳入 gemini 模型給 openai，或反之）
+    let selectedModel = defaultModel;
+    if (customModel && typeof customModel === 'string' && customModel.trim()) {
+      const cm = customModel.trim();
+      if (provider === 'openai' && cm.toLowerCase().includes('gemini')) {
+        selectedModel = defaultModel;
+      } else if (provider === 'gemini' && cm.toLowerCase().includes('gpt')) {
+        selectedModel = defaultModel;
+      } else {
+        selectedModel = cm;
+      }
+    }
 
     let replyText = '';
     let usedModel = '';
