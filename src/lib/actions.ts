@@ -281,9 +281,12 @@ export async function deleteClient(id: string, name: string) {
 
 export async function deleteProject(projectId: string) {
     const supabase = getSupabaseClient();
+    const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    console.log(`[deleteProject] projectId=${projectId}, hasServiceKey=${hasServiceKey}, keyPrefix=${process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10) || 'NONE'}`);
     try {
         // 1. 刪除專案所屬內部待辦事項
-        await supabase.from('project_action_items').delete().eq('project_id', projectId);
+        const { error: aiErr, count: aiCount } = await supabase.from('project_action_items').delete().eq('project_id', projectId);
+        console.log(`[deleteProject] action_items delete: error=${aiErr?.message || 'null'}`);
 
         // 2. 刪除專案所屬子專案及週報紀錄
         const { data: subProjects } = await supabase.from('sub_projects').select('id').eq('project_id', projectId);
@@ -317,16 +320,18 @@ export async function deleteProject(projectId: string) {
 
         // 4. 刪除主專案
         const { data: deletedRows, error: deleteErr } = await supabase.from('projects').delete().eq('id', projectId).select();
+        console.log(`[deleteProject] projects delete: error=${deleteErr?.message || 'null'}, deletedCount=${deletedRows?.length || 0}`);
         if (deleteErr) throw deleteErr;
         if (!deletedRows || deletedRows.length === 0) {
-            throw new Error('刪除失敗：資料庫權限不足未能真正刪除。請確認 Vercel 環境變數是否已加入 SUPABASE_SERVICE_ROLE_KEY！');
+            throw new Error(`刪除失敗：資料庫回傳 0 筆已刪除資料（hasServiceKey=${hasServiceKey}）。請確認 Vercel 環境變數 SUPABASE_SERVICE_ROLE_KEY 是否正確。`);
         }
 
         revalidatePath('/internal-tasks');
         revalidatePath('/dashboard');
+        console.log(`[deleteProject] SUCCESS for projectId=${projectId}`);
         return { success: true, message: '專案及所屬所有項目已成功刪除！' };
     } catch (err: any) {
-        console.error('刪除專案失敗:', err);
+        console.error('[deleteProject] FAILED:', err);
         return { success: false, message: err?.message || '刪除專案失敗' };
     }
 }
