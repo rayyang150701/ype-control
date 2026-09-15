@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { CurrentUser, UserRole } from '@/types';
+import { syncCurrentUser } from '@/lib/actions';
 
 interface AdminContextType {
   currentUser: CurrentUser | null;
@@ -19,9 +20,9 @@ interface AdminContextType {
 }
 
 const defaultAdminUser: CurrentUser = {
-  uid: 'admin-master',
-  username: 'admin',
-  displayName: '系統主管理員',
+  uid: '9d8f085a-5eb4-4346-93ec-435c33cd59d8',
+  username: 'admin@emmt.com.tw',
+  displayName: 'admin',
   email: 'admin@emmt.com.tw',
   role: 'super_admin',
   company: '億威電子',
@@ -53,8 +54,36 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedUserStr = localStorage.getItem('ype_current_user') || sessionStorage.getItem('ype_current_user');
       if (savedUserStr) {
-        const parsed = JSON.parse(savedUserStr);
+        const parsed: CurrentUser = JSON.parse(savedUserStr);
+        // 若為 admin，保證擁有最高主管理員權限
+        if (
+          parsed.username?.toLowerCase() === 'admin' ||
+          parsed.email?.toLowerCase() === 'admin@emmt.com.tw' ||
+          parsed.displayName?.toLowerCase() === 'admin' ||
+          parsed.uid === 'admin-master' ||
+          parsed.uid === '9d8f085a-5eb4-4346-93ec-435c33cd59d8'
+        ) {
+          parsed.role = 'super_admin';
+          parsed.username = 'admin@emmt.com.tw';
+        }
         setCurrentUser(parsed);
+
+        // 背景同步最新資料庫權限
+        if (parsed.email) {
+          syncCurrentUser(parsed.email).then((updated) => {
+            if (updated && updated.role) {
+              setCurrentUser((prev) => {
+                if (!prev) return null;
+                const fresh = { ...prev, ...updated };
+                try {
+                  localStorage.setItem('ype_current_user', JSON.stringify(fresh));
+                  sessionStorage.setItem('ype_current_user', JSON.stringify(fresh));
+                } catch {}
+                return fresh;
+              });
+            }
+          }).catch(() => {});
+        }
       } else {
         // 舊版相容
         const legacyAdmin = localStorage.getItem('ype_admin_logged_in') || sessionStorage.getItem('ype_admin_logged_in');

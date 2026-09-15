@@ -94,7 +94,7 @@ export function LoginDialog({ isOpen, setIsOpen, onLoginSuccess }: LoginDialogPr
           </div>
           <DialogTitle className="text-center font-headline text-2xl">系統身分登入</DialogTitle>
           <DialogDescription className="text-center">
-            請輸入帳號或電子郵件登入，以依身分權限進行操作。
+            請輸入登入電子郵件 (或 admin) 與密碼進行身分驗證。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -104,9 +104,9 @@ export function LoginDialog({ isOpen, setIsOpen, onLoginSuccess }: LoginDialogPr
               name="account"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>帳號或電子郵件</FormLabel>
+                  <FormLabel>登入帳號 (Email 或 admin)</FormLabel>
                   <FormControl>
-                    <Input placeholder="admin 或 使用者帳號 / Email" {...field} />
+                    <Input placeholder="例如：admin 或 user@emmt.com.tw" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

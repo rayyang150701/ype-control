@@ -36,7 +36,7 @@ import { createUser, updateUser } from '@/lib/actions';
 import { useAdmin } from '@/components/admin-context';
 
 const userSchema = z.object({
-  username: z.string().min(2, '帳號至少需 2 個字元'),
+  username: z.string().optional(),
   displayName: z.string().min(1, '姓名為必填'),
   email: z.string().email('請輸入有效的電子郵件'),
   password: z.string().optional(),
@@ -69,7 +69,7 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
     resolver: zodResolver(userSchema),
     defaultValues: initialData
       ? {
-          username: initialData.username || initialData.displayName || '',
+          username: initialData.username || initialData.email || initialData.displayName || '',
           displayName: initialData.displayName || '',
           email: initialData.email || '',
           password: '',
@@ -103,10 +103,12 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
       }
     }
 
+    const finalUsername = data.username?.trim() || data.email.trim();
+
     startTransition(async () => {
       const result = isEditMode
         ? await updateUser(initialData.uid, {
-            username: data.username.trim(),
+            username: finalUsername,
             displayName: data.displayName.trim(),
             email: data.email.trim(),
             password: data.password?.trim() || undefined,
@@ -116,7 +118,7 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
             status: data.status,
           })
         : await createUser({
-            username: data.username.trim(),
+            username: finalUsername,
             displayName: data.displayName.trim(),
             email: data.email.trim(),
             password: data.password!.trim(),
@@ -172,8 +174,9 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                   <FormItem>
                     <FormLabel>登入帳號 <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                      <Input placeholder="例如：ray.yang" {...field} />
+                      <Input placeholder="例如：user@emmt.com.tw" {...field} />
                     </FormControl>
+                    <p className="text-[11px] text-muted-foreground">統一使用 Email 作為登入帳號</p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -206,6 +209,12 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                         type="email"
                         placeholder="user@emmt.com.tw"
                         {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          if (!isEditMode) {
+                            form.setValue('username', e.target.value);
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormMessage />

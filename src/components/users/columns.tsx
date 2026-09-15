@@ -140,9 +140,9 @@ const ActionsCell: FC<{
 export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps): ColumnDef<User>[] => [
   {
     accessorKey: 'username',
-    header: '登入帳號',
+    header: '登入帳號 (Email)',
     cell: ({ row }) => {
-      const username = row.original.username || row.original.displayName || '';
+      const username = row.original.username || row.original.email || row.original.displayName || '';
       return (
         <span className="font-mono font-medium text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-xs">
           {username}
