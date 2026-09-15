@@ -3,8 +3,19 @@ export type Timestamp = any;
 export type UserRole = 'admin' | 'editor' | 'viewer';
 export type UserStatus = 'pending' | 'active';
 
+export interface CurrentUser {
+  uid: string;
+  username: string;
+  displayName: string;
+  email: string;
+  role: UserRole;
+  department?: string;
+  company?: string;
+}
+
 export interface User {
   uid: string;
+  username?: string;
   email: string;
   displayName: string;
   role: UserRole;

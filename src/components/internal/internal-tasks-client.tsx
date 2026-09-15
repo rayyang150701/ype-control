@@ -32,7 +32,8 @@ import {
   Ban,
   RotateCcw,
   Building2,
-  Users
+  Users,
+  Lock,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
@@ -65,7 +66,7 @@ export function InternalTasksClient({
   users = [],
   clients = [],
 }: InternalTasksClientProps) {
-  const { isAdmin } = useAdmin();
+  const { isAdmin, isGuest, isLoaded, setIsLoginDialogOpen } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -766,20 +767,28 @@ export function InternalTasksClient({
               )}
             </div>
 
-            {/* 歷程說明 */}
+            {/* 歷程說明 (需求1: 支援換行與上下滾動顯示) */}
             {item.notes && (
-              <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200/60 leading-relaxed">
-                <span className="font-medium text-slate-700">歷程說明：</span>
-                {item.notes}
-              </p>
+              <div className="text-xs text-slate-700 bg-slate-50/90 p-2.5 rounded-md border border-slate-200/80 leading-relaxed shadow-2xs">
+                <div className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
+                  <span>📝 歷程說明：</span>
+                </div>
+                <div className="whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1 text-slate-600 select-text">
+                  {item.notes}
+                </div>
+              </div>
             )}
 
-            {/* Lesson Learnt 經驗檢討 */}
+            {/* Lesson Learnt 經驗檢討 (需求1: 支援換行與上下滾動顯示) */}
             {item.lessonLearnt && (
-              <p className="text-xs text-amber-900 bg-amber-50/70 p-2 rounded border border-amber-200/80 leading-relaxed">
-                <span className="font-semibold text-amber-950">💡 經驗檢討 (Lesson Learnt)：</span>
-                {item.lessonLearnt}
-              </p>
+              <div className="text-xs text-amber-950 bg-amber-50/80 p-2.5 rounded-md border border-amber-200/80 leading-relaxed mt-2 shadow-2xs">
+                <div className="font-semibold text-amber-950 mb-1 flex items-center gap-1">
+                  <span>💡 經驗檢討 (Lesson Learnt)：</span>
+                </div>
+                <div className="whitespace-pre-wrap break-words max-h-40 overflow-y-auto pr-1 text-amber-900 select-text">
+                  {item.lessonLearnt}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -862,6 +871,42 @@ export function InternalTasksClient({
       </div>
     );
   };
+
+  // 權限檢查：內部專案追蹤與 AI 智慧診斷僅限管理者
+  if (isLoaded && !isAdmin) {
+    return (
+      <div className="min-h-[65vh] flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-lg flex flex-col items-center text-center">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-5 shadow-xs">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">需要系統管理員權限</h2>
+          <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+            「內部專案與待辦追蹤」及「AI 智慧診斷」僅開放給<strong>系統管理者 (Admin)</strong> 使用。<br />
+            訪客模式與一般協作編輯者僅具備進度管制總表之檢視或維護權限。
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+            {isGuest ? (
+              <Button
+                onClick={() => setIsLoginDialogOpen(true)}
+                className="gap-2 bg-primary text-white hover:bg-primary/90 text-xs"
+              >
+                <Lock className="w-4 h-4" />
+                管理員登入
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              onClick={() => router.push('/dashboard')}
+              className="border-slate-300 text-xs"
+            >
+              返回進度管制總表
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16">

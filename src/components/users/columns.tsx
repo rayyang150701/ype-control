@@ -108,30 +108,43 @@ const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, o
 
 export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
   {
+    accessorKey: 'username',
+    header: '登入帳號',
+    cell: ({ row }) => {
+      const username = row.original.username || row.original.displayName || '';
+      return (
+        <span className="font-mono font-medium text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-xs">
+          {username}
+        </span>
+      );
+    },
+  },
+  {
     accessorKey: 'displayName',
     header: ({ column }) => {
       return (
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="p-0 hover:bg-transparent font-semibold"
         >
           姓名
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
         </Button>
       );
     },
   },
   {
     accessorKey: 'email',
-    header: 'Email',
+    header: '電子郵件',
   },
   {
     accessorKey: 'clientName',
-    header: '所屬客戶',
+    header: '公司別',
     cell: ({ row }) => {
       const client = row.original.clientName;
       return client ? (
-        <span className="font-medium text-slate-700">{client}</span>
+        <span className="font-medium text-slate-800">{client}</span>
       ) : (
         <span className="text-muted-foreground text-xs">未設定</span>
       );
@@ -144,11 +157,11 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
   },
   {
     accessorKey: 'department',
-    header: '部門',
+    header: '部門別',
     cell: ({ row }) => {
       const dept = row.original.department;
       return dept ? (
-        <Badge variant="outline" className="font-mono text-xs">
+        <Badge variant="outline" className="font-mono text-xs bg-slate-50">
           {dept}
         </Badge>
       ) : (
@@ -163,29 +176,47 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
   },
   {
     accessorKey: 'role',
-    header: '角色',
-     cell: ({ row }) => {
+    header: '系統權限',
+    cell: ({ row }) => {
       const role = row.original.role;
-      const variant = role === 'admin' ? 'default' : 'secondary';
-      const text = {
-        admin: '管理員',
-        editor: '編輯者',
-        viewer: '檢視者',
-      }[role];
-      return <Badge variant={variant}>{text}</Badge>;
+      if (role === 'admin') {
+        return (
+          <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-medium text-xs border-amber-600 shadow-2xs">
+            👑 管理者
+          </Badge>
+        );
+      }
+      if (role === 'editor') {
+        return (
+          <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs border-blue-700 shadow-2xs">
+            ✏️ 編輯者
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="text-slate-600 font-medium text-xs bg-slate-50">
+          👁️ 檢視者
+        </Badge>
+      );
     },
   },
   {
     accessorKey: 'status',
-    header: '狀態',
+    header: '帳號狀態',
     cell: ({ row }) => {
       const status = row.original.status;
-      const variant = status === 'active' ? 'secondary' : 'destructive';
-       const text = {
-        active: '啟用',
-        pending: '停用',
-      }[status];
-      return <Badge variant={variant} className={status === 'active' ? 'bg-green-500/20 text-green-700' : ''}>{text}</Badge>;
+      if (status === 'active') {
+        return (
+          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 font-medium text-xs">
+            啟用中
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300 font-medium text-xs">
+          已停用
+        </Badge>
+      );
     },
   },
   {

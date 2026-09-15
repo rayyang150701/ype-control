@@ -523,17 +523,20 @@ export function TaskCentricView({
 
                     {/* 第二行：工作事項內容 + 預計完成日 (延誤、超前) + 操作 */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5">
-                      {/* 工作事項內容 */}
-                      <div className="text-xs text-slate-600 leading-relaxed flex-1 min-w-0 pr-2">
+                      {/* 工作事項內容 (需求1: 支援換行與上下滾動顯示) */}
+                      <div className="text-xs text-slate-700 leading-relaxed flex-1 min-w-0 pr-2">
                         {item.notes ? (
-                          <span>{item.notes}</span>
+                          <div className="whitespace-pre-wrap break-words max-h-36 overflow-y-auto pr-1 bg-slate-50/80 p-2 rounded border border-slate-200/60 text-slate-700 select-text">
+                            {item.notes}
+                          </div>
                         ) : (
                           <span className="text-slate-400 italic">無補充事項內容</span>
                         )}
                         {item.lessonLearnt && (
-                          <span className="ml-2 inline-flex items-center text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[11px]">
-                            💡 檢討: {item.lessonLearnt}
-                          </span>
+                          <div className="mt-1.5 whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1 text-amber-900 bg-amber-50/80 p-1.5 rounded border border-amber-200 text-[11px] select-text">
+                            <span className="font-semibold text-amber-950">💡 經驗檢討: </span>
+                            {item.lessonLearnt}
+                          </div>
                         )}
                       </div>
 

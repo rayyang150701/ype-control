@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus } from '@/types';
 import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 /**
@@ -74,61 +74,286 @@ function serializeProjectMeta(meta: ProjectMeta): string {
     return JSON.stringify(meta);
 }
 
-// --- 成員管理 ---
+// --- 使用者認證與成員管理 (需求 2) ---
+
+/**
+ * 使用者登入驗證 (支援帳號 / Email + 密碼，含 master admin 備援)
+ */
+export async function loginUser(credentials: { accountOrEmail: string; password: string }): Promise<{
+    success: boolean;
+    message?: string;
+    user?: CurrentUser;
+}> {
+    const { accountOrEmail, password } = credentials;
+    if (!accountOrEmail?.trim() || !password?.trim()) {
+        return { success: false, message: '請輸入帳號與密碼' };
+    }
+
+    const cleanAccount = accountOrEmail.trim();
+
+    // 1. 系統最高管理員萬能備援帳號
+    if ((cleanAccount.toLowerCase() === 'admin' || cleanAccount.toLowerCase() === 'admin@emmt.com.tw') && password === 'emmt12345') {
+        return {
+            success: true,
+            user: {
+                uid: 'admin-master',
+                username: 'admin',
+                displayName: '系統管理員',
+                email: 'admin@emmt.com.tw',
+                role: 'admin',
+                company: '億威電子',
+                department: '管理部',
+            },
+        };
+    }
+
+    const supabase = getSupabaseClient();
+
+    try {
+        let targetEmail = cleanAccount;
+
+        // 若輸入非 Email 格式，搜尋對應的使用者 Email
+        if (!cleanAccount.includes('@')) {
+            // 先從 Supabase Auth metadata 搜尋 username
+            const { data: authUsers } = await supabase.auth.admin.listUsers();
+            const matchedAuth = authUsers?.users?.find(
+                u => u.user_metadata?.username?.toLowerCase() === cleanAccount.toLowerCase()
+            );
+
+            if (matchedAuth?.email) {
+                targetEmail = matchedAuth.email;
+            } else {
+                // 從 public.users 資料表搜尋 display_name
+                const { data: dbUsers } = await supabase
+                    .from('users')
+                    .select('*')
+                    .ilike('display_name', cleanAccount);
+
+                if (dbUsers && dbUsers.length > 0 && dbUsers[0].email) {
+                    targetEmail = dbUsers[0].email;
+                } else {
+                    return { success: false, message: '找不到此帳號或電子郵件，請確認後再試。' };
+                }
+            }
+        }
+
+        // 2. 透過 Supabase Auth 驗證密碼
+        const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password: password,
+        });
+
+        if (authError || !authResult?.user) {
+            return { success: false, message: '帳號或密碼錯誤，請重新確認後再試。' };
+        }
+
+        // 3. 抓取資料庫確認權限與狀態
+        const { data: dbUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', targetEmail)
+            .maybeSingle();
+
+        if (dbUser && dbUser.status === 'pending') {
+            return { success: false, message: '此帳號已被設為停用，請聯繫系統管理者。' };
+        }
+
+        const role = (dbUser?.role || authResult.user.user_metadata?.role || 'editor') as UserRole;
+        const displayName = dbUser?.display_name || authResult.user.user_metadata?.displayName || targetEmail.split('@')[0];
+        const username = authResult.user.user_metadata?.username || displayName;
+        const company = dbUser?.client_name || authResult.user.user_metadata?.company || '燁輝';
+        const department = dbUser?.department || authResult.user.user_metadata?.department || '';
+
+        return {
+            success: true,
+            user: {
+                uid: authResult.user.id,
+                username,
+                displayName,
+                email: targetEmail,
+                role,
+                company,
+                department,
+            },
+        };
+    } catch (err: any) {
+        console.error('登入驗證異常:', err);
+        return { success: false, message: err?.message || '登入系統異常，請稍後再試。' };
+    }
+}
 
 export async function getUsers(): Promise<User[]> {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from('users').select('*');
-    if (error || !data) return [];
+    try {
+        const [{ data: dbUsers, error }, { data: authUsers }] = await Promise.all([
+            supabase.from('users').select('*').order('created_at', { ascending: false }),
+            supabase.auth.admin.listUsers().catch(() => ({ data: { users: [] } })),
+        ]);
 
-    return data.map(doc => ({
-        uid: doc.uid,
-        email: doc.email || '',
-        displayName: doc.display_name || '',
-        role: doc.role || 'viewer',
-        status: doc.status || 'active',
-        department: doc.department || '',
-        clientName: doc.client_name || '',
-        createdAt: formatISO(doc.created_at),
-    }));
+        if (error || !dbUsers) return [];
+
+        const authMap = new Map<string, any>();
+        authUsers?.users?.forEach(u => {
+            if (u.email) authMap.set(u.email.toLowerCase(), u);
+            if (u.id) authMap.set(u.id, u);
+        });
+
+        return dbUsers.map(doc => {
+            const authUser = authMap.get(doc.email?.toLowerCase()) || authMap.get(doc.uid);
+            return {
+                uid: doc.uid,
+                username: authUser?.user_metadata?.username || doc.display_name || '',
+                email: doc.email || '',
+                displayName: doc.display_name || '',
+                role: doc.role || 'viewer',
+                status: doc.status || 'active',
+                department: doc.department || '',
+                clientName: doc.client_name || '',
+                createdAt: formatISO(doc.created_at),
+            };
+        });
+    } catch (e) {
+        console.error('讀取使用者失敗:', e);
+        return [];
+    }
 }
 
-export async function createUser(data: any) {
+export async function createUser(data: {
+    username: string;
+    displayName: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    status?: UserStatus;
+    department: string;
+    clientName: string;
+}) {
     const supabase = getSupabaseClient();
     try {
-        const { error } = await supabase.from('users').insert({
-            uid: crypto.randomUUID(),
-            email: data.email,
-            display_name: data.displayName,
-            role: data.role,
-            status: data.status,
-            department: data.department || '',
-            client_name: data.clientName || '',
-            created_at: new Date().toISOString()
+        if (!data.username?.trim()) return { success: false, message: '請輸入帳號' };
+        if (!data.email?.trim()) return { success: false, message: '請輸入電子郵件' };
+        if (!data.displayName?.trim()) return { success: false, message: '請輸入姓名' };
+        if (!data.password?.trim()) return { success: false, message: '請設定密碼' };
+        if (!data.clientName?.trim()) return { success: false, message: '請選擇公司別' };
+        if (!data.department?.trim()) return { success: false, message: '請輸入部門別' };
+
+        // 1. 建立 Supabase Auth 使用者
+        let authUserId = crypto.randomUUID();
+        const authRes = await supabase.auth.admin.createUser({
+            email: data.email.trim(),
+            password: data.password.trim(),
+            email_confirm: true,
+            user_metadata: {
+                username: data.username.trim(),
+                displayName: data.displayName.trim(),
+                role: data.role,
+                company: data.clientName.trim(),
+                department: data.department.trim(),
+            },
         });
-        if (error) throw error;
+
+        if (authRes.data?.user) {
+            authUserId = authRes.data.user.id;
+        } else if (authRes.error) {
+            // 若該 email 已存在於 auth，更新其密碼與 metadata
+            const { data: existingAuthUsers } = await supabase.auth.admin.listUsers();
+            const existing = existingAuthUsers?.users?.find(
+                u => u.email?.toLowerCase() === data.email.trim().toLowerCase()
+            );
+            if (existing) {
+                authUserId = existing.id;
+                await supabase.auth.admin.updateUserById(existing.id, {
+                    password: data.password.trim(),
+                    user_metadata: {
+                        username: data.username.trim(),
+                        displayName: data.displayName.trim(),
+                        role: data.role,
+                        company: data.clientName.trim(),
+                        department: data.department.trim(),
+                    },
+                });
+            } else {
+                throw new Error(authRes.error.message);
+            }
+        }
+
+        // 2. 寫入 public.users 資料表
+        const { error: dbError } = await supabase.from('users').upsert({
+            uid: authUserId,
+            email: data.email.trim(),
+            display_name: data.displayName.trim(),
+            role: data.role,
+            status: data.status || 'active',
+            department: data.department.trim() || '',
+            client_name: data.clientName.trim() || '燁輝',
+            created_at: new Date().toISOString(),
+        }, { onConflict: 'uid' });
+
+        if (dbError) throw dbError;
+
         revalidatePath('/users');
-        return { success: true, message: '成員已成功建立！' };
+        return { success: true, message: `成員帳號「${data.username}」已成功建立並設定密碼！` };
     } catch (error: any) {
         console.error('建立成員失敗:', error);
         return { success: false, message: error?.message || '建立成員時發生錯誤。' };
     }
 }
 
-export async function updateUser(uid: string, data: any) {
+export async function updateUser(uid: string, data: {
+    username?: string;
+    displayName: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    status: UserStatus;
+    department: string;
+    clientName: string;
+}) {
     const supabase = getSupabaseClient();
     try {
+        // 1. 若有填寫新密碼或帳號，更新 Supabase Auth
+        const hasNewPassword = !!data.password && data.password.trim().length > 0;
+        const metaUpdate = {
+            username: data.username?.trim() || data.displayName.trim(),
+            displayName: data.displayName.trim(),
+            role: data.role,
+            company: data.clientName.trim(),
+            department: data.department.trim(),
+        };
+
+        const { data: authUser } = await supabase.auth.admin.getUserById(uid);
+        if (authUser?.user) {
+            const updatePayload: any = {
+                email: data.email.trim(),
+                user_metadata: metaUpdate,
+            };
+            if (hasNewPassword) {
+                updatePayload.password = data.password!.trim();
+            }
+            await supabase.auth.admin.updateUserById(uid, updatePayload);
+        } else if (hasNewPassword) {
+            // 如果此既有成員尚未有 Auth 帳號，為其自動建立
+            await supabase.auth.admin.createUser({
+                email: data.email.trim(),
+                password: data.password!.trim(),
+                email_confirm: true,
+                user_metadata: metaUpdate,
+            });
+        }
+
+        // 2. 更新 public.users 資料表
         const { error } = await supabase.from('users').update({
-            email: data.email,
-            display_name: data.displayName,
+            email: data.email.trim(),
+            display_name: data.displayName.trim(),
             role: data.role,
             status: data.status,
-            department: data.department || '',
-            client_name: data.clientName || ''
+            department: data.department.trim() || '',
+            client_name: data.clientName.trim() || '',
         }).eq('uid', uid);
+
         if (error) throw error;
         revalidatePath('/users');
-        return { success: true, message: '成員已成功更新！' };
+        return { success: true, message: hasNewPassword ? '成員資料及密碼已成功更新！' : '成員資料已成功更新！' };
     } catch (error: any) {
         console.error('更新成員失敗:', error);
         return { success: false, message: error?.message || '更新成員時發生錯誤。' };
@@ -138,8 +363,10 @@ export async function updateUser(uid: string, data: any) {
 export async function deleteUser(uid: string) {
     const supabase = getSupabaseClient();
     try {
-        const { error } = await supabase.from('users').delete().eq('uid', uid);
-        if (error) throw error;
+        await Promise.allSettled([
+            supabase.from('users').delete().eq('uid', uid),
+            supabase.auth.admin.deleteUser(uid),
+        ]);
         revalidatePath('/users');
         return { success: true, message: '成員已成功刪除！' };
     } catch (error: any) {

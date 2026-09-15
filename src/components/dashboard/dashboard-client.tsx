@@ -17,12 +17,14 @@ import { NewLogDialog } from './new-log-dialog';
 import { LoginDialog } from './login-dialog';
 import { LinkedInternalProgressDialog } from './linked-internal-progress-dialog';
 import { useAdmin } from '@/components/admin-context';
+import { useToast } from '@/hooks/use-toast';
 
 type DashboardClientProps = {
   initialSubProjects: SubProjectWithLatestLog[];
 };
 
 export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
+  const { toast } = useToast();
   const [subProjects, setSubProjects] = useState<SubProjectWithLatestLog[]>(initialSubProjects);
   const [fullProjects, setFullProjects] = useState<FullProject[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -32,7 +34,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
   // 權限控管狀態 (由全域 AdminContext 提供)
-  const { isAdmin, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen } = useAdmin();
+  const { isAdmin, isEditor, isGuest, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen } = useAdmin();
 
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
@@ -177,7 +179,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         onReusmeProject={() => setIsResumeProjectOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        isAdmin={isAdmin}
+        isAdmin={isEditor}
         onAdminToggle={() => {
             if (isAdmin) {
                 setIsAdmin(false);
@@ -195,7 +197,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
                 subProject={sp} 
                 onCardClick={handleSubProjectClick} 
                 onAddLog={() => handleAddLogClick(sp)}
-                isAdmin={isAdmin}
+                isAdmin={isEditor}
             />
           ))}
           {filteredSubProjects.length === 0 && (
@@ -210,8 +212,16 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onEditProject={handleEditProjectClick} 
             onSubProjectClick={handleSubProjectClick} 
             onAddLog={handleAddLogClick}
-            isAdmin={isAdmin}
+            isAdmin={isEditor}
             onViewInternalProgress={(internalProjectId) => {
+              if (!isAdmin) {
+                toast({
+                  title: '需要管理者權限',
+                  description: '內部專案待辦追蹤與跟催歷程僅限系統管理者檢視。',
+                  variant: 'destructive',
+                });
+                return;
+              }
               setSelectedInternalProjectId(internalProjectId);
               setIsInternalProgressOpen(true);
             }}
@@ -228,7 +238,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           onExport={async () => exportSubProjectHistory(selectedSubProject, timelineLogs, await getUsers())}
           onLogUpdated={refreshData}
           onEditProject={handleEditProjectClick}
-          isAdmin={isAdmin}
+          isAdmin={isEditor}
         />
       )}
 
