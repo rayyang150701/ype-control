@@ -66,7 +66,7 @@ export function InternalTasksClient({
   users = [],
   clients = [],
 }: InternalTasksClientProps) {
-  const { isAdmin, isGuest, isLoaded, setIsLoginDialogOpen } = useAdmin();
+  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -872,29 +872,27 @@ export function InternalTasksClient({
     );
   };
 
-  // 權限檢查：內部專案追蹤與 AI 智慧診斷僅限管理者
-  if (isLoaded && !isAdmin) {
+  // 權限檢查：內部專案追蹤僅限內部成員 (管理者與協作編輯者) 檢視
+  if (isLoaded && !isEditor) {
     return (
       <div className="min-h-[65vh] flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-lg flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-5 shadow-xs">
             <Lock className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">需要系統管理員權限</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">需要登入系統</h2>
           <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-            「內部專案與待辦追蹤」及「AI 智慧診斷」僅開放給<strong>系統管理者 (Admin)</strong> 使用。<br />
-            訪客模式與一般協作編輯者僅具備進度管制總表之檢視或維護權限。
+            「內部專案與待辦追蹤」包含公司內部敏感情資與等候跟催歷程，僅開放給內部成員（管理者與協作編輯者）檢視。<br />
+            請先登入帳號以進行存取。
           </p>
           <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
-            {isGuest ? (
-              <Button
-                onClick={() => setIsLoginDialogOpen(true)}
-                className="gap-2 bg-primary text-white hover:bg-primary/90 text-xs"
-              >
-                <Lock className="w-4 h-4" />
-                管理員登入
-              </Button>
-            ) : null}
+            <Button
+              onClick={() => setIsLoginDialogOpen(true)}
+              className="gap-2 bg-primary text-white hover:bg-primary/90 text-xs"
+            >
+              <Lock className="w-4 h-4" />
+              登入系統
+            </Button>
             <Button
               variant="outline"
               onClick={() => router.push('/dashboard')}
@@ -913,13 +911,18 @@ export function InternalTasksClient({
       {/* 頂部標題與行動列 */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               內部專案管制與待辦歷程追蹤
             </h1>
             <Badge variant="secondary" className="font-normal text-xs">
               內部管制專用
             </Badge>
+            {!isAdmin && (
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-medium">
+                👁️ 編輯者檢視模式 (唯讀)
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             針對 50~70 個列管專案，即時掌握「等誰處理 (Waiting-on)」、「階段進程」、「跟催期限」與「AI 延誤診斷」。
@@ -927,14 +930,16 @@ export function InternalTasksClient({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            onClick={() => handleOpenAI()}
-            variant="outline"
-            className="gap-1.5 border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shadow-2xs font-semibold"
-          >
-            <Bot className="h-4 w-4 text-indigo-600" />
-            🤖 AI 智慧診斷
-          </Button>
+          {isAdmin && (
+            <Button
+              onClick={() => handleOpenAI()}
+              variant="outline"
+              className="gap-1.5 border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shadow-2xs font-semibold"
+            >
+              <Bot className="h-4 w-4 text-indigo-600" />
+              🤖 AI 智慧診斷
+            </Button>
+          )}
 
           {isAdmin && (
             <>

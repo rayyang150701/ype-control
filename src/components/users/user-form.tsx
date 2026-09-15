@@ -33,6 +33,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { User, UserRole, UserStatus, Client } from '@/types';
 import { createUser, updateUser } from '@/lib/actions';
+import { useAdmin } from '@/components/admin-context';
 
 const userSchema = z.object({
   username: z.string().min(2, '帳號至少需 2 個字元'),
@@ -41,7 +42,7 @@ const userSchema = z.object({
   password: z.string().optional(),
   department: z.string().min(1, '部門別為必填'),
   clientName: z.string().min(1, '公司別為必填'),
-  role: z.enum(['admin', 'editor', 'viewer'], {
+  role: z.enum(['super_admin', 'admin', 'editor', 'viewer'], {
     errorMap: () => ({ message: '請選擇一個角色' }),
   }),
   status: z.enum(['active', 'pending'], {
@@ -59,6 +60,7 @@ interface UserFormProps {
 }
 
 export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFormProps) {
+  const { isSuperAdmin } = useAdmin();
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const isEditMode = !!initialData;
@@ -89,14 +91,16 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
   });
 
   const onSubmit = (data: UserFormData) => {
-    // 密碼必填檢查
-    if (!isEditMode && (!data.password || data.password.trim().length < 6)) {
-      form.setError('password', { message: '建立新帳號時密碼為必填，且至少需 6 個字元' });
-      return;
-    }
-    if (isEditMode && data.password && data.password.trim().length < 6) {
-      form.setError('password', { message: '如需重設密碼，至少需 6 個字元' });
-      return;
+    // 密碼必填檢查 (僅主管理員可設定密碼)
+    if (isSuperAdmin) {
+      if (!isEditMode && (!data.password || data.password.trim().length < 6)) {
+        form.setError('password', { message: '建立新帳號時密碼為必填，且至少需 6 個字元' });
+        return;
+      }
+      if (isEditMode && data.password && data.password.trim().length < 6) {
+        form.setError('password', { message: '如需重設密碼，至少需 6 個字元' });
+        return;
+      }
     }
 
     startTransition(async () => {
@@ -213,13 +217,27 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {isEditMode ? '重設密碼 (選填)' : '登入密碼'} <span className="text-destructive">{isEditMode ? '' : '*'}</span>
+                    <FormLabel className="flex items-center justify-between">
+                      <span>
+                        {isEditMode ? '重設密碼 (選填)' : '登入密碼'}
+                        <span className="text-destructive">{!isEditMode && isSuperAdmin ? ' *' : ''}</span>
+                      </span>
+                      {!isSuperAdmin && (
+                        <span className="text-[11px] text-amber-600 font-normal">僅主管理員可設密碼</span>
+                      )}
                     </FormLabel>
                     <FormControl>
                       <Input
                         type="password"
-                        placeholder={isEditMode ? '留空表示保留原密碼' : '至少 6 碼'}
+                        placeholder={
+                          !isSuperAdmin
+                            ? '僅主管理員可設定或重設密碼'
+                            : isEditMode
+                            ? '留空表示保留原密碼 (若需變更請填寫)'
+                            : '請輸入初始密碼 (至少 6 碼)'
+                        }
+                        disabled={!isSuperAdmin}
+                        className={!isSuperAdmin ? 'bg-slate-100 cursor-not-allowed opacity-80' : ''}
                         {...field}
                       />
                     </FormControl>
@@ -283,19 +301,28 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                 name="role"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>系統權限角色 <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel className="flex items-center justify-between">
+                      <span>系統權限角色 <span className="text-destructive">*</span></span>
+                      {!isSuperAdmin && (
+                        <span className="text-[11px] text-amber-600 font-normal">僅主管理員可升降階</span>
+                      )}
+                    </FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       value={field.value}
+                      disabled={!isSuperAdmin}
                     >
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className={!isSuperAdmin ? 'bg-slate-100 cursor-not-allowed opacity-80' : ''}>
                           <SelectValue placeholder="選擇一個角色" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="admin">👑 管理者 (全權限 + 內部專案 + AI診斷)</SelectItem>
-                        <SelectItem value="editor">✏️ 編輯者 (維護燁輝進度管制總表)</SelectItem>
+                        {isSuperAdmin && (
+                          <SelectItem value="super_admin">👑 主管理員 (所有權限、含刪除帳號/升降階/設定密碼)</SelectItem>
+                        )}
+                        <SelectItem value="admin">🛡️ 管理員 (除刪除/升降階/設密碼外之所有權限)</SelectItem>
+                        <SelectItem value="editor">✏️ 編輯者 (讀寫管制總表、檢視內部專案追蹤)</SelectItem>
                         <SelectItem value="viewer">👁️ 檢視者 (僅訪客唯讀)</SelectItem>
                       </SelectContent>
                     </Select>

@@ -1,6 +1,6 @@
 export type Timestamp = any;
 
-export type UserRole = 'admin' | 'editor' | 'viewer';
+export type UserRole = 'super_admin' | 'admin' | 'editor' | 'viewer';
 export type UserStatus = 'pending' | 'active';
 
 export interface CurrentUser {

@@ -98,9 +98,9 @@ export async function loginUser(credentials: { accountOrEmail: string; password:
             user: {
                 uid: 'admin-master',
                 username: 'admin',
-                displayName: '系統管理員',
+                displayName: '系統主管理員',
                 email: 'admin@emmt.com.tw',
-                role: 'admin',
+                role: 'super_admin',
                 company: '億威電子',
                 department: '管理部',
             },
@@ -372,6 +372,48 @@ export async function deleteUser(uid: string) {
     } catch (error: any) {
         console.error('刪除成員失敗:', error);
         return { success: false, message: error?.message || '刪除成員時發生錯誤。' };
+    }
+}
+
+export async function resetUserPassword(uid: string, newPassword: string) {
+    if (!newPassword || newPassword.trim().length < 6) {
+        return { success: false, message: '新密碼長度至少需 6 個字元' };
+    }
+    if (uid === 'admin-master') {
+        return { success: false, message: '主管理員預設備援帳號密碼由系統鎖定保護，不支援修改。' };
+    }
+    const supabase = getSupabaseClient();
+    try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(uid);
+        if (authUser?.user) {
+            const { error } = await supabase.auth.admin.updateUserById(uid, {
+                password: newPassword.trim(),
+            });
+            if (error) throw error;
+        } else {
+            const { data: dbUser } = await supabase.from('users').select('*').eq('uid', uid).maybeSingle();
+            if (dbUser?.email) {
+                await supabase.auth.admin.createUser({
+                    email: dbUser.email,
+                    password: newPassword.trim(),
+                    email_confirm: true,
+                    user_metadata: {
+                        username: dbUser.display_name,
+                        displayName: dbUser.display_name,
+                        role: dbUser.role,
+                        company: dbUser.client_name,
+                        department: dbUser.department,
+                    },
+                });
+            } else {
+                throw new Error('找不到該成員帳號或 Email');
+            }
+        }
+        revalidatePath('/users');
+        return { success: true, message: '登入密碼已成功設定！' };
+    } catch (e: any) {
+        console.error('設定密碼失敗:', e);
+        return { success: false, message: e?.message || '設定密碼失敗，請稍後再試。' };
     }
 }
 

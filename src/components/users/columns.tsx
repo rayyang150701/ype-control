@@ -1,7 +1,7 @@
 'use client';
 
 import { ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, ArrowUpDown } from 'lucide-react';
+import { MoreHorizontal, ArrowUpDown, KeyRound } from 'lucide-react';
 import { useState, useTransition, FC } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -31,10 +31,17 @@ import { useToast } from '@/hooks/use-toast';
 
 type ColumnsProps = {
   onEdit: (user: User) => void;
+  onResetPassword?: (user: User) => void;
+  isSuperAdmin?: boolean;
 };
 
 // A new component to handle the state and logic for the actions cell.
-const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, onEdit }) => {
+const ActionsCell: FC<{
+  user: User;
+  onEdit: (user: User) => void;
+  onResetPassword?: (user: User) => void;
+  isSuperAdmin?: boolean;
+}> = ({ user, onEdit, onResetPassword, isSuperAdmin }) => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -58,27 +65,51 @@ const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, o
   };
 
   return (
-    <>
+    <div className="flex items-center justify-end gap-1.5">
+      {/* 只有主管理員可以設定/重設密碼 */}
+      {isSuperAdmin && onResetPassword && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onResetPassword(user)}
+          className="h-7 px-2 text-xs gap-1 border-amber-300 bg-amber-50/60 text-amber-800 hover:bg-amber-100 hover:text-amber-950 font-medium shadow-2xs"
+          title="由主管理員直接為該帳號設定或重設登入密碼"
+        >
+          <KeyRound className="h-3.5 w-3.5 text-amber-600" />
+          <span>設定密碼</span>
+        </Button>
+      )}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
+          <Button variant="ghost" className="h-7 w-7 p-0">
             <span className="sr-only">Open menu</span>
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuLabel>操作</DropdownMenuLabel>
+          <DropdownMenuLabel>帳號操作</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => onEdit(user)}>
-            編輯
+            編輯成員資料
           </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-destructive"
-            onClick={() => setIsDeleteDialogOpen(true)}
-          >
-            刪除
-          </DropdownMenuItem>
+          {isSuperAdmin && onResetPassword && (
+            <DropdownMenuItem onClick={() => onResetPassword(user)}>
+              <KeyRound className="mr-2 h-3.5 w-3.5 text-amber-600" />
+              <span>設定登入密碼</span>
+            </DropdownMenuItem>
+          )}
+          {/* 只有主管理員可以刪除帳號 */}
+          {isSuperAdmin && (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive cursor-pointer"
+              onClick={() => setIsDeleteDialogOpen(true)}
+            >
+              刪除帳號
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
       <AlertDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
@@ -87,7 +118,7 @@ const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, o
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這位成員嗎？</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作無法復原。將會永久刪除成員 "{user.displayName}"。
+              此操作無法復原。將會永久刪除成員 "{user.displayName}" 及其登入權限。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -102,11 +133,11 @@ const ActionsCell: FC<{ user: User; onEdit: (user: User) => void }> = ({ user, o
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 };
 
-export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
+export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps): ColumnDef<User>[] => [
   {
     accessorKey: 'username',
     header: '登入帳號',
@@ -179,10 +210,17 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
     header: '系統權限',
     cell: ({ row }) => {
       const role = row.original.role;
+      if (role === 'super_admin') {
+        return (
+          <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs border-amber-700 shadow-2xs">
+            👑 主管理員
+          </Badge>
+        );
+      }
       if (role === 'admin') {
         return (
-          <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-medium text-xs border-amber-600 shadow-2xs">
-            👑 管理者
+          <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs border-indigo-700 shadow-2xs">
+            🛡️ 管理員
           </Badge>
         );
       }
@@ -223,9 +261,14 @@ export const columns = ({ onEdit }: ColumnsProps): ColumnDef<User>[] => [
     id: 'actions',
     cell: ({ row }) => {
       const user = row.original;
-      // Now the cell just renders the ActionsCell component, passing the necessary props.
-      // All hook-related logic is self-contained within ActionsCell.
-      return <ActionsCell user={user} onEdit={onEdit} />;
+      return (
+        <ActionsCell
+          user={user}
+          onEdit={onEdit}
+          onResetPassword={onResetPassword}
+          isSuperAdmin={isSuperAdmin}
+        />
+      );
     },
   },
 ];

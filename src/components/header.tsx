@@ -1,7 +1,8 @@
 
 'use client';
+import { useState } from 'react';
 import Image from 'next/image';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
@@ -21,13 +22,15 @@ import { useToast } from '@/hooks/use-toast';
 
 
 import { LoginDialog } from '@/components/dashboard/login-dialog';
+import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
 
 export function Header() {
   const router = useRouter();
   const pathname = usePathname() || '';
   const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   const { toast } = useToast();
-  const { currentUser, role, isAdmin, isEditor, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
+  const { currentUser, role, isSuperAdmin, isAdmin, isEditor, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
+  const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
   
   const startTour = async () => {
     const { driver } = await import("driver.js");
@@ -191,22 +194,26 @@ export function Header() {
                     variant="secondary"
                     size="sm"
                     className={`gap-1.5 border text-xs font-semibold shadow-xs ${
-                      isAdmin
-                        ? 'border-amber-500/40 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                      isSuperAdmin
+                        ? 'border-amber-500/50 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                        : isAdmin
+                        ? 'border-indigo-500/40 bg-indigo-50 text-indigo-900 hover:bg-indigo-100'
                         : isEditor
                         ? 'border-blue-500/40 bg-blue-50 text-blue-900 hover:bg-blue-100'
                         : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {isAdmin ? (
+                    {isSuperAdmin ? (
                       <span className="text-amber-600">👑</span>
+                    ) : isAdmin ? (
+                      <span className="text-indigo-600">🛡️</span>
                     ) : isEditor ? (
                       <span className="text-blue-600">✏️</span>
                     ) : (
                       <span className="text-slate-500">👁️</span>
                     )}
                     <span>
-                      {isAdmin ? '管理者' : isEditor ? '編輯者' : '檢視者'}:{' '}
+                      {isSuperAdmin ? '主管理員' : isAdmin ? '管理員' : isEditor ? '編輯者' : '檢視者'}:{' '}
                       {currentUser.displayName || currentUser.username}
                     </span>
                   </Button>
@@ -215,7 +222,13 @@ export function Header() {
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
-                        {isAdmin ? '👑 系統管理者 (Admin)' : isEditor ? '✏️ 協作編輯者 (Editor)' : '👁️ 訪客檢視者 (Viewer)'}
+                        {isSuperAdmin
+                          ? '👑 系統主管理員 (Super Admin)'
+                          : isAdmin
+                          ? '🛡️ 系統管理員 (Admin)'
+                          : isEditor
+                          ? '✏️ 協作編輯者 (Editor)'
+                          : '👁️ 訪客檢視者 (Viewer)'}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>
                       {(currentUser.company || currentUser.department) && (
@@ -224,10 +237,12 @@ export function Header() {
                         </p>
                       )}
                       <p className="text-[11px] text-blue-600 font-medium pt-0.5">
-                        {isAdmin
-                          ? '擁有全功能最高管理權限'
+                        {isSuperAdmin
+                          ? '擁有最高權限（可刪除帳號、升降階、設定密碼）'
+                          : isAdmin
+                          ? '擁有內部管制、AI診斷與成員維護權限'
                           : isEditor
-                          ? '擁有燁輝進度管制總表維護權限'
+                          ? '可讀寫管制總表、檢視內部專案追蹤'
                           : '僅擁有唯讀檢視權限'}
                       </p>
                     </div>
@@ -252,6 +267,14 @@ export function Header() {
                       <DropdownMenuSeparator />
                     </>
                   )}
+                  <DropdownMenuItem
+                    onClick={() => setIsChangeMyPasswordOpen(true)}
+                    className="cursor-pointer text-xs text-slate-700"
+                  >
+                    <KeyRound className="mr-2 h-4 w-4 text-amber-600" />
+                    <span>修改個人登入密碼</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={logout}
                     className="text-destructive focus:text-destructive cursor-pointer text-xs"
@@ -291,8 +314,8 @@ export function Header() {
             <span>📊 燁輝進度管制總表 (對外週報)</span>
           </Link>
 
-          {/* 2. 內部專案與待辦追蹤 - 僅管理者開放，訪客與編輯者反灰禁用 */}
-          {isAdmin ? (
+          {/* 2. 內部專案與待辦追蹤 - 管理者與編輯者開放 (編輯者檢視)，訪客反灰禁用 */}
+          {isEditor ? (
             <Link
               href="/internal-tasks"
               prefetch={true}
@@ -302,35 +325,27 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
               }`}
             >
-              <span>📋 內部專案與待辦追蹤 (對內跟催 & AI 診斷)</span>
+              <span>📋 內部專案與待辦追蹤 (對內跟催 & 歷程)</span>
             </Link>
           ) : (
             <button
               type="button"
               onClick={() => {
-                if (isGuest) {
-                  toast({
-                    title: '需要管理者權限',
-                    description: '「內部專案與待辦追蹤」僅限管理者使用，請先登入管理員帳號。',
-                  });
-                  setIsLoginDialogOpen(true);
-                } else {
-                  toast({
-                    title: '權限不足',
-                    description: '內部專案待辦追蹤僅限管理者使用。編輯者權限僅能維護「燁輝進度管制總表」。',
-                    variant: 'destructive',
-                  });
-                }
+                toast({
+                  title: '需要登入權限',
+                  description: '「內部專案與待辦追蹤」僅限登入成員檢視，請先登入帳號。',
+                });
+                setIsLoginDialogOpen(true);
               }}
               className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200/70 text-slate-400 border border-slate-300/60 cursor-not-allowed hover:bg-slate-200"
-              title="僅限管理者存取 (未開放訪客與編輯者)"
+              title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📋 內部專案與待辦追蹤 (僅限管理者)</span>
+              <span>📋 內部專案與待辦追蹤 (登入後檢視)</span>
             </button>
           )}
 
-          {/* 3. AI 智慧診斷 - 僅管理者開放，訪客與編輯者反灰禁用 */}
+          {/* 3. AI 智慧診斷 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
           {isAdmin ? (
             <button
               type="button"
@@ -354,22 +369,22 @@ export function Header() {
                 if (isGuest) {
                   toast({
                     title: '需要管理者權限',
-                    description: '「AI 智慧診斷」僅限管理者使用，請先登入管理員帳號。',
+                    description: '「AI 智慧診斷」僅限管理員以上使用，請先登入帳號。',
                   });
                   setIsLoginDialogOpen(true);
                 } else {
                   toast({
                     title: '權限不足',
-                    description: 'AI 智慧診斷僅限管理者使用。編輯者權限僅能維護「燁輝進度管制總表」。',
+                    description: 'AI 智慧診斷功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
                     variant: 'destructive',
                   });
                 }
               }}
               className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200 text-slate-400 border border-slate-300/60 shadow-none cursor-not-allowed hover:bg-slate-200"
-              title="僅限管理者使用 (未開放訪客與編輯者)"
+              title="僅限管理員與主管理員使用"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>🤖 AI 智慧診斷 (僅限管理者)</span>
+              <span>🤖 AI 智慧診斷 (管理員專屬)</span>
             </button>
           )}
         </div>
@@ -385,6 +400,16 @@ export function Header() {
       </div>
 
       <LoginDialog isOpen={isLoginDialogOpen} setIsOpen={setIsLoginDialogOpen} />
+      {isChangeMyPasswordOpen && currentUser && (
+        <ResetPasswordDialog
+          isOpen={isChangeMyPasswordOpen}
+          setIsOpen={setIsChangeMyPasswordOpen}
+          user={currentUser as any}
+          onSuccess={() => {
+            toast({ title: '個人密碼修改成功', description: '下次登入請使用新密碼。' });
+          }}
+        />
+      )}
     </header>
   );
 }

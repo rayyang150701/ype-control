@@ -6,6 +6,7 @@ import type { CurrentUser, UserRole } from '@/types';
 interface AdminContextType {
   currentUser: CurrentUser | null;
   role: UserRole | 'guest';
+  isSuperAdmin: boolean;
   isAdmin: boolean;
   isEditor: boolean;
   isGuest: boolean;
@@ -20,9 +21,9 @@ interface AdminContextType {
 const defaultAdminUser: CurrentUser = {
   uid: 'admin-master',
   username: 'admin',
-  displayName: '系統管理員',
+  displayName: '系統主管理員',
   email: 'admin@emmt.com.tw',
-  role: 'admin',
+  role: 'super_admin',
   company: '億威電子',
   department: '管理部',
 };
@@ -30,6 +31,7 @@ const defaultAdminUser: CurrentUser = {
 const AdminContext = createContext<AdminContextType>({
   currentUser: null,
   role: 'guest',
+  isSuperAdmin: false,
   isAdmin: false,
   isEditor: false,
   isGuest: true,
@@ -72,7 +74,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       const serialized = JSON.stringify(user);
       localStorage.setItem('ype_current_user', serialized);
       sessionStorage.setItem('ype_current_user', serialized);
-      if (user.role === 'admin') {
+      if (user.role === 'super_admin' || user.role === 'admin') {
         localStorage.setItem('ype_admin_logged_in', 'true');
         sessionStorage.setItem('ype_admin_logged_in', 'true');
       } else {
@@ -101,8 +103,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   const role: UserRole | 'guest' = currentUser?.role || 'guest';
-  const isAdmin = role === 'admin';
-  const isEditor = role === 'admin' || role === 'editor';
+  const isSuperAdmin = role === 'super_admin';
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isEditor = role === 'super_admin' || role === 'admin' || role === 'editor';
   const isGuest = !currentUser || role === 'viewer';
 
   return (
@@ -110,6 +113,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       value={{
         currentUser,
         role,
+        isSuperAdmin,
         isAdmin,
         isEditor,
         isGuest,

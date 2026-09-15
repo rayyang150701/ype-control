@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/users/data-table';
 import { columns } from '@/components/users/columns';
 import { UserForm } from '@/components/users/user-form';
+import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
 import { User, Client } from '@/types';
 import { useAdmin } from '@/components/admin-context';
 import { Users as UsersIcon } from 'lucide-react';
@@ -20,7 +21,10 @@ interface UsersClientProps {
 export function UsersClient({ data, clients = [] }: UsersClientProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const { isAdmin, setIsLoginDialogOpen } = useAdmin();
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [selectedResetUser, setSelectedResetUser] = useState<User | null>(null);
+
+  const { isAdmin, isSuperAdmin, setIsLoginDialogOpen } = useAdmin();
   const router = useRouter();
 
   const handleOpenForm = (user: User | null = null) => {
@@ -32,6 +36,11 @@ export function UsersClient({ data, clients = [] }: UsersClientProps) {
     setIsFormOpen(false);
     setSelectedUser(null);
     router.refresh();
+  };
+
+  const handleOpenResetPassword = (user: User) => {
+    setSelectedResetUser(user);
+    setIsResetPasswordOpen(true);
   };
 
   if (!isAdmin) {
@@ -53,23 +62,46 @@ export function UsersClient({ data, clients = [] }: UsersClientProps) {
 
   return (
     <>
-      <div className="flex items-center justify-end">
-        <Button onClick={() => handleOpenForm()}>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+        <div className="text-xs">
+          {isSuperAdmin ? (
+            <span className="text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md font-medium inline-block">
+              👑 您具有<strong>主管理員</strong>權限，可進行成員管理、升降階授權、設定登入密碼與刪除帳號。
+            </span>
+          ) : (
+            <span className="text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md font-medium inline-block">
+              🛡️ 您以<strong>管理員</strong>身分維護基本成員資料（升降階授權、密碼設定與刪除帳號由主管理員專責執行）。
+            </span>
+          )}
+        </div>
+        <Button onClick={() => handleOpenForm()} className="shadow-xs">
           <Plus className="mr-2 h-4 w-4" /> 新增成員
         </Button>
       </div>
       <DataTable
-        columns={columns({ onEdit: handleOpenForm })}
+        columns={columns({
+          onEdit: handleOpenForm,
+          onResetPassword: handleOpenResetPassword,
+          isSuperAdmin,
+        })}
         data={data}
         searchKey="displayName"
         clients={clients}
       />
       {isFormOpen && (
-         <UserForm
-            isOpen={isFormOpen}
-            onClose={handleFormClose}
-            initialData={selectedUser}
-            clients={clients}
+        <UserForm
+          isOpen={isFormOpen}
+          onClose={handleFormClose}
+          initialData={selectedUser}
+          clients={clients}
+        />
+      )}
+      {isResetPasswordOpen && selectedResetUser && (
+        <ResetPasswordDialog
+          isOpen={isResetPasswordOpen}
+          setIsOpen={setIsResetPasswordOpen}
+          user={selectedResetUser}
+          onSuccess={() => router.refresh()}
         />
       )}
     </>
