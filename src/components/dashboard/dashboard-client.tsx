@@ -133,13 +133,29 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   };
 
   const handleAddLogClick = (subProject: SubProjectWithLatestLog) => {
-    if (!isAdmin) return;
+    if (!isEditor) {
+      toast({
+        title: '需要編輯權限',
+        description: '新增週報僅限系統編輯者與管理者填寫。',
+        variant: 'destructive',
+      });
+      setIsLoginDialogOpen(true);
+      return;
+    }
     setSubProjectForNewLog(subProject);
     setIsNewLogOpen(true);
   };
 
   const handleEditProjectClick = async (projectId: string) => {
-    if (!isAdmin) return;
+    if (!isEditor) {
+      toast({
+        title: '需要編輯權限',
+        description: '編輯專案僅限系統編輯者與管理者操作。',
+        variant: 'destructive',
+      });
+      setIsLoginDialogOpen(true);
+      return;
+    }
     const fullProject = await getFullProjectById(projectId);
     if (fullProject) {
       setSelectedFullProject(fullProject);
@@ -173,15 +189,39 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         setOwnerFilter={setOwnerFilter}
         owners={activeOwners}
         onExportAll={() => exportAllProjectsSummary(filteredFullProjects, users)}
-        onAddNewProject={() => setIsNewProjectOpen(true)}
-        onOnHoldProject={() => setIsOnHoldProjectOpen(true)}
-        onDeleteProject={() => setIsDeleteProjectOpen(true)}
-        onReusmeProject={() => setIsResumeProjectOpen(true)}
+        onAddNewProject={() => {
+          if (!isEditor) {
+            setIsLoginDialogOpen(true);
+            return;
+          }
+          setIsNewProjectOpen(true);
+        }}
+        onOnHoldProject={() => {
+          if (!isEditor) {
+            setIsLoginDialogOpen(true);
+            return;
+          }
+          setIsOnHoldProjectOpen(true);
+        }}
+        onDeleteProject={() => {
+          if (!isEditor) {
+            setIsLoginDialogOpen(true);
+            return;
+          }
+          setIsDeleteProjectOpen(true);
+        }}
+        onReusmeProject={() => {
+          if (!isEditor) {
+            setIsLoginDialogOpen(true);
+            return;
+          }
+          setIsResumeProjectOpen(true);
+        }}
         viewMode={viewMode}
         setViewMode={setViewMode}
         isAdmin={isEditor}
         onAdminToggle={() => {
-            if (isAdmin) {
+            if (isEditor) {
                 setIsAdmin(false);
             } else {
                 setIsLoginDialogOpen(true);
@@ -214,12 +254,13 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onAddLog={handleAddLogClick}
             isAdmin={isEditor}
             onViewInternalProgress={(internalProjectId) => {
-              if (!isAdmin) {
+              if (!isEditor) {
                 toast({
-                  title: '需要管理者權限',
-                  description: '內部專案待辦追蹤與跟催歷程僅限系統管理者檢視。',
+                  title: '需要登入權限',
+                  description: '內部專案待辦追蹤與跟催歷程僅限系統登入成員檢視。',
                   variant: 'destructive',
                 });
+                setIsLoginDialogOpen(true);
                 return;
               }
               setSelectedInternalProjectId(internalProjectId);
