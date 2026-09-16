@@ -1,9 +1,7 @@
 
 'use client';
 import { useState } from 'react';
-import Image from 'next/image';
 import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound } from 'lucide-react';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,7 +25,6 @@ import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
 export function Header() {
   const router = useRouter();
   const pathname = usePathname() || '';
-  const logo = PlaceHolderImages.find(img => img.id === 'company-logo');
   const { toast } = useToast();
   const { currentUser, role, isSuperAdmin, isAdmin, isEditor, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
   const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
@@ -148,18 +145,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="w-full px-4 flex h-16 items-center justify-between">
-        <div className="flex items-center gap-4">
-          {logo && (
-            <Image
-              src={logo.imageUrl}
-              alt={logo.description}
-              width={240}
-              height={40}
-              data-ai-hint={logo.imageHint}
-              className="hidden sm:block object-contain"
-            />
-          )}
-        </div>
+        <div className="flex items-center gap-4" />
 
         <div className="flex-1 flex justify-center px-4">
             <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap overflow-hidden text-ellipsis">
