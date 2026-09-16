@@ -50,7 +50,7 @@ export function LinkedInternalProgressDialog({
   const [project, setProject] = useState<FullProject | null>(null);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>([]);
   const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
-  const { isAdmin, isEditor } = useAdmin();
+  const { isAdmin } = useAdmin();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -82,6 +82,14 @@ export function LinkedInternalProgressDialog({
   }, [open, internalProjectId]);
 
   const handleQuickToggleComplete = async (item: ProjectActionItem) => {
+    if (!isAdmin) {
+      toast({
+        title: '權限不足',
+        description: '只有系統管理者才具備結案/勾選待辦事項的權限。',
+        variant: 'destructive',
+      });
+      return;
+    }
     const newStatus = item.status === 'completed' ? 'in_progress' : 'completed';
     const nowIso = new Date().toISOString();
     
@@ -218,8 +226,8 @@ export function LinkedInternalProgressDialog({
       >
         {/* 左側：完成核選鈕 + 標題 + 標籤 + 歷程 */}
         <div className="flex items-start gap-2.5 flex-1 w-full sm:w-auto">
-          {/* 一鍵切換完成 */}
-          {isAdmin || isEditor ? (
+          {/* 一鍵切換完成 (只有管理者才具備勾選結案權限) */}
+          {isAdmin ? (
             <button
               onClick={() => handleQuickToggleComplete(item)}
               className={`mt-1 h-5 w-5 rounded border flex items-center justify-center transition-colors shrink-0 ${

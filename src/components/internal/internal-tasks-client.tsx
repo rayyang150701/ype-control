@@ -567,6 +567,14 @@ export function InternalTasksClient({
   };
 
   const handleQuickToggleComplete = async (item: ProjectActionItem) => {
+    if (!isAdmin) {
+      toast({
+        title: '權限不足',
+        description: '只有管理者才具備結案/勾選待辦事項的權限。',
+        variant: 'destructive',
+      });
+      return;
+    }
     const newStatus = item.status === 'completed' ? 'in_progress' : 'completed';
     try {
       const res = await updateActionItem(item.id, { status: newStatus });
