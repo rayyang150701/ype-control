@@ -2026,7 +2026,7 @@ export async function syncInternalProjectCompletion(internalProjectId: string, i
 
 export async function getInternalProjectsForDropdown(): Promise<InternalProjectOption[]> {
     const internalProjects = await getAllProjectsForInternal();
-    return internalProjects.map(p => ({
+    const mapped = internalProjects.map(p => ({
         id: p.id,
         caseNumber: p.caseNumber,
         name: p.name,
@@ -2039,6 +2039,26 @@ export async function getInternalProjectsForDropdown(): Promise<InternalProjectO
         expectedCompletionDate: p.expectedCompletionDate || null,
         tpmOfficeContact: p.tpmOfficeContact,
     }));
+
+    mapped.sort((a, b) => {
+        const numA = (a.caseNumber || '').trim();
+        const numB = (b.caseNumber || '').trim();
+        if (!numA && !numB) return 0;
+        if (!numA) return 1;
+        if (!numB) return -1;
+
+        const isPureNumA = /^\d+$/.test(numA);
+        const isPureNumB = /^\d+$/.test(numB);
+        if (isPureNumA && isPureNumB) {
+            return parseInt(numA, 10) - parseInt(numB, 10);
+        }
+        if (isPureNumA && !isPureNumB) return -1;
+        if (!isPureNumA && isPureNumB) return 1;
+
+        return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return mapped;
 }
 
 export async function getLinkedInternalProjectDetails(internalProjectId: string): Promise<{

@@ -168,7 +168,24 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     }
     async function fetchInternalProjects() {
       const list = await getInternalProjectsForDropdown();
-      setInternalProjects(list);
+      const sorted = [...list].sort((a, b) => {
+        const numA = (a.caseNumber || '').trim();
+        const numB = (b.caseNumber || '').trim();
+        if (!numA && !numB) return 0;
+        if (!numA) return 1;
+        if (!numB) return -1;
+
+        const isPureNumA = /^\d+$/.test(numA);
+        const isPureNumB = /^\d+$/.test(numB);
+        if (isPureNumA && isPureNumB) {
+          return parseInt(numA, 10) - parseInt(numB, 10);
+        }
+        if (isPureNumA && !isPureNumB) return -1;
+        if (!isPureNumA && isPureNumB) return 1;
+
+        return numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+      setInternalProjects(sorted);
     }
     if (isOpen) {
       fetchUsers();
