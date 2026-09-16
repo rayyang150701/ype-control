@@ -673,15 +673,20 @@ export async function createProject(data: any) {
     try {
         const clientName = data.clientName?.trim() || '燁輝';
         const sourceType: ProjectSourceType = data.sourceType || '燁輝列管專案';
-        const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || data.egigaContact?.trim() || '';
-        const clientContact = data.clientContact?.trim() || data.yiehPhuiProjectManager?.trim() || '';
+        const tpmOfficeContact = data.tpmOfficeContact !== undefined
+            ? data.tpmOfficeContact.trim()
+            : (data.responsiblePm !== undefined ? data.responsiblePm.trim() : '');
+        const yiehPhuiProjectManager = data.yiehPhuiProjectManager !== undefined
+            ? data.yiehPhuiProjectManager.trim()
+            : (data.clientContact !== undefined ? data.clientContact.trim() : '');
+        const egigaContact = data.egigaContact?.trim() || '';
 
         const metaPayload: ProjectMeta = {
             isInternal: false,
             sourceType,
             clientName,
-            responsiblePm,
-            clientContact,
+            responsiblePm: tpmOfficeContact,
+            clientContact: yiehPhuiProjectManager,
             linkedInternalProjectId: data.linkedInternalProjectId || undefined,
         };
 
@@ -693,9 +698,9 @@ export async function createProject(data: any) {
             created_by: userId,
             project_purpose: data.projectPurpose ?? '',
             current_status_and_issues: data.currentStatusAndIssues ?? '',
-            yieh_phui_project_manager: clientContact,
-            tpm_office_contact: responsiblePm,
-            egiga_contact: data.egigaContact ?? '',
+            yieh_phui_project_manager: yiehPhuiProjectManager,
+            tpm_office_contact: tpmOfficeContact,
+            egiga_contact: egigaContact,
             is_on_hold: false,
             on_hold_notes: serializeProjectMeta(metaPayload),
         }).select('id').single();
@@ -746,34 +751,48 @@ export async function createProject(data: any) {
 export async function updateProject(projectId: string, data: any, originalSubProjectIds: string[]) {
     const supabase = getSupabaseClient();
     try {
-        // 取得現有 metadata
+        // 取得現有 metadata 與現有欄位
         const { data: existingProj } = await supabase
             .from('projects')
-            .select('on_hold_notes')
+            .select('on_hold_notes, tpm_office_contact, yieh_phui_project_manager, egiga_contact')
             .eq('id', projectId)
             .single();
         const currentMeta = parseProjectMeta(existingProj?.on_hold_notes);
         
         const clientName = data.clientName?.trim() || currentMeta.clientName || '燁輝';
         const sourceType: ProjectSourceType = data.sourceType || currentMeta.sourceType || '燁輝列管專案';
-        const responsiblePm = data.responsiblePm !== undefined ? data.responsiblePm.trim() : (currentMeta.responsiblePm || data.tpmOfficeContact || '');
-        const clientContact = data.clientContact !== undefined ? data.clientContact.trim() : (currentMeta.clientContact || data.yiehPhuiProjectManager || '');
+        
+        // 優先使用表單傳入的 tpmOfficeContact 或 responsiblePm
+        const tpmOfficeContact = data.tpmOfficeContact !== undefined
+            ? data.tpmOfficeContact.trim()
+            : (data.responsiblePm !== undefined ? data.responsiblePm.trim() : (existingProj?.tpm_office_contact || currentMeta.responsiblePm || ''));
+
+        // 優先使用表單傳入的 yiehPhuiProjectManager 或 clientContact
+        const yiehPhuiProjectManager = data.yiehPhuiProjectManager !== undefined
+            ? data.yiehPhuiProjectManager.trim()
+            : (data.clientContact !== undefined ? data.clientContact.trim() : (existingProj?.yieh_phui_project_manager || currentMeta.clientContact || ''));
+
+        const egigaContact = data.egigaContact !== undefined
+            ? data.egigaContact.trim()
+            : (existingProj?.egiga_contact || '');
 
         currentMeta.clientName = clientName;
         currentMeta.sourceType = sourceType;
-        currentMeta.responsiblePm = responsiblePm;
-        currentMeta.clientContact = clientContact;
+        currentMeta.responsiblePm = tpmOfficeContact;
+        currentMeta.clientContact = yiehPhuiProjectManager;
         currentMeta.linkedInternalProjectId = data.linkedInternalProjectId || undefined;
-        currentMeta.isInternal = false;
+        if (currentMeta.isInternal === undefined) {
+            currentMeta.isInternal = false;
+        }
 
         const { error: projectError } = await supabase.from('projects').update({
             case_number: String(data.caseNumber).trim(),
             name: data.name,
             project_purpose: data.projectPurpose ?? '',
             current_status_and_issues: data.currentStatusAndIssues ?? '',
-            yieh_phui_project_manager: clientContact,
-            tpm_office_contact: responsiblePm,
-            egiga_contact: data.egigaContact ?? '',
+            yieh_phui_project_manager: yiehPhuiProjectManager,
+            tpm_office_contact: tpmOfficeContact,
+            egiga_contact: egigaContact,
             on_hold_notes: serializeProjectMeta(currentMeta),
         }).eq('id', projectId);
 
@@ -1049,9 +1068,25 @@ async function getOptimizedProjectData() {
 
     const projectsMap = new Map<string, FullProject>();
     const caseNumberProcessed = new Set<string>();
+    const allProjectsById = new Map<string, any>((projectsSnap || []).map(p => [p.id, p]));
+    const caseNumberToDeduplicatedProjectMap = new Map<string, FullProject>();
 
     if (projectsSnap) {
-        projectsSnap.forEach(doc => {
+        // 先排序：優先選取客戶管制專案 (isInternal !== true)，若同為客戶或同為內部專案則以建立時間較新者優先
+        const sortedProjects = [...projectsSnap].sort((a, b) => {
+            const metaA = parseProjectMeta(a.on_hold_notes);
+            const metaB = parseProjectMeta(b.on_hold_notes);
+            const isInternalA = metaA.isInternal === true;
+            const isInternalB = metaB.isInternal === true;
+            
+            // 客戶進度管制總表優先顯示客戶專案 (非內部專案)
+            if (isInternalA !== isInternalB) {
+                return isInternalA ? 1 : -1;
+            }
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+
+        sortedProjects.forEach(doc => {
             const caseNumber = String(doc.case_number || '').trim();
             if (!caseNumber || caseNumberProcessed.has(caseNumber)) return;
 
@@ -1059,10 +1094,21 @@ async function getOptimizedProjectData() {
             const meta = parseProjectMeta(doc.on_hold_notes);
             const clientName = meta.clientName?.trim() || '燁輝';
             const sourceType: ProjectSourceType = meta.sourceType || '燁輝列管專案';
-            const responsiblePm = meta.responsiblePm?.trim() || doc.tpm_office_contact || doc.egiga_contact || '';
-            const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
+            
+            // 優先讀取資料庫專屬欄位 tpm_office_contact 與 yieh_phui_project_manager
+            const tpmOfficeContact = (doc.tpm_office_contact && doc.tpm_office_contact.trim() !== '')
+                ? doc.tpm_office_contact.trim()
+                : (meta.responsiblePm?.trim() || '');
 
-            projectsMap.set(doc.id, {
+            const yiehPhuiProjectManager = (doc.yieh_phui_project_manager && doc.yieh_phui_project_manager.trim() !== '')
+                ? doc.yieh_phui_project_manager.trim()
+                : (meta.clientContact?.trim() || '');
+
+            const egigaContact = doc.egiga_contact || '';
+            const responsiblePm = meta.responsiblePm?.trim() || tpmOfficeContact || '';
+            const clientContact = meta.clientContact?.trim() || yiehPhuiProjectManager || '';
+
+            const projectObj: FullProject = {
                 id: doc.id,
                 caseNumber,
                 name: doc.name || '',
@@ -1074,13 +1120,16 @@ async function getOptimizedProjectData() {
                 linkedInternalProjectId: meta.linkedInternalProjectId,
                 projectPurpose: doc.project_purpose || '',
                 currentStatusAndIssues: doc.current_status_and_issues || '',
-                yiehPhuiProjectManager: clientContact,
-                tpmOfficeContact: responsiblePm,
-                egigaContact: doc.egiga_contact || '',
+                yiehPhuiProjectManager,
+                tpmOfficeContact,
+                egigaContact,
                 isOnHold: !!doc.is_on_hold,
                 createdAt: formatISO(doc.created_at),
                 subProjects: [],
-            } as any);
+            } as any;
+
+            projectsMap.set(doc.id, projectObj);
+            caseNumberToDeduplicatedProjectMap.set(caseNumber, projectObj);
         });
     }
 
@@ -1143,8 +1192,20 @@ async function getOptimizedProjectData() {
 
     if (subProjectsSnap) {
         subProjectsSnap.forEach(doc => {
-            const project = projectsMap.get(doc.project_id);
+            let project = projectsMap.get(doc.project_id);
+            if (!project) {
+                const origProj = allProjectsById.get(doc.project_id);
+                const caseNum = origProj ? String(origProj.case_number || '').trim() : '';
+                if (caseNum && caseNumberToDeduplicatedProjectMap.has(caseNum)) {
+                    project = caseNumberToDeduplicatedProjectMap.get(caseNum);
+                }
+            }
             if (!project) return;
+
+            // 避免同名且同負責人之子專案重複加入
+            if (project.subProjects.some(existingSp => existingSp.id === doc.id || (existingSp.name === doc.name && existingSp.owner === doc.owner))) {
+                return;
+            }
 
             const rawLatestLog = latestLogsMap.get(doc.id) || null;
             const isCompleted = (rawLatestLog?.completionPercentage ?? 0) === 100;
