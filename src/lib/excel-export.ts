@@ -60,13 +60,19 @@ const createSheetFromAOA = (data: any[][], title: string, colWidths: { wch: numb
 const exportToExcel = (sheets: { ws: XLSX.WorkSheet; name: string }[], fileName: string) => {
   const wb: XLSX.WorkBook = { Sheets: {}, SheetNames: [] };
   sheets.forEach(sheet => {
-    wb.Sheets[sheet.name] = sheet.ws;
-    wb.SheetNames.push(sheet.name);
+    // Excel 工作表名稱嚴格限制：不可包含 : \ / ? * [ ]，且長度上限為 31 字元
+    const cleanName = (sheet.name || 'Sheet1')
+      .replace(/[:\\/?*\[\]]/g, '-')
+      .trim()
+      .slice(0, 31);
+    wb.Sheets[cleanName] = sheet.ws;
+    wb.SheetNames.push(cleanName);
   });
   
   const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const data = new Blob([excelBuffer], { type: fileType });
-  saveAs(data, fileName + fileExtension);
+  const cleanFileName = fileName.replace(/[:\\/?*\[\]]/g, '_');
+  saveAs(data, cleanFileName + fileExtension);
 };
 
 export const exportAllProjectsSummary = (projects: FullProject[], users: User[]) => {
@@ -288,7 +294,7 @@ export const exportWeeklyProjectsSummary = (
   }
   
   const safeFilename = `燁輝進度管制總表_${periodLabel.replace(/[\/\s-]/g, '_')}`;
-  exportToExcel([{ ws, name: `${periodLabel.slice(0, 25)}` }], safeFilename);
+  exportToExcel([{ ws, name: '每週管制表' }], safeFilename);
 };
 
 
