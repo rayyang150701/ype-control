@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 type CustomCalendarProps = {
-    selected?: Date;
+    selected?: Date | null;
     onSelect: (date: Date) => void;
+    onClear?: () => void;
 };
 
-export function CustomCalendar({ selected, onSelect }: CustomCalendarProps) {
+export function CustomCalendar({ selected, onSelect, onClear }: CustomCalendarProps) {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(selected?.getFullYear() || today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(selected?.getMonth() || today.getMonth());
@@ -67,13 +68,13 @@ export function CustomCalendar({ selected, onSelect }: CustomCalendarProps) {
   };
 
   return (
-    <div className="p-3 bg-white">
+    <div className="p-3 bg-white min-w-[280px]">
       {/* 月份導航 */}
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"
           onClick={goToPreviousMonth}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1 hover:bg-gray-100 rounded text-muted-foreground hover:text-foreground"
         >
           ←
         </button>
@@ -83,7 +84,7 @@ export function CustomCalendar({ selected, onSelect }: CustomCalendarProps) {
         <button
           type="button"
           onClick={goToNextMonth}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1 hover:bg-gray-100 rounded text-muted-foreground hover:text-foreground"
         >
           →
         </button>
@@ -138,6 +139,28 @@ export function CustomCalendar({ selected, onSelect }: CustomCalendarProps) {
             })}
           </div>
         ))}
+      </div>
+
+      {/* 底部快捷操作：清除日期 (留空) 與今天 */}
+      <div className="flex items-center justify-between pt-2 border-t mt-3">
+        {onClear ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded transition-colors font-medium"
+          >
+            ✕ 清除日期 (留空)
+          </button>
+        ) : <div />}
+        <button
+          type="button"
+          onClick={() => {
+            onSelect(new Date());
+          }}
+          className="text-xs text-primary hover:bg-blue-50 px-2 py-1 rounded transition-colors font-medium"
+        >
+          選取今天
+        </button>
       </div>
     </div>
   );

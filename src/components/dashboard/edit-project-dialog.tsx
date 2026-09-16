@@ -5,7 +5,7 @@ import { useTransition, useState, useEffect } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CalendarIcon, PlusCircle, Trash2, PauseCircle, PlayCircle, FolderGit2 } from 'lucide-react';
+import { CalendarIcon, PlusCircle, Trash2, PauseCircle, PlayCircle, FolderGit2, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -43,8 +43,8 @@ const subProjectSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, '子專案名稱為必填'),
   owner: z.string().min(1, '必須選擇一位負責人'),
-  expectedCompletionDate: z.date().optional(),
-  actualCompletionDate: z.date().optional(),
+  expectedCompletionDate: z.date().optional().nullable(),
+  actualCompletionDate: z.date().optional().nullable(),
 });
 
 const projectSchema = z.object({
@@ -183,8 +183,8 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   
   const originalSubProjectIds = project.subProjects.map(sp => sp.id);
 
-  const formatDate = (date?: Date) => {
-    if (!date) return '選擇日期';
+  const formatDate = (date?: Date | null) => {
+    if (!date) return '選擇日期 (可留空)';
     return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   };
   
@@ -376,7 +376,7 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                             name={`subProjects.${index}.owner`}
                             control={control}
                             render={({ field }) => (
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <Select onValueChange={field.onChange} value={field.value || ''}>
                                 <SelectTrigger>
                                   <SelectValue placeholder="選擇負責人" />
                                 </SelectTrigger>
@@ -405,18 +405,33 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                             control={control}
                             render={({ field }) => (
                               <div className="relative">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => handleCalendarOpen('expected', index)}
-                                  className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground"
+                                <div className="relative flex items-center">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => handleCalendarOpen('expected', index)}
+                                    className={cn(
+                                      "w-full justify-start text-left font-normal pr-8",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                                    <span className="truncate">{formatDate(field.value)}</span>
+                                  </Button>
+                                  {field.value && (
+                                    <button
+                                      type="button"
+                                      title="清除預計完成日 (留空)"
+                                      className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        field.onChange(undefined);
+                                      }}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
                                   )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {formatDate(field.value)}
-                                </Button>
+                                </div>
                                 {openCalendar?.type === 'expected' && openCalendar?.index === index && (
                                   <>
                                     <div className="fixed inset-0 z-[100]" onClick={() => setOpenCalendar(null)} />
@@ -425,6 +440,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                         selected={field.value}
                                         onSelect={(date) => {
                                           field.onChange(date);
+                                          setOpenCalendar(null);
+                                        }}
+                                        onClear={() => {
+                                          field.onChange(undefined);
                                           setOpenCalendar(null);
                                         }}
                                       />
@@ -444,18 +463,33 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                             control={control}
                             render={({ field }) => (
                               <div className="relative">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => handleCalendarOpen('actual', index)}
-                                  className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground"
+                                <div className="relative flex items-center">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => handleCalendarOpen('actual', index)}
+                                    className={cn(
+                                      "w-full justify-start text-left font-normal pr-8",
+                                      !field.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                                    <span className="truncate">{formatDate(field.value)}</span>
+                                  </Button>
+                                  {field.value && (
+                                    <button
+                                      type="button"
+                                      title="清除實際完成日 (留空)"
+                                      className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        field.onChange(undefined);
+                                      }}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
                                   )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {formatDate(field.value)}
-                                </Button>
+                                </div>
 
                                 {openCalendar?.type === 'actual' && openCalendar?.index === index && (
                                   <>
@@ -465,6 +499,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                         selected={field.value}
                                         onSelect={(date) => {
                                           field.onChange(date);
+                                          setOpenCalendar(null);
+                                        }}
+                                        onClear={() => {
+                                          field.onChange(undefined);
                                           setOpenCalendar(null);
                                         }}
                                       />
