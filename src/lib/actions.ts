@@ -20,6 +20,12 @@ const formatISOOptional = (dateStr: string | null): string | undefined => {
     return isNaN(d.getTime()) ? undefined : d.toISOString();
 };
 
+const safeParseDateOrNull = (dateVal: any): string | null => {
+    if (!dateVal) return null;
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+};
+
 /**
  * 從週報區間字串解析出日期數值 (YYYY/MM/DD)
  */
@@ -730,9 +736,9 @@ export async function createProject(data: any) {
                 firebase_id: crypto.randomUUID(),
                 project_id: newProject.id,
                 name: sp.name,
-                owner: sp.owner,
-                expected_completion_date: sp.expectedCompletionDate ?? null,
-                actual_completion_date: sp.actualCompletionDate ?? null,
+                owner: sp.owner || null,
+                expected_completion_date: safeParseDateOrNull(sp.expectedCompletionDate),
+                actual_completion_date: safeParseDateOrNull(sp.actualCompletionDate),
                 is_on_hold: false,
             }));
             const { error: spError } = await supabase.from('sub_projects').insert(subProjectsToInsert);
@@ -830,9 +836,9 @@ export async function updateProject(projectId: string, data: any, originalSubPro
         for (const spData of data.subProjects) {
             const payload = {
                 name: spData.name,
-                owner: spData.owner,
-                expected_completion_date: spData.expectedCompletionDate ?? null,
-                actual_completion_date: spData.actualCompletionDate ?? null,
+                owner: spData.owner || null,
+                expected_completion_date: safeParseDateOrNull(spData.expectedCompletionDate),
+                actual_completion_date: safeParseDateOrNull(spData.actualCompletionDate),
                 project_id: projectId,
             };
 

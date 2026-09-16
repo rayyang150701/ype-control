@@ -42,7 +42,7 @@ import { CustomCalendar } from '@/components/shared/custom-calendar';
 const subProjectSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().min(1, '必須選擇一位負責人'),
+  owner: z.string().optional().nullable(),
   expectedCompletionDate: z.date().optional().nullable(),
   actualCompletionDate: z.date().optional().nullable(),
 });
@@ -121,7 +121,8 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     handleSubmit,
     formState: { errors },
     reset,
-    getValues
+    getValues,
+    setValue,
   } = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
@@ -151,9 +152,9 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         subProjects: project.subProjects.map(sp => ({
           id: sp.id,
           name: sp.name,
-          owner: sp.owner,
-          expectedCompletionDate: sp.expectedCompletionDate ? new Date(sp.expectedCompletionDate as string) : undefined,
-          actualCompletionDate: sp.actualCompletionDate ? new Date(sp.actualCompletionDate as string) : undefined,
+          owner: sp.owner || '',
+          expectedCompletionDate: (sp.expectedCompletionDate && String(sp.expectedCompletionDate).trim() !== '') ? new Date(sp.expectedCompletionDate as string) : null,
+          actualCompletionDate: (sp.actualCompletionDate && String(sp.actualCompletionDate).trim() !== '') ? new Date(sp.actualCompletionDate as string) : null,
         })),
       });
     }
@@ -358,6 +359,8 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                         key={field.id}
                         className={cn("grid grid-cols-12 gap-x-4 gap-y-2 rounded-md border p-4 relative", (isSubProjectOnHold || project.isOnHold) && "bg-amber-50 border-amber-200")}
                       >
+                        <input type="hidden" {...register(`subProjects.${index}.id`)} />
+
                         {/* 子專案名稱 */}
                         <div className="col-span-12 sm:col-span-4">
                           <Label>子專案名稱</Label>
@@ -424,8 +427,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                       title="清除預計完成日 (留空)"
                                       className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
                                       onClick={(e) => {
+                                        e.preventDefault();
                                         e.stopPropagation();
-                                        field.onChange(undefined);
+                                        field.onChange(null);
+                                        setValue(`subProjects.${index}.expectedCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                       }}
                                     >
                                       <X className="h-3.5 w-3.5" />
@@ -440,10 +445,12 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                         selected={field.value}
                                         onSelect={(date) => {
                                           field.onChange(date);
+                                          setValue(`subProjects.${index}.expectedCompletionDate`, date, { shouldValidate: true, shouldDirty: true });
                                           setOpenCalendar(null);
                                         }}
                                         onClear={() => {
-                                          field.onChange(undefined);
+                                          field.onChange(null);
+                                          setValue(`subProjects.${index}.expectedCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                           setOpenCalendar(null);
                                         }}
                                       />
@@ -482,8 +489,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                       title="清除實際完成日 (留空)"
                                       className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
                                       onClick={(e) => {
+                                        e.preventDefault();
                                         e.stopPropagation();
-                                        field.onChange(undefined);
+                                        field.onChange(null);
+                                        setValue(`subProjects.${index}.actualCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                       }}
                                     >
                                       <X className="h-3.5 w-3.5" />
@@ -499,10 +508,12 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                                         selected={field.value}
                                         onSelect={(date) => {
                                           field.onChange(date);
+                                          setValue(`subProjects.${index}.actualCompletionDate`, date, { shouldValidate: true, shouldDirty: true });
                                           setOpenCalendar(null);
                                         }}
                                         onClear={() => {
-                                          field.onChange(undefined);
+                                          field.onChange(null);
+                                          setValue(`subProjects.${index}.actualCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                           setOpenCalendar(null);
                                         }}
                                       />
@@ -550,8 +561,8 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
                       append({
                         name: '',
                         owner: '',
-                        expectedCompletionDate: undefined,
-                        actualCompletionDate: undefined,
+                        expectedCompletionDate: null,
+                        actualCompletionDate: null,
                       })
                     }
                   >

@@ -30,7 +30,7 @@ import { CustomCalendar } from '@/components/shared/custom-calendar';
 
 const subProjectSchema = z.object({
   name: z.string().min(1, '子專案名稱為必填'),
-  owner: z.string().min(1, '必須選擇一位負責人'),
+  owner: z.string().optional().nullable(),
   expectedCompletionDate: z.date().optional().nullable(),
   actualCompletionDate: z.date().optional().nullable(),
 });
@@ -96,7 +96,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
       tpmOfficeContact: '',
       egigaContact: '',
       subProjects: [
-        { name: '', owner: '', expectedCompletionDate: undefined, actualCompletionDate: undefined },
+        { name: '', owner: '', expectedCompletionDate: null, actualCompletionDate: null },
       ],
     },
   });
@@ -310,8 +310,10 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                                   title="清除預計完成日 (留空)"
                                   className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
                                   onClick={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
-                                    field.onChange(undefined);
+                                    field.onChange(null);
+                                    setValue(`subProjects.${index}.expectedCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                   }}
                                 >
                                   <X className="h-3.5 w-3.5" />
@@ -326,10 +328,12 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                                     selected={field.value}
                                     onSelect={(date) => {
                                       field.onChange(date);
+                                      setValue(`subProjects.${index}.expectedCompletionDate`, date, { shouldValidate: true, shouldDirty: true });
                                       setOpenCalendar(null);
                                     }}
                                     onClear={() => {
-                                      field.onChange(undefined);
+                                      field.onChange(null);
+                                      setValue(`subProjects.${index}.expectedCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                       setOpenCalendar(null);
                                     }}
                                   />
@@ -368,8 +372,10 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                                   title="清除實際完成日 (留空)"
                                   className="absolute right-2 p-1 text-muted-foreground hover:text-destructive hover:bg-slate-100 rounded-full transition-colors z-10"
                                   onClick={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
-                                    field.onChange(undefined);
+                                    field.onChange(null);
+                                    setValue(`subProjects.${index}.actualCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                   }}
                                 >
                                   <X className="h-3.5 w-3.5" />
@@ -385,10 +391,12 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                                     selected={field.value}
                                     onSelect={(date) => {
                                       field.onChange(date);
+                                      setValue(`subProjects.${index}.actualCompletionDate`, date, { shouldValidate: true, shouldDirty: true });
                                       setOpenCalendar(null);
                                     }}
                                     onClear={() => {
-                                      field.onChange(undefined);
+                                      field.onChange(null);
+                                      setValue(`subProjects.${index}.actualCompletionDate`, null, { shouldValidate: true, shouldDirty: true });
                                       setOpenCalendar(null);
                                     }}
                                   />
@@ -425,8 +433,8 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                     append({
                       name: '',
                       owner: '',
-                      expectedCompletionDate: undefined,
-                      actualCompletionDate: undefined,
+                      expectedCompletionDate: null,
+                      actualCompletionDate: null,
                     })
                   }
                 >

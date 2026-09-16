@@ -146,7 +146,11 @@ export function CustomCalendar({ selected, onSelect, onClear }: CustomCalendarPr
         {onClear ? (
           <button
             type="button"
-            onClick={onClear}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClear();
+            }}
             className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded transition-colors font-medium"
           >
             ✕ 清除日期 (留空)
@@ -154,7 +158,9 @@ export function CustomCalendar({ selected, onSelect, onClear }: CustomCalendarPr
         ) : <div />}
         <button
           type="button"
-          onClick={() => {
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
             onSelect(new Date());
           }}
           className="text-xs text-primary hover:bg-blue-50 px-2 py-1 rounded transition-colors font-medium"
