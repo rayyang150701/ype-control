@@ -181,3 +181,22 @@ export interface ProjectActionItem {
   projectCaseNumber?: string;
   projectCategory?: '評估案' | '已開案';
 }
+
+export interface WeeklySnapshotItem {
+  key: string;          // e.g. "2026-09-14_2026-09-20"
+  label: string;        // e.g. "2026/09/14 - 09/20"
+  hasSnapshot: boolean; // 是否已轉存快照至 Storage
+  savedAt?: string;     // 快照最後轉存時間 (ISO 字串)
+  savedBy?: string;     // 轉存操作人
+}
+
+export interface WeeklySnapshotData {
+  periodKey: string;
+  periodLabel: string;
+  savedAt: string;
+  savedBy?: string;
+  projectsCount: number;
+  projects: FullProject[];
+  users: User[];
+}
+

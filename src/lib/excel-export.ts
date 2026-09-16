@@ -177,6 +177,121 @@ export const exportAllProjectsSummary = (projects: FullProject[], users: User[])
   exportToExcel([{ ws, name: '全專案總表' }], '全專案最新進度總表');
 };
 
+export const exportWeeklyProjectsSummary = (
+  projects: FullProject[],
+  users: User[],
+  periodLabel: string,
+  savedAtDate?: string
+) => {
+  // 強力過濾與排序：案號從大到小 (例如 55, 54, 53...)
+  const sortedProjects = [...projects]
+    .filter(p => p.subProjects && p.subProjects.length > 0)
+    .sort((a, b) => 
+      (b.caseNumber ?? '').localeCompare(a.caseNumber ?? '', undefined, { numeric: true })
+    );
+
+  const title = `燁輝智慧製造執行方案進度管制表 (${periodLabel})`;
+  const headers = [
+    '主專案案號', 
+    '主專案名稱', 
+    '專案目的', 
+    '現況/問題點', 
+    '燁輝專案負責主管與分機', 
+    'TPM管理室窗口', 
+    '億威電子', 
+    '子專案名稱', 
+    '本週執行摘要', 
+    '下週工作計畫', 
+    '遭遇問題及風險', 
+    '總體完成度', 
+    '預計完成日', 
+    '實際完成日'
+  ];
+  
+  const exportDateStr = savedAtDate ? format(new Date(savedAtDate), 'yyyy/MM/dd') : format(new Date(), 'yyyy/MM/dd');
+  const data: any[][] = [
+    [title],
+    [`製表單位: TPM管理室`, '', '', '', '', '', `週次: ${periodLabel}`, `轉出存檔日期: ${exportDateStr}`],
+    [], 
+    headers
+  ];
+
+  sortedProjects.forEach(project => {
+    project.subProjects.forEach((sp) => {
+      const isEffectivelyOnHold = sp.isOnHold || sp.isParentOnHold;
+      const expectedDate = sp.expectedCompletionDate ? format(new Date(sp.expectedCompletionDate as string), 'yyyy/MM/dd') : '';
+      const actualDate = sp.actualCompletionDate ? format(new Date(sp.actualCompletionDate as string), 'yyyy/MM/dd') : '';
+      const completionPercentage = `${sp.latestLog?.completionPercentage ?? 0}%`;
+      const isCompleted = (sp.latestLog?.completionPercentage ?? 0) === 100;
+      
+      let currentStyle = defaultCellStyle;
+      if (isEffectivelyOnHold) {
+        currentStyle = onHoldStyle;
+      } else if (isCompleted) {
+        currentStyle = completedStyle;
+      }
+
+      const row = [
+        { v: project.caseNumber, s: currentStyle },
+        { v: project.name, s: currentStyle },
+        { v: project.projectPurpose || '尚未填寫', s: currentStyle },
+        { v: project.currentStatusAndIssues || '尚未填寫', s: currentStyle },
+        { v: project.yiehPhuiProjectManager || '尚未填寫', s: currentStyle },
+        { v: project.tpmOfficeContact || '尚未填寫', s: currentStyle },
+        { v: project.egigaContact || '尚未填寫', s: currentStyle },
+        { v: sp.name, s: currentStyle },
+        { v: sp.latestLog?.executionSummary ?? '', s: currentStyle },
+        { v: sp.latestLog?.nextWeekPlan ?? '', s: currentStyle },
+        { v: sp.latestLog?.roadblocks || '', s: currentStyle },
+        { v: completionPercentage, s: currentStyle },
+        { v: expectedDate, s: currentStyle },
+        { v: actualDate, s: currentStyle }
+      ];
+      data.push(row);
+    });
+  });
+
+  const merges: XLSX.Range[] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, 
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, 
+    { s: { r: 1, c: 6 }, e: { r: 1, c: headers.length - 1 } }, 
+  ];
+
+  let currentRow = 4; 
+  sortedProjects.forEach(project => {
+    const subProjectCount = project.subProjects.length;
+    if (subProjectCount > 1) {
+      for(let i=0; i < 7; i++){
+         merges.push({ s: { r: currentRow, c: i }, e: { r: currentRow + subProjectCount - 1, c: i } });
+      }
+    }
+    currentRow += subProjectCount;
+  });
+
+  const ws = createSheetFromAOA(
+    data,
+    title,
+    [
+      { wch: 10 }, { wch: 25 }, { wch: 35 }, { wch: 35 }, { wch: 25 }, 
+      { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 45 }, { wch: 45 }, 
+      { wch: 30 }, { wch: 12 }, { wch: 15 }, { wch: 15 }
+    ],
+    merges
+  );
+  
+  if (ws['A1']) ws['A1'].s = titleStyle;
+  
+  const headerRowIndex = 3;
+  for (let C = 0; C < headers.length; C++) {
+    const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: C });
+    if (ws[cellRef]) ws[cellRef].s = headerStyle;
+  }
+  
+  const safeFilename = `燁輝進度管制總表_${periodLabel.replace(/[\/\s-]/g, '_')}`;
+  exportToExcel([{ ws, name: `${periodLabel.slice(0, 25)}` }], safeFilename);
+};
+
+
 export const exportSubProjectHistory = (subProject: SubProjectWithLatestLog, logs: ProgressLog[], users: User[]) => {
     const title = `${subProject.projectCaseNumber} ${subProject.projectName} - ${subProject.name} 歷史週報`;
     const headers = ['提報區間', '本週摘要', '下週計畫', '問題', '進度%', '更新時間', '填寫人'];

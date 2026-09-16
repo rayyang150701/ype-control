@@ -2,8 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus } from '@/types';
-import { subDays, startOfWeek, endOfWeek, format } from 'date-fns';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData } from '@/types';
+import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 
 /**
  * 格式化為 ISO 字串
@@ -2120,3 +2120,197 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
         return null;
     }
 }
+
+/**
+ * 轉存每週管制表快照（同週覆蓋）
+ */
+export async function saveWeeklySnapshotAction(
+    periodKey: string,
+    periodLabel: string,
+    projects: FullProject[],
+    users: User[],
+    operatorName?: string
+): Promise<{ success: boolean; message: string; savedAt?: string }> {
+    const supabase = getSupabaseClient();
+    try {
+        const savedAt = new Date().toISOString();
+        const payload: WeeklySnapshotData = {
+            periodKey,
+            periodLabel,
+            savedAt,
+            savedBy: operatorName || '管理者',
+            projectsCount: projects.length,
+            projects,
+            users,
+        };
+
+        const fileName = `${periodKey}.json`;
+        const buffer = Buffer.from(JSON.stringify(payload), 'utf-8');
+
+        const { error: uploadErr } = await supabase.storage
+            .from('weekly_snapshots')
+            .upload(fileName, buffer, {
+                upsert: true, // 同週重複轉存時直接覆蓋
+                contentType: 'application/json',
+            });
+
+        if (uploadErr) {
+            console.error('上傳每週快照至 Storage 失敗:', uploadErr);
+            throw new Error(uploadErr.message || '儲存快照失敗');
+        }
+
+        return {
+            success: true,
+            message: `已成功轉出並儲存 ${periodLabel} 管制表（已覆蓋最新資料）`,
+            savedAt,
+        };
+    } catch (err: any) {
+        console.error('saveWeeklySnapshotAction error:', err);
+        return {
+            success: false,
+            message: err.message || '儲存每週快照發生錯誤',
+        };
+    }
+}
+
+/**
+ * 取得每週管制表週次清單（含已轉存狀態）
+ */
+export async function getWeeklySnapshotsListAction(): Promise<WeeklySnapshotItem[]> {
+    const supabase = getSupabaseClient();
+    try {
+        // 1. 查詢 Storage 既有檔案
+        const { data: fileList } = await supabase.storage
+            .from('weekly_snapshots')
+            .list();
+
+        const storedMap = new Map<string, { updatedAt?: string }>();
+        if (fileList) {
+            fileList.forEach((f) => {
+                if (f.name.endsWith('.json')) {
+                    const key = f.name.replace(/\.json$/, '');
+                    storedMap.set(key, { updatedAt: f.updated_at || undefined });
+                }
+            });
+        }
+
+        // 2. 自動產生本週與過去 12 週標準週次區間
+        const weeks: WeeklySnapshotItem[] = [];
+        const now = new Date();
+        const visitedKeys = new Set<string>();
+
+        for (let i = 0; i < 12; i++) {
+            const d = subWeeks(now, i);
+            const monday = startOfWeek(d, { weekStartsOn: 1 });
+            const sunday = endOfWeek(d, { weekStartsOn: 1 });
+            
+            const key = `${format(monday, 'yyyy-MM-dd')}_${format(sunday, 'yyyy-MM-dd')}`;
+            const label = `${format(monday, 'yyyy/MM/dd')} - ${format(sunday, 'MM/dd')}`;
+            visitedKeys.add(key);
+
+            const storedInfo = storedMap.get(key);
+            weeks.push({
+                key,
+                label,
+                hasSnapshot: !!storedInfo,
+                savedAt: storedInfo?.updatedAt,
+            });
+        }
+
+        // 3. 補入 Storage 存在但超出前 12 週的歷史檔案
+        storedMap.forEach((val, key) => {
+            if (!visitedKeys.has(key)) {
+                const parts = key.split('_');
+                let label = key;
+                if (parts.length === 2) {
+                    try {
+                        const m = new Date(parts[0]);
+                        const s = new Date(parts[1]);
+                        label = `${format(m, 'yyyy/MM/dd')} - ${format(s, 'MM/dd')}`;
+                    } catch {}
+                }
+                weeks.push({
+                    key,
+                    label,
+                    hasSnapshot: true,
+                    savedAt: val.updatedAt,
+                });
+            }
+        });
+
+        // 依週次由新到舊排序
+        weeks.sort((a, b) => b.key.localeCompare(a.key));
+        return weeks;
+    } catch (err) {
+        console.error('getWeeklySnapshotsListAction error:', err);
+        return [];
+    }
+}
+
+/**
+ * 取得指定週次的快照資料
+ */
+export async function getWeeklySnapshotDataAction(periodKey: string): Promise<WeeklySnapshotData | null> {
+    const supabase = getSupabaseClient();
+    try {
+        const fileName = `${periodKey}.json`;
+        const { data: fileData, error: downErr } = await supabase.storage
+            .from('weekly_snapshots')
+            .download(fileName);
+
+        if (downErr || !fileData) {
+            return null;
+        }
+
+        const text = await fileData.text();
+        return JSON.parse(text) as WeeklySnapshotData;
+    } catch (err) {
+        console.error('getWeeklySnapshotDataAction error:', err);
+        return null;
+    }
+}
+
+/**
+ * 當指定週次尚未於 Storage 建立快照時，自資料庫依 reporting_period 動態彙整該週專案日誌
+ */
+export async function getHistoricalWeeklyProjectsAction(periodLabel: string): Promise<FullProject[]> {
+    const allProjects = await getFullProjects();
+    const supabase = getSupabaseClient();
+    
+    // 取得該週期的所有 log
+    const { data: logsData } = await supabase
+        .from('progress_logs')
+        .select('*')
+        .eq('reporting_period', periodLabel);
+
+    if (!logsData || logsData.length === 0) {
+        return allProjects;
+    }
+
+    const logsBySubProj = new Map<string, ProgressLog>();
+    logsData.forEach((doc) => {
+        logsBySubProj.set(doc.sub_project_id, {
+            id: doc.id,
+            subProjectId: doc.sub_project_id,
+            reportingPeriod: doc.reporting_period || '',
+            executionSummary: doc.execution_summary || '',
+            nextWeekPlan: doc.next_week_plan || '',
+            roadblocks: doc.roadblocks || '',
+            completionPercentage: doc.completion_percentage || 0,
+            updatedAt: formatISO(doc.updated_at),
+            createdBy: doc.created_by || '',
+        });
+    });
+
+    return allProjects.map((p) => ({
+        ...p,
+        subProjects: p.subProjects.map((sp) => {
+            const historicalLog = logsBySubProj.get(sp.id);
+            return {
+                ...sp,
+                latestLog: historicalLog !== undefined ? historicalLog : sp.latestLog,
+            };
+        }),
+    }));
+}
+

@@ -1,12 +1,23 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import type { SubProjectWithLatestLog, ProgressLog, FullProject, User } from '@/types';
+import type { SubProjectWithLatestLog, ProgressLog, FullProject, User, WeeklySnapshotItem } from '@/types';
 import { ProjectCard } from './project-card';
 import { TimelineModal } from './timeline-modal';
 import { FilterControls } from './filter-controls';
-import { exportAllProjectsSummary, exportSubProjectHistory } from '@/lib/excel-export';
-import { getProgressLogsForSubProject, getUsers, getFullProjectById, getSubProjectsWithLatestLogs, getFullProjects } from '@/lib/actions';
+import { exportAllProjectsSummary, exportSubProjectHistory, exportWeeklyProjectsSummary } from '@/lib/excel-export';
+import { 
+  getProgressLogsForSubProject, 
+  getUsers, 
+  getFullProjectById, 
+  getSubProjectsWithLatestLogs, 
+  getFullProjects,
+  saveWeeklySnapshotAction,
+  getWeeklySnapshotsListAction,
+  getWeeklySnapshotDataAction,
+  getHistoricalWeeklyProjectsAction
+} from '@/lib/actions';
+import { startOfWeek, endOfWeek, format } from 'date-fns';
 import { NewProjectDialog } from './new-project-dialog';
 import { EditProjectDialog } from './edit-project-dialog';
 import { TableView } from './table-view';
@@ -34,7 +45,147 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
   // 權限控管狀態 (由全域 AdminContext 提供)
-  const { isAdmin, isEditor, isGuest, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen } = useAdmin();
+  const { isAdmin, isEditor, isGuest, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen, currentUser } = useAdmin();
+
+  // 每週管制表快照與歷史週次清單
+  const [weeklySnapshots, setWeeklySnapshots] = useState<WeeklySnapshotItem[]>([]);
+  const [isSnapshotting, setIsSnapshotting] = useState(false);
+
+  // 當前週週期資訊 (例如 2026/09/14 - 09/20)
+  const currentPeriodInfo = useMemo(() => {
+    const now = new Date();
+    const monday = startOfWeek(now, { weekStartsOn: 1 });
+    const sunday = endOfWeek(now, { weekStartsOn: 1 });
+    const key = `${format(monday, 'yyyy-MM-dd')}_${format(sunday, 'yyyy-MM-dd')}`;
+    const label = `${format(monday, 'yyyy/MM/dd')} - ${format(sunday, 'MM/dd')}`;
+    return { key, label };
+  }, []);
+
+  const loadWeeklySnapshots = async () => {
+    try {
+      const list = await getWeeklySnapshotsListAction();
+      setWeeklySnapshots(list);
+    } catch (e) {
+      console.error('載入每週快照列表失敗:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadWeeklySnapshots();
+  }, []);
+
+  // 轉存本週專案資料 (同週覆蓋)
+  const handleSaveCurrentWeekSnapshot = async () => {
+    if (!isEditor) {
+      setIsLoginDialogOpen(true);
+      return;
+    }
+    setIsSnapshotting(true);
+    try {
+      const targetProjects = fullProjects.length > 0 ? fullProjects : await getFullProjects();
+      const targetUsers = users.length > 0 ? users : await getUsers();
+
+      const res = await saveWeeklySnapshotAction(
+        currentPeriodInfo.key,
+        currentPeriodInfo.label,
+        targetProjects,
+        targetUsers,
+        currentUser?.displayName || currentUser?.username || '管理者'
+      );
+
+      if (res.success) {
+        toast({
+          title: '轉出存檔成功！',
+          description: `已將當前全專案管制表轉存至 ${currentPeriodInfo.label}（同週舊資料已覆蓋更新）。`,
+        });
+        await loadWeeklySnapshots();
+      } else {
+        throw new Error(res.message);
+      }
+    } catch (err: any) {
+      toast({
+        title: '轉存失敗',
+        description: err.message || '無法儲存本週快照',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSnapshotting(false);
+    }
+  };
+
+  // 下拉選取週次直接匯出 Excel
+  const handleExportWeek = async (weekKey: string) => {
+    if (!isEditor) {
+      setIsLoginDialogOpen(true);
+      toast({
+        title: '權限不足',
+        description: '只有編輯者以上權限才可下載每週管制表。',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const targetWeek = weeklySnapshots.find((w) => w.key === weekKey);
+    const periodLabel = targetWeek?.label || weekKey;
+
+    toast({
+      title: '正在產生週報 Excel...',
+      description: `準備匯出 ${periodLabel} 管制表`,
+    });
+
+    try {
+      // 1. 優先從 Storage 快照讀取已轉存版本
+      const snapshot = await getWeeklySnapshotDataAction(weekKey);
+      if (snapshot && snapshot.projects && snapshot.projects.length > 0) {
+        exportWeeklyProjectsSummary(
+          snapshot.projects,
+          snapshot.users || users,
+          snapshot.periodLabel || periodLabel,
+          snapshot.savedAt
+        );
+        toast({
+          title: '匯出成功！',
+          description: `已下載 ${periodLabel} 管制表（歷史轉存版）`,
+        });
+        return;
+      }
+
+      // 2. 若為本週且尚未點擊轉存，以當前最新專案進度直接匯出
+      if (weekKey === currentPeriodInfo.key) {
+        const currentProjects = fullProjects.length > 0 ? fullProjects : await getFullProjects();
+        exportWeeklyProjectsSummary(
+          currentProjects,
+          users,
+          currentPeriodInfo.label,
+          new Date().toISOString()
+        );
+        toast({
+          title: '匯出成功！',
+          description: `已下載 ${currentPeriodInfo.label} 即時管制表`,
+        });
+        return;
+      }
+
+      // 3. 若為過去週次但未建立 Storage 快照，自 progress_logs 動態彙整該週進度匯出
+      const historicalProjects = await getHistoricalWeeklyProjectsAction(periodLabel);
+      exportWeeklyProjectsSummary(
+        historicalProjects,
+        users,
+        periodLabel
+      );
+      toast({
+        title: '匯出成功！',
+        description: `已依 ${periodLabel} 歷史日誌彙整並下載週報 Excel`,
+      });
+    } catch (err: any) {
+      console.error('匯出週報失敗:', err);
+      toast({
+        title: '匯出失敗',
+        description: err.message || '產生週報 Excel 發生錯誤',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const [selectedSubProject, setSelectedSubProject] = useState<SubProjectWithLatestLog | null>(null);
   const [selectedFullProject, setSelectedFullProject] = useState<FullProject | null>(null);
@@ -219,7 +370,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         }}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        isAdmin={isEditor}
+        isAdmin={isAdmin}
+        isEditor={isEditor}
         onAdminToggle={() => {
             if (isEditor) {
                 setIsAdmin(false);
@@ -227,6 +379,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
                 setIsLoginDialogOpen(true);
             }
         }}
+        weeklySnapshots={weeklySnapshots}
+        onExportWeek={handleExportWeek}
+        onSaveCurrentWeekSnapshot={handleSaveCurrentWeekSnapshot}
+        isSnapshotting={isSnapshotting}
+        currentWeekLabel={currentPeriodInfo.label}
       />
 
       {viewMode === 'grid' ? (
