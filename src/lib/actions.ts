@@ -694,15 +694,7 @@ export async function deleteInternalProject(projectId: string) {
         const isPoc = !cNum || cNum.toUpperCase() === 'POC';
         const isOfficialYiehPhui = (meta.sourceType === '燁輝列管專案' || (!meta.sourceType && !isPoc && meta.isInternal !== true));
 
-        // 核心安全屏障：若是燁輝管制總表正式專案，一律強制拒絕刪除！
-        if (isOfficialYiehPhui) {
-            return {
-                success: false,
-                message: '【安全保護機制生效】此專案為「燁輝管制總表」正式列管專案，系統已全面禁止於內部待辦介面刪除專案主檔，以確保外部進度管制總表與週報不受任何影響！'
-            };
-        }
-
-        // 2. 刪除該內部專案所屬的內部待辦事項與雲端附件
+        // 2. 刪除該專案在億威內部的待辦事項與雲端附件
         const { data: actionItems } = await supabase
             .from('project_action_items')
             .select('id')
@@ -713,7 +705,7 @@ export async function deleteInternalProject(projectId: string) {
             }
         }
 
-        // 3. 解除可能與其他專案存在的關聯（如其他專案關聯此 POC 專案，只解除關聯，絕對不刪除其他專案）
+        // 3. 解除可能與其他專案存在的關聯（如其他專案關聯此專案，只解除關聯 ID，絕對不刪除其他專案）
         const { data: linkedProjs } = await supabase.from('projects').select('id, on_hold_notes');
         if (linkedProjs) {
             for (const p of linkedProjs) {
@@ -735,16 +727,37 @@ export async function deleteInternalProject(projectId: string) {
             }
         }
 
-        // 4. 刪除該內部專案主檔（僅刪除自身 POC 專案）
-        const { error: deleteErr } = await supabase
-            .from('projects')
-            .delete()
-            .eq('id', projectId);
-        if (deleteErr) throw deleteErr;
+        if (isOfficialYiehPhui) {
+            // 【燁輝列管正式專案安全防護】：
+            // 僅標記 isInternal = false 自內部專案列表中移出，絕不刪除專案主檔、子專案與週報紀錄！
+            meta.isInternal = false;
+            delete meta.linkedCustomerProjectId;
+            delete meta.linkedInternalProjectId;
 
-        revalidatePath('/internal-tasks');
-        revalidatePath('/dashboard');
-        return { success: true, message: '內部專案及所屬待辦事項已成功刪除！（燁輝管制總表毫無影響）' };
+            const { error: updateErr } = await supabase.from('projects').update({
+                on_hold_notes: serializeProjectMeta(meta)
+            }).eq('id', projectId);
+
+            if (updateErr) throw updateErr;
+
+            revalidatePath('/internal-tasks');
+            revalidatePath('/dashboard');
+            return {
+                success: true,
+                message: `專案「${proj.name}」已成功自內部專案管制清單移除！（燁輝進度管制總表、子專案與週報紀錄 100% 完整留存）`
+            };
+        } else {
+            // 純內部專案 (POC / 億威自建)：可直接刪除專案主檔
+            const { error: deleteErr } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', projectId);
+            if (deleteErr) throw deleteErr;
+
+            revalidatePath('/internal-tasks');
+            revalidatePath('/dashboard');
+            return { success: true, message: '內部專案及所屬待辦事項已成功刪除！（燁輝管制總表不受任何影響）' };
+        }
     } catch (err: any) {
         console.error('刪除內部專案失敗:', err);
         return { success: false, message: err?.message || '刪除內部專案失敗' };

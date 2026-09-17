@@ -494,31 +494,8 @@ export function EditInternalProjectDialog({
             </div>
 
             <DialogFooter className="pt-3 flex flex-row items-center justify-between sm:justify-between w-full border-t">
-              {/* 刪除專案按鈕區 */}
-              {isOfficialYiehPhui ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5 text-xs text-blue-800 bg-blue-50/90 px-2.5 py-1.5 rounded-md border border-blue-200 shadow-2xs font-medium">
-                    <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0" />
-                    <span>🏢 燁輝列管正式專案（受管制總表保護，無法於內部頁面刪除主檔）</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (project) {
-                        setCachedProject({ id: project.id, name: project.name });
-                      }
-                      setShowClearActionItemsConfirm(true);
-                    }}
-                    className="gap-1 text-xs h-8 text-slate-600 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50"
-                    title="僅清空此專案在內部的待辦追蹤項目，絕不影響燁輝管制總表與週報"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    清空內部待辦
-                  </Button>
-                </div>
-              ) : (
+              {/* 刪除 / 移除內部專案按鈕區 */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   type="button"
                   variant="destructive"
@@ -530,11 +507,31 @@ export function EditInternalProjectDialog({
                     setShowDeleteConfirm(true);
                   }}
                   className="gap-1 text-xs h-8"
+                  title={isOfficialYiehPhui ? "自內部專案管制中移除（燁輝管制總表 100% 完整保留）" : "刪除此內部專案 (POC)"}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  刪除此內部專案 (POC)
+                  {isOfficialYiehPhui ? '自內部專案移除' : '刪除此內部專案 (POC)'}
                 </Button>
-              )}
+
+                {isOfficialYiehPhui && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (project) {
+                        setCachedProject({ id: project.id, name: project.name });
+                      }
+                      setShowClearActionItemsConfirm(true);
+                    }}
+                    className="gap-1 text-xs h-8 text-slate-600 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50"
+                    title="僅清空此專案的內部待辦追蹤項目，仍保留此專案於內部清單中"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    僅清空內部待辦
+                  </Button>
+                )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -549,7 +546,7 @@ export function EditInternalProjectDialog({
         </DialogContent>
       </Dialog>
 
-      {/* 刪除純內部專案 (POC) 防呆確認對話框 */}
+      {/* 刪除/自內部專案移除防呆確認對話框 */}
       <AlertDialog
         open={showDeleteConfirm}
         onOpenChange={(nextOpen) => {
@@ -561,22 +558,39 @@ export function EditInternalProjectDialog({
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
-              確認刪除內部專案「{project?.name || cachedProject?.name || ''}」？
+              {isOfficialYiehPhui
+                ? `確認將專案「${project?.name || cachedProject?.name || ''}」自內部管制移除？`
+                : `確認刪除內部專案「${project?.name || cachedProject?.name || ''}」？`}
             </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2 text-xs">
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-medium leading-relaxed">
-                🛡️ <strong>系統安全保證</strong>：此專案為純內部 POC / 評估案，刪除僅會移除內部專案基本資料與其待辦記錄，<strong>【絕對不會】影響任何外部燁輝管制總表、子專案與週報紀錄</strong>！
-              </div>
-              <p>
-                此操作將會刪除以下內部內容：
-              </p>
-              <ul className="list-disc pl-5 space-y-1 text-slate-700">
-                <li>內部專案主檔基本資訊</li>
-                <li>專案所屬的內部待辦追蹤項目與歷程記錄</li>
-                <li>解除與其他專案的雙向關聯（若有）</li>
-              </ul>
-              <p className="text-rose-600 font-semibold pt-1">
-                此動作刪除後將無法復原，請確認是否繼續執行？
+            <AlertDialogDescription className="space-y-2.5 text-xs">
+              {isOfficialYiehPhui ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 leading-relaxed space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>億威內部自主管理・燁輝總表 100% 留存隔離保證</span>
+                  </div>
+                  <p>
+                    此操作僅會將本專案由「<strong>內部專案與待辦歷程追蹤</strong>」介面中移除，並清空內部待辦事項。
+                  </p>
+                  <p className="font-bold text-emerald-800">
+                    ✅ 【燁輝進度管制總表】上的專案主檔、案號代碼、子專案與所有歷史週報紀錄【100% 完整留存】，絕不連動刪除！
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 leading-relaxed space-y-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>純內部評估案 (POC) 刪除</span>
+                  </div>
+                  <p>
+                    此專案為純內部 POC / 評估案，刪除僅會移除內部專案基本資料與待辦記錄，<strong>【絕對不會】影響任何外部燁輝管制總表、子專案與週報紀錄</strong>。
+                  </p>
+                </div>
+              )}
+              <p className="text-slate-600">
+                {isOfficialYiehPhui
+                  ? '移除後此專案將不再出現在內部追蹤清單中（若未來重新指派內部待辦可再自動加入），外部管制總表依然完好無缺。'
+                  : '此動作刪除後將無法復原，請確認是否繼續執行？'}
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -595,7 +609,9 @@ export function EditInternalProjectDialog({
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? '正在刪除內部專案...' : '確認刪除此內部專案'}
+              {isDeleting
+                ? (isOfficialYiehPhui ? '正在自內部移除...' : '正在刪除專案...')
+                : (isOfficialYiehPhui ? '確認自內部專案移除（保留燁輝總表）' : '確認刪除此內部專案')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
