@@ -78,6 +78,14 @@ export function InternalTasksClient({
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
 
+  useEffect(() => {
+    setProjects(initialProjects);
+  }, [initialProjects]);
+
+  useEffect(() => {
+    setActionItems(initialActionItems);
+  }, [initialActionItems]);
+
   // 視圖模式：'project' (依專案分組檢視) vs 'task' (以待辦項目為主總覽)
   const [viewMode, setViewMode] = useState<'project' | 'task'>('project');
 
@@ -405,14 +413,14 @@ export function InternalTasksClient({
     projectList.forEach((proj) => {
       const entry = { project: proj, items: [] };
       map.set(proj.id, entry);
-      if (proj.caseNumber && proj.caseNumber.trim()) {
+      if (proj.caseNumber && proj.caseNumber.trim() && proj.caseNumber.trim().toUpperCase() !== 'POC') {
         caseNumberMap.set(proj.caseNumber.trim(), entry);
       }
     });
 
     filteredItems.forEach((item) => {
       let entry = map.get(item.projectId);
-      if (!entry && item.projectCaseNumber && item.projectCaseNumber.trim()) {
+      if (!entry && item.projectCaseNumber && item.projectCaseNumber.trim() && item.projectCaseNumber.trim().toUpperCase() !== 'POC') {
         entry = caseNumberMap.get(item.projectCaseNumber.trim());
       }
       if (entry) {
@@ -420,7 +428,7 @@ export function InternalTasksClient({
       } else {
         // 若此待辦所屬專案存在於系統專案名單中，表示該專案已被目前條件 (如已結案/類別/專案類型) 過濾，不可重新加入！
         const projectExists = projects.some(
-          (p) => p.id === item.projectId || (p.caseNumber && item.projectCaseNumber && p.caseNumber.trim() === item.projectCaseNumber.trim())
+          (p) => p.id === item.projectId || (p.caseNumber && item.projectCaseNumber && p.caseNumber.trim().toUpperCase() !== 'POC' && p.caseNumber.trim() === item.projectCaseNumber.trim())
         );
         if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedSourceType === 'all') {
           // 僅當為資料庫完全不存在的孤兒資料，且處於「全部無篩選」狀態時，才暫存為未分類專案
@@ -1992,7 +2000,14 @@ export function InternalTasksClient({
         clients={clients}
         onSuccess={(newProj) => {
           if (newProj) {
-            setProjects((prev) => [newProj, ...prev]);
+            setProjects((prev) => [newProj, ...prev.filter((p) => p.id !== newProj.id)]);
+            setCollapsedProjects((prev) => ({ ...prev, [newProj.id]: false }));
+            setTimeout(() => {
+              const el = document.getElementById(`project-${newProj.id}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 250);
           }
           router.refresh();
         }}

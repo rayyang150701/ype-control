@@ -1743,9 +1743,12 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
     const projectsWithItems = new Set((actionItemsData || []).map(i => i.project_id));
 
     // 去除重覆案號（若有相同案號者，優先保留已有待辦事項的紀錄，否則保留最新紀錄以避免畫面上出現兩張一模一樣的卡片）
+    // 注意：POC 評估案每個案名與 ID 皆為獨立專案，案號皆為 'POC' 或無案號，不可視為同案號去重合併！
     const uniqueMap = new Map<string, any>();
     for (const doc of projectsData) {
-        const key = doc.case_number ? String(doc.case_number).trim() : doc.id;
+        const cNum = doc.case_number ? String(doc.case_number).trim() : '';
+        const isPocCase = !cNum || cNum.toUpperCase() === 'POC';
+        const key = isPocCase ? doc.id : cNum;
         const existing = uniqueMap.get(key);
         if (!existing) {
             uniqueMap.set(key, doc);
