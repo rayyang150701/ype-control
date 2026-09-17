@@ -34,6 +34,8 @@ import {
   Building2,
   Users,
   Lock,
+  Paperclip,
+  ExternalLink,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { ActionItemDialog } from './action-item-dialog';
@@ -773,6 +775,17 @@ export function InternalTasksClient({
                   責任歸屬: {item.owner}
                 </span>
               )}
+
+              {/* 附件數量標籤 */}
+              {item.attachments && item.attachments.length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-[11px] px-2 py-0.5 border-blue-200 bg-blue-50/80 text-blue-700 shadow-2xs font-normal"
+                >
+                  <Paperclip className="h-3 w-3 text-blue-600" />
+                  {item.attachments.length} 個附件
+                </Badge>
+              )}
             </div>
 
             {/* 歷程說明 (需求1: 支援換行與上下滾動顯示) */}
@@ -795,6 +808,41 @@ export function InternalTasksClient({
                 </div>
                 <div className="whitespace-pre-wrap break-words max-h-40 overflow-y-auto pr-1 text-amber-900 select-text">
                   {item.lessonLearnt}
+                </div>
+              </div>
+            )}
+
+            {/* 雲端硬碟附件列表 */}
+            {item.attachments && item.attachments.length > 0 && (
+              <div className="text-xs bg-blue-50/50 p-2.5 rounded-md border border-blue-200/70 leading-relaxed mt-2 shadow-2xs">
+                <div className="font-semibold text-blue-950 mb-1.5 flex items-center gap-1.5">
+                  <Paperclip className="h-3.5 w-3.5 text-blue-600" />
+                  <span>雲端附件 ({item.attachments.length} 個檔案)：</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {item.attachments.map((att, idx) => {
+                    const fileId = att.id || att.fileId;
+                    const viewUrl = att.webViewLink || att.webContentLink || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '#');
+                    return (
+                      <a
+                        key={fileId || idx}
+                        href={viewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-blue-50/80 border border-blue-200 text-blue-700 hover:text-blue-900 text-xs shadow-2xs transition-colors group"
+                        title={`點擊於 Google Drive 開啟：${att.name}`}
+                      >
+                        <Paperclip className="h-3 w-3 text-blue-500 group-hover:text-blue-700 shrink-0" />
+                        <span className="max-w-[180px] sm:max-w-[240px] truncate font-medium">{att.name}</span>
+                        {att.size && att.size > 0 && (
+                          <span className="text-[10px] text-slate-400 font-normal shrink-0">
+                            ({att.size < 1024 ? `${att.size} B` : att.size < 1048576 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / 1048576).toFixed(1)} MB`})
+                          </span>
+                        )}
+                        <ExternalLink className="h-2.5 w-2.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1849,6 +1897,8 @@ export function InternalTasksClient({
         defaultProjectId={defaultProjectId}
         projects={projects}
         users={users}
+        clients={clients}
+        actionItems={actionItems}
         onSuccess={(savedItem) => {
           if (savedItem) {
             const targetProj = projects.find((p) => p.id === savedItem.projectId);

@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS public.project_action_items (
   status_history JSONB DEFAULT '[]'::jsonb,
   notes TEXT DEFAULT '',
   lesson_learnt TEXT DEFAULT '',
+  attachments JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -147,4 +148,8 @@ CREATE POLICY "Allow service role all clients" ON public.clients FOR ALL USING (
 INSERT INTO public.clients (name, code, contact_person, notes)
 VALUES ('燁輝', 'YP', '黃裕峰', '系統核心預設客戶')
 ON CONFLICT (name) DO NOTHING;
+
+-- 7. 擴充欄位 (若既有資料庫尚未具備附件欄位，可執行以下語法)
+ALTER TABLE public.project_action_items ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+
 

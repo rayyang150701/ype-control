@@ -23,6 +23,7 @@ import {
   Building2,
   RotateCcw,
   Layers,
+  Paperclip,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import type { FullProject, ProjectActionItem, User, Client } from '@/types';
@@ -519,6 +520,17 @@ export function TaskCentricView({
                         </span>
                         <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
                       </button>
+
+                      {/* 附件數量標籤 */}
+                      {item.attachments && item.attachments.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 text-[10px] px-1.5 py-0.5 border-blue-200 bg-blue-50/80 text-blue-700 shadow-2xs font-normal shrink-0"
+                        >
+                          <Paperclip className="h-2.5 w-2.5 text-blue-600" />
+                          {item.attachments.length} 附件
+                        </Badge>
+                      )}
                     </div>
 
                     {/* 第二行：工作事項內容 + 預計完成日 (延誤、超前) + 操作 */}
@@ -536,6 +548,29 @@ export function TaskCentricView({
                           <div className="mt-1.5 whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1 text-amber-900 bg-amber-50/80 p-1.5 rounded border border-amber-200 text-[11px] select-text">
                             <span className="font-semibold text-amber-950">💡 經驗檢討: </span>
                             {item.lessonLearnt}
+                          </div>
+                        )}
+                        {/* 雲端硬碟附件列表 */}
+                        {item.attachments && item.attachments.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {item.attachments.map((att, idx) => {
+                              const fileId = att.id || att.fileId;
+                              const viewUrl = att.webViewLink || att.webContentLink || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '#');
+                              return (
+                                <a
+                                  key={fileId || idx}
+                                  href={viewUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 hover:text-blue-900 text-[11px] shadow-2xs transition-colors group"
+                                  title={`在 Google Drive 開啟：${att.name}`}
+                                >
+                                  <Paperclip className="h-2.5 w-2.5 text-blue-500 group-hover:text-blue-700 shrink-0" />
+                                  <span className="max-w-[140px] truncate">{att.name}</span>
+                                  <ExternalLink className="h-2 w-2 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                                </a>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

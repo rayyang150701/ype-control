@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
-import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client } from '@/types';
+import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
 interface ActionItemDialogProps {
   open: boolean;
@@ -21,6 +22,7 @@ interface ActionItemDialogProps {
   projects: FullProject[];
   users?: User[];
   clients?: Client[];
+  actionItems?: ProjectActionItem[];
   onSuccess: (savedItem?: ProjectActionItem) => void;
 }
 
@@ -41,6 +43,7 @@ export function ActionItemDialog({
   projects,
   users = [],
   clients: initialClients = [],
+  actionItems = [],
   onSuccess,
 }: ActionItemDialogProps) {
   const { toast } = useToast();
@@ -77,6 +80,7 @@ export function ActionItemDialog({
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [notes, setNotes] = useState(item?.notes || '');
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
+  const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
 
   // 組合客戶選項清單 (保證同時相容資料庫真實名稱與億威/燁輝別名)
   const effectiveClientOptions: Client[] = useMemo(() => {
@@ -90,8 +94,11 @@ export function ActionItemDialog({
     if (!list.some((c: Client) => c.name === '燁輝')) {
       list.push({ id: 'c-yp', name: '燁輝', code: 'YP', createdAt: '' });
     }
+    if (owner && !list.some((c: Client) => c.name === owner)) {
+      list.push({ id: `c-custom-${owner}`, name: owner, code: '', createdAt: '' });
+    }
     return list;
-  }, [clientList]);
+  }, [clientList, owner]);
 
   // 智慧寬容客戶名稱比對 (如「億威」相容「億威電子」、「億威 (EW)」等)
   const normalizeClientName = (name?: string) => {
@@ -110,38 +117,96 @@ export function ActionItemDialog({
     return false;
   };
 
-  // 根據選擇的責任歸屬 (客戶/單位，如「億威」或「燁輝」)，從成員名單中挑選屬於該客戶的成員
-  const selectedClientName = (owner || '燁輝').trim();
-  const matchedMembers = users.filter((u) => {
-    if (u.clientName && isClientMatch(u.clientName, selectedClientName)) {
-      return true;
-    }
-    const emailLower = u.email?.toLowerCase() || '';
-    if (selectedClientName.includes('億威') && emailLower.includes('emmt.com.tw')) {
-      return true;
-    }
-    if (selectedClientName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) {
-      return true;
-    }
-    return false;
-  });
+  // 根據選擇的責任歸屬 (客戶/單位，如「宇陽傳動」、「億威」或「燁輝」)，精準挑選屬於該客戶的成員
+  const selectedClientName = (owner || '').trim();
 
-  // 如果該客戶目前還沒有在成員管理中維護專屬成員，備援顯示全部成員（標註部門與客戶），讓使用者永不卡關
-  const availableMembers = matchedMembers.length > 0 ? matchedMembers : users;
+  const waitingOnMemberOptions = useMemo(() => {
+    const optionsMap = new Map<string, { value: string; label: string; hint?: string }>();
 
-  const clientContactPerson = effectiveClientOptions.find((c: Client) => isClientMatch(c.name, selectedClientName))?.contactPerson;
-  const waitingOnMemberOptions = Array.from(
-    new Set([
-      ...availableMembers.map((u) => ({
-        value: u.displayName || u.email,
-        label: u.displayName || u.email,
-        hint: u.department
+    // 1. 若責任歸屬未指定或為空，顯示系統所有成員供選擇
+    if (!selectedClientName || selectedClientName === '未指定') {
+      users.forEach((u) => {
+        const val = (u.displayName || u.email || '').trim();
+        if (!val) return;
+        const hint = u.department
           ? `${u.department}${u.clientName ? ` (${u.clientName})` : ''}`
-          : (u.clientName ? `${u.clientName}` : (u.role === 'admin' ? '管理員' : '成員')),
-      })),
-      ...(clientContactPerson ? [{ value: clientContactPerson, label: clientContactPerson, hint: '客戶主要窗口' }] : []),
-    ])
-  );
+          : (u.clientName ? `${u.clientName}` : (u.role === 'admin' ? '管理員' : '成員'));
+        optionsMap.set(val, { value: val, label: val, hint });
+      });
+      return Array.from(optionsMap.values());
+    }
+
+    // 2. 當有指定客戶時，嚴格只帶出屬於該客戶的人選！
+    // (a) 屬於該客戶的系統成員
+    users.forEach((u) => {
+      let isMatch = false;
+      if (u.clientName && isClientMatch(u.clientName, selectedClientName)) {
+        isMatch = true;
+      }
+      const emailLower = u.email?.toLowerCase() || '';
+      if (selectedClientName.includes('億威') && emailLower.includes('emmt.com.tw')) {
+        isMatch = true;
+      }
+      if (selectedClientName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) {
+        isMatch = true;
+      }
+
+      if (isMatch) {
+        const val = (u.displayName || u.email || '').trim();
+        if (val && !optionsMap.has(val)) {
+          const hint = u.department
+            ? `${u.department} (${selectedClientName})`
+            : `${selectedClientName} 成員`;
+          optionsMap.set(val, { value: val, label: val, hint });
+        }
+      }
+    });
+
+    // (b) 該客戶基本資料中設定的主要窗口 (contactPerson)
+    const clientRecord = effectiveClientOptions.find((c: Client) => isClientMatch(c.name, selectedClientName));
+    if (clientRecord?.contactPerson && clientRecord.contactPerson.trim()) {
+      const val = clientRecord.contactPerson.trim();
+      if (!optionsMap.has(val)) {
+        optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 主要窗口` });
+      }
+    }
+
+    // (c) 屬於該客戶的專案中所設定的客戶窗口 (clientContact)
+    projects.forEach((p) => {
+      if (p.clientName && isClientMatch(p.clientName, selectedClientName)) {
+        if (p.clientContact && p.clientContact.trim()) {
+          const val = p.clientContact.trim();
+          if (!optionsMap.has(val)) {
+            optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 專案窗口` });
+          }
+        }
+      }
+    });
+
+    // (d) 過去在待辦事項中，曾指定為此客戶 (或此客戶專案) 處理人 (waitingOn) 的歷程名單 (例如曾手動輸入過「賴冠廷」)
+    if (actionItems && actionItems.length > 0) {
+      actionItems.forEach((ai) => {
+        if (!ai.waitingOn || !ai.waitingOn.trim()) return;
+        let isMatch = false;
+        if (ai.owner && isClientMatch(ai.owner, selectedClientName)) {
+          isMatch = true;
+        } else {
+          const p = projects.find((proj) => proj.id === ai.projectId);
+          if (p?.clientName && isClientMatch(p.clientName, selectedClientName)) {
+            isMatch = true;
+          }
+        }
+        if (isMatch) {
+          const val = ai.waitingOn.trim();
+          if (!optionsMap.has(val)) {
+            optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 曾處理人員` });
+          }
+        }
+      });
+    }
+
+    return Array.from(optionsMap.values());
+  }, [users, selectedClientName, effectiveClientOptions, projects, actionItems]);
 
   useEffect(() => {
     if (open) {
@@ -157,6 +222,7 @@ export function ActionItemDialog({
         setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
         setNotes(item.notes || '');
         setLessonLearnt(item.lessonLearnt || '');
+        setAttachments(item.attachments || []);
       } else {
         const targetProjId = defaultProjectId || (projects[0]?.id || '');
         const targetProj = projects.find((p) => p.id === targetProjId);
@@ -173,6 +239,7 @@ export function ActionItemDialog({
         setCompletedAt('');
         setNotes('');
         setLessonLearnt('');
+        setAttachments([]);
       }
     }
   }, [open, item, defaultProjectId, projects]);
@@ -225,6 +292,7 @@ export function ActionItemDialog({
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           notes,
           lessonLearnt,
+          attachments,
         });
         if (res.success) {
           toast({ title: '更新成功', description: '待辦歷程已成功儲存' });
@@ -245,6 +313,7 @@ export function ActionItemDialog({
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           notes,
           lessonLearnt,
+          attachments,
         });
         if (res.success) {
           toast({ title: '新增成功', description: '待辦事項已建立！' });
@@ -446,7 +515,12 @@ export function ActionItemDialog({
                   placeholder={
                     waitingOnMemberOptions.length > 0
                       ? `選擇 ${owner || '客戶'} 成員或輸入...`
-                      : '輸入等候對象或處理事項...'
+                      : `輸入 ${owner ? `${owner} ` : ''}成員姓名或處理事項...`
+                  }
+                  emptyHint={
+                    owner
+                      ? `「${owner}」尚無預設成員，可直接手動輸入姓名`
+                      : '請先選擇責任歸屬客戶，或直接手動輸入姓名'
                   }
                 />
               </div>
@@ -503,6 +577,13 @@ export function ActionItemDialog({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+
+          {/* 附件上傳 (Google Drive 直傳) */}
+          <AttachmentsUploader
+            attachments={attachments}
+            onChange={setAttachments}
+            disabled={isSubmitting}
+          />
 
           {/* 經驗檢討 (Lesson Learnt) */}
           <div className="rounded-lg bg-amber-50/70 p-3.5 border border-amber-200 space-y-1.5">

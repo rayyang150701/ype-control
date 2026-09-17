@@ -222,8 +222,8 @@ export function EditInternalProjectDialog({
     new Set([
       ...clientUserContacts,
       ...(clientMainContact ? [clientMainContact] : []),
-      // 若尚未建立任何對應成員，備援放入預設聯絡人
-      ...(clientUserContacts.length === 0 ? ['黃裕峰', '張簡'] : []),
+      // 若為燁輝專案且尚未建立任何對應成員，備援放入燁輝預設聯絡人
+      ...(clientUserContacts.length === 0 && (clientName || '').includes('燁輝') ? ['黃裕峰', '張簡'] : []),
     ])
   ).filter(Boolean);
 

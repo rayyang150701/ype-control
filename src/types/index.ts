@@ -158,6 +158,18 @@ export interface StatusChange {
   at: string;
 }
 
+export interface ActionItemAttachment {
+  id: string;              // Google Drive File ID
+  fileId?: string;         // Google Drive File ID (alias)
+  name: string;            // 檔案名稱
+  size: number;            // 檔案大小 (bytes)
+  mimeType: string;        // MIME 類型
+  webViewLink: string;     // Google Drive 雲端預覽/檢視連結
+  webContentLink?: string; // 直接下載連結
+  thumbnailLink?: string;  // 縮圖連結 (若有)
+  uploadedAt: string;      // 上傳時間 (ISO)
+}
+
 export interface ProjectActionItem {
   id: string;
   projectId: string;
@@ -175,6 +187,7 @@ export interface ProjectActionItem {
   statusHistory?: StatusChange[];
   notes?: string;
   lessonLearnt?: string;
+  attachments?: ActionItemAttachment[];
   createdAt: string;
   updatedAt: string;
   projectName?: string;

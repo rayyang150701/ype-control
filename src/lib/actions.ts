@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment } from '@/types';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 
 /**
@@ -1318,6 +1318,40 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
+// 附件解析與備援編碼輔助函式 (雙軌相容：優先真實 attachments 欄位，備援 notes 嵌入標記)
+const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/;
+
+function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string } {
+    let list: ActionItemAttachment[] = [];
+    let notes = item.notes || '';
+
+    if (item.attachments) {
+        if (Array.isArray(item.attachments)) {
+            list = item.attachments;
+        } else if (typeof item.attachments === 'string') {
+            try { list = JSON.parse(item.attachments); } catch {}
+        }
+    }
+
+    if (list.length === 0 && notes) {
+        const match = notes.match(ATTACHMENTS_MARKER_REGEX);
+        if (match && match[1]) {
+            try {
+                list = JSON.parse(match[1]);
+                notes = notes.replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+            } catch {}
+        }
+    }
+
+    return { attachments: list, cleanNotes: notes };
+}
+
+function encodeAttachmentsIntoNotes(notes: string, attachments?: ActionItemAttachment[]): string {
+    const baseNotes = (notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+    if (!attachments || attachments.length === 0) return baseNotes;
+    return `${baseNotes}\n\n<!--ATTACHMENTS:${JSON.stringify(attachments)}-->`.trim();
+}
+
 export async function getActionItems(projectId?: string, preloadedProjects?: any[]): Promise<ProjectActionItem[]> {
     const supabase = getSupabaseClient();
     try {
@@ -1358,6 +1392,7 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
 
         return sortedData.map(item => {
             const proj = projMap.get(item.project_id);
+            const { attachments, cleanNotes } = extractAttachments(item);
             return {
                 id: item.id,
                 projectId: item.project_id,
@@ -1373,8 +1408,9 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
                 completedAt: item.completed_at ? String(item.completed_at) : null,
                 dueDateHistory: Array.isArray(item.due_date_history) ? item.due_date_history : (item.due_date_history ? JSON.parse(item.due_date_history) : []),
                 statusHistory: Array.isArray(item.status_history) ? item.status_history : (item.status_history ? JSON.parse(item.status_history) : []),
-                notes: item.notes || '',
+                notes: cleanNotes,
                 lessonLearnt: item.lesson_learnt || '',
+                attachments,
                 createdAt: formatISO(item.created_at),
                 updatedAt: formatISO(item.updated_at),
                 projectName: proj?.name || '',
@@ -1400,6 +1436,7 @@ export async function createActionItem(data: {
     completedAt?: string | null;
     notes?: string;
     lessonLearnt?: string;
+    attachments?: ActionItemAttachment[];
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -1407,8 +1444,10 @@ export async function createActionItem(data: {
         const initialStatus = data.status || 'pending';
         const isStarting = initialStatus === 'in_progress' || initialStatus === 'blocked';
         const initialStatusHistory = [{ from: 'new', to: initialStatus, at: nowIso }];
+        const cleanNotes = data.notes || '';
+        const notesWithFallback = encodeAttachmentsIntoNotes(cleanNotes, data.attachments);
 
-        const { data: inserted, error } = await supabase.from('project_action_items').insert({
+        const insertPayload: any = {
             project_id: data.projectId,
             sub_project_id: data.subProjectId || null,
             title: data.title,
@@ -1422,13 +1461,26 @@ export async function createActionItem(data: {
             completed_at: initialStatus === 'completed' ? (data.completedAt || nowIso) : null,
             due_date_history: JSON.stringify([]),
             status_history: JSON.stringify(initialStatusHistory),
-            notes: data.notes || '',
+            notes: notesWithFallback,
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
             updated_at: nowIso
-        }).select('*').single();
+        };
 
-        if (error) throw error;
+        if (data.attachments && data.attachments.length > 0) {
+            insertPayload.attachments = JSON.stringify(data.attachments);
+        }
+
+        let insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
+
+        // 若資料庫尚未建立 attachments 欄位 (error 42703: column does not exist)，自動移除欄位重試，依賴 notes 備援標記
+        if (insertRes.error && insertRes.error.code === '42703' && insertPayload.attachments) {
+            delete insertPayload.attachments;
+            insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
+        }
+
+        if (insertRes.error) throw insertRes.error;
+        const inserted = insertRes.data;
 
         // 取得專案名稱與案號作為輔助
         const { data: projData } = await supabase
@@ -1452,8 +1504,9 @@ export async function createActionItem(data: {
             completedAt: inserted.completed_at ? String(inserted.completed_at) : null,
             dueDateHistory: [],
             statusHistory: initialStatusHistory,
-            notes: inserted.notes || '',
+            notes: cleanNotes,
             lessonLearnt: inserted.lesson_learnt || '',
+            attachments: data.attachments || [],
             createdAt: nowIso,
             updatedAt: nowIso,
             projectName: projData?.name || '',
@@ -1479,6 +1532,7 @@ export async function updateActionItem(id: string, data: Partial<{
     completedAt: string | null;
     notes: string;
     lessonLearnt: string;
+    attachments: ActionItemAttachment[];
 }>) {
     const supabase = getSupabaseClient();
     try {
@@ -1501,8 +1555,20 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.status !== undefined) updatePayload.status = data.status;
         if (data.owner !== undefined) updatePayload.owner = data.owner;
         if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
-        if (data.notes !== undefined) updatePayload.notes = data.notes;
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
+
+        // 處理備註與附件備援同步
+        if (data.notes !== undefined) {
+            updatePayload.notes = data.attachments !== undefined
+                ? encodeAttachmentsIntoNotes(data.notes, data.attachments)
+                : data.notes;
+        } else if (data.attachments !== undefined) {
+            updatePayload.notes = encodeAttachmentsIntoNotes(existing.notes, data.attachments);
+        }
+
+        if (data.attachments !== undefined) {
+            updatePayload.attachments = JSON.stringify(data.attachments);
+        }
 
         // ─── 自動追蹤：due_date 變更歷程 ───
         if (data.dueDate !== undefined) {
@@ -1560,14 +1626,29 @@ export async function updateActionItem(id: string, data: Partial<{
             updatePayload.completed_at = null;
         }
 
-        const { data: updated, error } = await supabase
+        let updateRes = await supabase
             .from('project_action_items')
             .update(updatePayload)
             .eq('id', id)
             .select('*')
             .single();
 
-        if (error) throw error;
+        // 若資料庫尚未建立 attachments 欄位 (error 42703)，自動移除欄位後重試
+        if (updateRes.error && updateRes.error.code === '42703' && updatePayload.attachments) {
+            delete updatePayload.attachments;
+            updateRes = await supabase
+                .from('project_action_items')
+                .update(updatePayload)
+                .eq('id', id)
+                .select('*')
+                .single();
+        }
+
+        if (updateRes.error) throw updateRes.error;
+        const updated = updateRes.data;
+
+        const { attachments: extractedAtt, cleanNotes: extractedNotes } = extractAttachments(updated);
+
         revalidatePath('/internal-tasks');
         return { 
             success: true, 
@@ -1587,8 +1668,9 @@ export async function updateActionItem(id: string, data: Partial<{
                 completedAt: updated.completed_at ? String(updated.completed_at) : null,
                 dueDateHistory: Array.isArray(updated.due_date_history) ? updated.due_date_history : [],
                 statusHistory: Array.isArray(updated.status_history) ? updated.status_history : [],
-                notes: updated.notes || '',
+                notes: extractedNotes,
                 lessonLearnt: updated.lesson_learnt || '',
+                attachments: extractedAtt,
                 createdAt: formatISO(updated.created_at),
                 updatedAt: formatISO(updated.updated_at),
             } : undefined
