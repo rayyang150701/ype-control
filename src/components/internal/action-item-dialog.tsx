@@ -78,7 +78,7 @@ export function ActionItemDialog({
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
-  const [notes, setNotes] = useState(item?.notes || '');
+  const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
 
@@ -220,7 +220,7 @@ export function ActionItemDialog({
         setWaitingOn(item.waitingOn || '');
         setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
         setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
-        setNotes(item.notes || '');
+        setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
         setLessonLearnt(item.lessonLearnt || '');
         setAttachments(item.attachments || []);
       } else {
@@ -281,6 +281,8 @@ export function ActionItemDialog({
         targetProjectId = pocRes.data.id;
       }
 
+      const cleanNotes = (notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim();
+
       if (item?.id) {
         const res = await updateActionItem(item.id, {
           title,
@@ -290,7 +292,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
-          notes,
+          notes: cleanNotes,
           lessonLearnt,
           attachments,
         });
@@ -311,7 +313,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
-          notes,
+          notes: cleanNotes,
           lessonLearnt,
           attachments,
         });

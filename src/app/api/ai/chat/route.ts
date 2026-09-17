@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
         實際完成時間: item.completedAt ? item.completedAt.slice(0, 10) : '未完成',
         工期天數: workDays !== null ? `${workDays} 天` : '未記錄',
         逾期天數: delayDays > 0 ? `${delayDays} 天` : '未逾期',
-        歷程說明: item.notes || '無',
+        歷程說明: (item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim() || '無',
         經驗檢討: item.lessonLearnt || '無',
       };
     });

@@ -833,16 +833,20 @@ export function InternalTasksClient({
             </div>
 
             {/* 歷程說明 (需求1: 支援換行與上下滾動顯示) */}
-            {item.notes && (
-              <div className="text-xs text-slate-700 bg-slate-50/90 p-2.5 rounded-md border border-slate-200/80 leading-relaxed shadow-2xs">
-                <div className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
-                  <span>📝 歷程說明：</span>
+            {(() => {
+              const displayNotes = (item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim();
+              if (!displayNotes) return null;
+              return (
+                <div className="text-xs text-slate-700 bg-slate-50/90 p-2.5 rounded-md border border-slate-200/80 leading-relaxed shadow-2xs">
+                  <div className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
+                    <span>📝 歷程說明：</span>
+                  </div>
+                  <div className="whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1 text-slate-600 select-text">
+                    {displayNotes}
+                  </div>
                 </div>
-                <div className="whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1 text-slate-600 select-text">
-                  {item.notes}
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Lesson Learnt 經驗檢討 (需求1: 支援換行與上下滾動顯示) */}
             {item.lessonLearnt && (

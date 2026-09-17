@@ -1320,11 +1320,12 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
 // 附件解析與備援編碼輔助函式 (雙軌相容：優先真實 attachments 欄位，備援 notes 嵌入標記)
-const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/;
+const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/g;
 
 function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string } {
     let list: ActionItemAttachment[] = [];
-    let notes = item.notes || '';
+    // 徹底清除備註中可能殘留的 <!--ATTACHMENTS:...--> 隱藏標記字串，避免外露於使用者介面
+    let notes = (item.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
 
     if (item.attachments) {
         if (Array.isArray(item.attachments)) {
@@ -1334,12 +1335,11 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
         }
     }
 
-    if (list.length === 0 && notes) {
-        const match = notes.match(ATTACHMENTS_MARKER_REGEX);
+    if (list.length === 0 && item.notes) {
+        const match = item.notes.match(/<!--ATTACHMENTS:([\s\S]*?)-->/);
         if (match && match[1]) {
             try {
                 list = JSON.parse(match[1]);
-                notes = notes.replace(ATTACHMENTS_MARKER_REGEX, '').trim();
             } catch {}
         }
     }
@@ -1349,8 +1349,7 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
 
 function encodeAttachmentsIntoNotes(notes: string, attachments?: ActionItemAttachment[]): string {
     const baseNotes = (notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
-    if (!attachments || attachments.length === 0) return baseNotes;
-    return `${baseNotes}\n\n<!--ATTACHMENTS:${JSON.stringify(attachments)}-->`.trim();
+    return baseNotes;
 }
 
 export async function getActionItems(projectId?: string, preloadedProjects?: any[]): Promise<ProjectActionItem[]> {
@@ -1445,8 +1444,7 @@ export async function createActionItem(data: {
         const initialStatus = data.status || 'pending';
         const isStarting = initialStatus === 'in_progress' || initialStatus === 'blocked';
         const initialStatusHistory = [{ from: 'new', to: initialStatus, at: nowIso }];
-        const cleanNotes = data.notes || '';
-        const notesWithFallback = encodeAttachmentsIntoNotes(cleanNotes, data.attachments);
+        const cleanNotes = (data.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
 
         const insertPayload: any = {
             project_id: data.projectId,
@@ -1462,7 +1460,7 @@ export async function createActionItem(data: {
             completed_at: initialStatus === 'completed' ? (data.completedAt || nowIso) : null,
             due_date_history: JSON.stringify([]),
             status_history: JSON.stringify(initialStatusHistory),
-            notes: notesWithFallback,
+            notes: cleanNotes,
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
             updated_at: nowIso
@@ -1558,13 +1556,9 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
-        // 處理備註與附件備援同步
+        // 處理備註（徹底確保不會摻入 ATTACHMENTS 標記字串）
         if (data.notes !== undefined) {
-            updatePayload.notes = data.attachments !== undefined
-                ? encodeAttachmentsIntoNotes(data.notes, data.attachments)
-                : data.notes;
-        } else if (data.attachments !== undefined) {
-            updatePayload.notes = encodeAttachmentsIntoNotes(existing.notes, data.attachments);
+            updatePayload.notes = (data.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
         }
 
         if (data.attachments !== undefined) {
