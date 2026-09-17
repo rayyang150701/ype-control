@@ -26,13 +26,18 @@ import {
   Users,
   ChevronDown,
   ChevronUp,
-  Check
+  Check,
+  Edit2,
+  Trash2,
+  Plus,
+  Paperclip,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
-import { getLinkedInternalProjectDetails, updateActionItem } from '@/lib/actions';
+import { getLinkedInternalProjectDetails, updateActionItem, deleteActionItem, getUsers, getClients } from '@/lib/actions';
+import { ActionItemDialog } from '@/components/internal/action-item-dialog';
 import { useAdmin } from '@/components/admin-context';
 import { useToast } from '@/hooks/use-toast';
-import type { FullProject, ProjectActionItem } from '@/types';
+import type { FullProject, ProjectActionItem, User, Client } from '@/types';
 import Link from 'next/link';
 
 interface LinkedInternalProgressDialogProps {
@@ -50,15 +55,37 @@ export function LinkedInternalProgressDialog({
   const [project, setProject] = useState<FullProject | null>(null);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>([]);
   const [isCompletedExpanded, setIsCompletedExpanded] = useState(false);
-  const { isAdmin } = useAdmin();
+  const [users, setUsers] = useState<User[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [isActionDialogOpen, setIsActionDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ProjectActionItem | null>(null);
+  const { isAdmin, isEditor } = useAdmin();
+  const canEdit = isAdmin || isEditor;
   const { toast } = useToast();
+
+  const refreshData = async () => {
+    if (!internalProjectId) return;
+    try {
+      const res = await getLinkedInternalProjectDetails(internalProjectId);
+      if (res) {
+        setProject(res.project);
+        setActionItems(res.actionItems);
+      }
+    } catch (err) {
+      console.error('重新整理內部專案進度失敗:', err);
+    }
+  };
 
   useEffect(() => {
     if (open && internalProjectId) {
       setIsCompletedExpanded(false);
       setLoading(true);
-      getLinkedInternalProjectDetails(internalProjectId)
-        .then((res) => {
+      Promise.all([
+        getLinkedInternalProjectDetails(internalProjectId),
+        getUsers(),
+        getClients(),
+      ])
+        .then(([res, fetchedUsers, fetchedClients]) => {
           if (res) {
             setProject(res.project);
             setActionItems(res.actionItems);
@@ -66,6 +93,8 @@ export function LinkedInternalProgressDialog({
             setProject(null);
             setActionItems([]);
           }
+          if (fetchedUsers) setUsers(fetchedUsers);
+          if (fetchedClients) setClients(fetchedClients);
         })
         .catch((err) => {
           console.error('載入內部專案進度失敗:', err);
@@ -80,6 +109,59 @@ export function LinkedInternalProgressDialog({
       setActionItems([]);
     }
   }, [open, internalProjectId]);
+
+  const handleAddItem = () => {
+    if (!canEdit) return;
+    setEditingItem(null);
+    setIsActionDialogOpen(true);
+  };
+
+  const handleEditItem = (item: ProjectActionItem) => {
+    if (!canEdit) return;
+    setEditingItem(item);
+    setIsActionDialogOpen(true);
+  };
+
+  const handleDeleteItem = async (item: ProjectActionItem) => {
+    if (!canEdit) {
+      toast({
+        title: '權限不足',
+        description: '只有管理者或具備編輯權限的人員可刪除事項。',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!confirm(`確定要刪除待辦事項「${item.title}」嗎？\n關聯的雲端硬碟檔案也將一併移至垃圾桶。`)) {
+      return;
+    }
+
+    // 樂觀更新
+    setActionItems((prev) => prev.filter((i) => i.id !== item.id));
+
+    try {
+      const res = await deleteActionItem(item.id);
+      if (res.success) {
+        toast({ title: '已成功刪除待辦事項！' });
+        refreshData();
+      } else {
+        throw new Error((res as any).message || '刪除失敗');
+      }
+    } catch (err: any) {
+      toast({
+        title: '刪除失敗',
+        description: err.message,
+        variant: 'destructive',
+      });
+      refreshData();
+    }
+  };
+
+  const handleActionDialogSuccess = () => {
+    setIsActionDialogOpen(false);
+    setEditingItem(null);
+    refreshData();
+  };
 
   const handleQuickToggleComplete = async (item: ProjectActionItem) => {
     if (!isAdmin) {
@@ -324,10 +406,45 @@ export function LinkedInternalProgressDialog({
                 </div>
               </div>
             )}
+
+            {/* 雲端硬碟附件列表 */}
+            {item.attachments && item.attachments.length > 0 && (
+              <div className="text-xs bg-blue-50/50 p-2.5 rounded-md border border-blue-200/70 leading-relaxed mt-2 shadow-2xs">
+                <div className="font-semibold text-blue-950 mb-1.5 flex items-center gap-1.5">
+                  <Paperclip className="h-3.5 w-3.5 text-blue-600" />
+                  <span>雲端附件 ({item.attachments.length} 個檔案)：</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {item.attachments.map((att, idx) => {
+                    const fileId = att.id || att.fileId;
+                    const viewUrl = att.webViewLink || att.webContentLink || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '#');
+                    return (
+                      <a
+                        key={fileId || idx}
+                        href={viewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-blue-50/80 border border-blue-200 text-blue-700 hover:text-blue-900 text-xs shadow-2xs transition-colors group"
+                        title={`點擊於 Google Drive 開啟：${att.name}`}
+                      >
+                        <Paperclip className="h-3 w-3 text-blue-500 group-hover:text-blue-700 shrink-0" />
+                        <span className="max-w-[180px] sm:max-w-[240px] truncate font-medium">{att.name}</span>
+                        {att.size && att.size > 0 && (
+                          <span className="text-[10px] text-slate-400 font-normal shrink-0">
+                            ({att.size < 1024 ? `${att.size} B` : att.size < 1048576 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / 1048576).toFixed(1)} MB`})
+                          </span>
+                        )}
+                        <ExternalLink className="h-2.5 w-2.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* 右側：預計完成日跟催燈號 + 工期 */}
+        {/* 右側：預計完成日跟催燈號 + 工期 + 授權編輯/刪除 */}
         <div className="flex items-center gap-3 sm:flex-col sm:items-end self-end sm:self-center shrink-0">
           {/* 預計完成日與跟催燈號 */}
           {item.dueDate ? (
@@ -375,6 +492,30 @@ export function LinkedInternalProgressDialog({
                   ⏱ {isDone ? `工期 ${workDays} 天` : `已執行 ${workDays} 天`}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* 授權用戶編輯/刪除按鈕 */}
+          {canEdit && (
+            <div className="flex items-center gap-1 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleEditItem(item)}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                title="編輯待辦事項"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleDeleteItem(item)}
+                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                title="刪除待辦事項"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
           )}
         </div>
@@ -506,10 +647,23 @@ export function LinkedInternalProgressDialog({
                     <Layers className="h-4 w-4 text-slate-500" />
                     <span>內部階段與待辦事項 ({actionItems.length})</span>
                   </h4>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="font-medium text-slate-700">進行中: {activeItems.length}</span>
-                    <span>•</span>
-                    <span className="font-medium text-emerald-600">已結案: {completedItems.length}</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="font-medium text-slate-700">進行中: {activeItems.length}</span>
+                      <span>•</span>
+                      <span className="font-medium text-emerald-600">已結案: {completedItems.length}</span>
+                    </div>
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleAddItem}
+                        className="h-7 px-2.5 text-xs font-semibold border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shadow-2xs cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        新增事項
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -586,6 +740,23 @@ export function LinkedInternalProgressDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {project && isActionDialogOpen && (
+        <ActionItemDialog
+          open={isActionDialogOpen}
+          onOpenChange={(isOpen) => {
+            setIsActionDialogOpen(isOpen);
+            if (!isOpen) setEditingItem(null);
+          }}
+          item={editingItem}
+          defaultProjectId={project.id}
+          projects={[project]}
+          users={users}
+          clients={clients}
+          actionItems={actionItems}
+          onSuccess={handleActionDialogSuccess}
+        />
+      )}
     </Dialog>
   );
 }

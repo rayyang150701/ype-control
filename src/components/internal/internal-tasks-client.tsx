@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -71,6 +71,9 @@ export function InternalTasksClient({
   const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const highlightParam = searchParams.get('highlight') || searchParams.get('projectId');
+  const [highlightedProjectId, setHighlightedProjectId] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
@@ -93,6 +96,39 @@ export function InternalTasksClient({
       localStorage.setItem('internal_tasks_view_mode', mode);
     } catch {}
   };
+
+  // 外部超連結帶入專案 ID 快速定位與展開聚焦 (如自儀表板跳轉前往)
+  useEffect(() => {
+    if (!highlightParam) return;
+
+    // 1. 強制切換為專案分組檢視
+    handleSetViewMode('project');
+
+    // 2. 清除可能導致該目標專案被過濾隱藏的條件
+    setSelectedCategory('all');
+    setSelectedInternalStatus('all');
+    setSelectedSourceType('all');
+    setSelectedClient('all');
+    setSelectedPhase('all');
+    setSelectedStatus('all');
+    setSelectedWaitingOn('all');
+    setSearchQuery('');
+    setHideEmptyProjects(false);
+
+    // 3. 自動展開該目標專案
+    setCollapsedProjects((prev) => ({ ...prev, [highlightParam]: false }));
+    setHighlightedProjectId(highlightParam);
+
+    // 4. 平滑滾動定位至目標專案位置
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`project-${highlightParam}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [highlightParam]);
 
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
@@ -1572,17 +1608,21 @@ export function InternalTasksClient({
               <div
                 key={project.id}
                 id={`project-${project.id}`}
-                className={`rounded-lg border shadow-sm transition-all overflow-hidden ${
-                  isCompleted
-                    ? 'border-emerald-300 bg-emerald-50/50'
+                className={`rounded-lg border transition-all overflow-hidden ${
+                  highlightedProjectId === project.id
+                    ? 'ring-4 ring-indigo-500 ring-offset-2 border-indigo-500 shadow-xl'
+                    : isCompleted
+                    ? 'border-emerald-300 bg-emerald-50/50 shadow-sm'
                     : isTerminated
-                    ? 'border-rose-300 bg-rose-50/50'
-                    : 'border-slate-200 bg-white'
+                    ? 'border-rose-300 bg-rose-50/50 shadow-sm'
+                    : 'border-slate-200 bg-white shadow-sm'
                 }`}
               >
                 {/* 專案卡片標頭 */}
                 <div className={`flex flex-col lg:flex-row lg:items-center justify-between px-3.5 py-2.5 border-b gap-2.5 ${
-                  isCompleted
+                  highlightedProjectId === project.id
+                    ? 'bg-indigo-50/60 border-indigo-200'
+                    : isCompleted
                     ? 'bg-emerald-100/70 border-emerald-200/90'
                     : isTerminated
                     ? 'bg-rose-100/70 border-rose-200/90'
@@ -1636,6 +1676,13 @@ export function InternalTasksClient({
 
                       {/* 專案名稱 */}
                       <h2 className="text-sm sm:text-base font-bold text-slate-900 mr-1">{project.name}</h2>
+
+                      {/* 鎖定目標提示標籤 */}
+                      {highlightedProjectId === project.id && (
+                        <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] px-2 py-0.5 shadow-sm animate-pulse flex items-center gap-1 shrink-0">
+                          🎯 目標鎖定專案
+                        </Badge>
+                      )}
 
                       {/* 客戶名稱標籤 */}
                       <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-[11px] px-1.5 py-0.5 flex items-center gap-1 font-medium shadow-2xs shrink-0">
