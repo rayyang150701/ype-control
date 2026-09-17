@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
 import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment } from '@/types';
+import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 
 /**
@@ -1694,6 +1695,31 @@ export async function deleteActionItem(id: string) {
         if (!deletedRows || deletedRows.length === 0) {
             throw new Error('刪除失敗：資料庫權限不足未能真正刪除。請確認 Vercel 環境變數是否已加入 SUPABASE_SERVICE_ROLE_KEY！');
         }
+
+        // 同步自 Google 雲端硬碟將該待辦附帶的附件移至垃圾桶
+        try {
+            const item = deletedRows[0];
+            let atts: ActionItemAttachment[] = [];
+            if (item.attachments && Array.isArray(item.attachments)) {
+                atts = item.attachments;
+            } else if (item.notes && typeof item.notes === 'string' && item.notes.includes('<!--ATTACHMENTS:')) {
+                const match = item.notes.match(/<!--ATTACHMENTS:(.*?)-->/);
+                if (match && match[1]) {
+                    atts = JSON.parse(decodeURIComponent(match[1]));
+                }
+            }
+            if (atts && atts.length > 0) {
+                for (const att of atts) {
+                    const fid = att.id || att.fileId;
+                    if (fid) {
+                        deleteFileFromDrive(fid).catch((e) => console.warn('刪除待辦附帶雲端檔案失敗:', e));
+                    }
+                }
+            }
+        } catch (syncErr) {
+            console.warn('解析或刪除待辦附帶雲端檔案失敗:', syncErr);
+        }
+
         revalidatePath('/internal-tasks');
         return { success: true, message: '待辦事項已刪除！' };
     } catch (err: any) {

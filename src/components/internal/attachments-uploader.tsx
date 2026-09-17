@@ -20,7 +20,7 @@ import {
   AlertCircle,
   Paperclip,
 } from 'lucide-react';
-import { formatFileSize, getFileCategory, uploadFileToDrive } from '@/lib/drive-upload';
+import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive } from '@/lib/drive-upload';
 import type { ActionItemAttachment } from '@/types';
 
 interface AttachmentsUploaderProps {
@@ -104,9 +104,21 @@ export function AttachmentsUploader({
     }
   };
 
-  const handleRemoveAttachment = (id: string) => {
+  const handleRemoveAttachment = async (id: string, name?: string) => {
     if (disabled) return;
-    onChange(attachments.filter((a) => a.id !== id));
+    // 立即從畫面清單移除，提供無延遲流暢回饋
+    onChange(attachments.filter((a) => (a.id !== id && a.fileId !== id)));
+
+    // 同步自 Google 雲端硬碟移至垃圾桶
+    try {
+      await deleteFileFromDrive(id);
+      toast({
+        title: '已同步移除附件',
+        description: name ? `檔案「${name}」已自雲端硬碟移至垃圾桶。` : '檔案已自雲端硬碟移至垃圾桶。',
+      });
+    } catch (err) {
+      console.warn('雲端硬碟刪除同步失敗:', err);
+    }
   };
 
   const handleDismissTask = (tempId: string) => {
@@ -316,8 +328,8 @@ export function AttachmentsUploader({
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                    onClick={() => handleRemoveAttachment(att.id)}
-                    title="移除此附件"
+                    onClick={() => handleRemoveAttachment(att.id || att.fileId || '', att.name)}
+                    title="移除此附件並移至雲端硬碟垃圾桶"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

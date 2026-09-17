@@ -141,3 +141,30 @@ export async function uploadFileToDrive(
     uploadedAt: new Date().toISOString(),
   };
 }
+
+/**
+ * 透過 Google Apps Script 端點將 Google 雲端硬碟檔案移至垃圾桶 (雙向同步刪除)
+ */
+export async function deleteFileFromDrive(fileId: string): Promise<boolean> {
+  if (!fileId) return false;
+  try {
+    const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        fileId: fileId,
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!data.success;
+  } catch (err) {
+    console.error('刪除 Google 雲端檔案失敗:', err);
+    return false;
+  }
+}
+
