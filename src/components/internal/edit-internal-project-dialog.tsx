@@ -18,8 +18,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { updateInternalProject, deleteProject, getClients } from '@/lib/actions';
-import { Edit2, Calendar, Trash2, UserCheck, Users, Building2 } from 'lucide-react';
+import { updateInternalProject, deleteInternalProject, clearActionItemsForProject, getClients } from '@/lib/actions';
+import { Edit2, Calendar, Trash2, UserCheck, Users, Building2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { FullProject, User, Client, ProjectSourceType } from '@/types';
 
@@ -31,6 +31,7 @@ interface EditInternalProjectDialogProps {
   clients?: Client[];
   onSuccess: (updatedProject: any) => void;
   onDeleted?: (deletedProjectId: string) => void;
+  onActionItemsCleared?: (projectId: string) => void;
 }
 
 export function EditInternalProjectDialog({
@@ -41,6 +42,7 @@ export function EditInternalProjectDialog({
   clients: initialClients = [],
   onSuccess,
   onDeleted,
+  onActionItemsCleared,
 }: EditInternalProjectDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,6 +61,17 @@ export function EditInternalProjectDialog({
   const [clientContact, setClientContact] = useState('');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
+  const [showClearActionItemsConfirm, setShowClearActionItemsConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+
+  // 判斷此專案是否為燁輝列管正式專案（受外部管制總表保護）
+  const activeProj = project || (cachedProject ? { ...cachedProject, sourceType, caseNumber, clientName } : null);
+  const currentCaseNum = (caseNumber || activeProj?.caseNumber || '').trim();
+  const isPocCase = !currentCaseNum || currentCaseNum.toUpperCase() === 'POC';
+  const isOfficialYiehPhui =
+    sourceType === '燁輝列管專案' ||
+    activeProj?.sourceType === '燁輝列管專案' ||
+    (!isPocCase && (clientName === '燁輝' || activeProj?.clientName === '燁輝'));
 
   // 載入客戶名單
   useEffect(() => {
@@ -165,9 +178,9 @@ export function EditInternalProjectDialog({
     }
     setIsDeleting(true);
     try {
-      const res = await deleteProject(targetProject.id);
+      const res = await deleteInternalProject(targetProject.id);
       if (res.success) {
-        toast({ title: '刪除成功', description: `專案「${targetProject.name}」及所屬項目已全數刪除！` });
+        toast({ title: '刪除成功', description: res.message });
         setShowDeleteConfirm(false);
         onOpenChange(false);
         onDeleted?.(targetProject.id);
@@ -177,12 +190,32 @@ export function EditInternalProjectDialog({
           document.body.style.overflow = '';
         }, 50);
       } else {
-        toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
+        toast({ title: '刪除受阻', description: res.message, variant: 'destructive' });
       }
     } catch (err: any) {
       toast({ title: '刪除異常', description: err.message, variant: 'destructive' });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleClearActionItems = async () => {
+    const targetProject = project || cachedProject;
+    if (!targetProject) return;
+    setIsClearing(true);
+    try {
+      const res = await clearActionItemsForProject(targetProject.id);
+      if (res.success) {
+        toast({ title: '已清空內部待辦', description: res.message });
+        setShowClearActionItemsConfirm(false);
+        onActionItemsCleared?.(targetProject.id);
+      } else {
+        toast({ title: '清空失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: '清空異常', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -461,22 +494,47 @@ export function EditInternalProjectDialog({
             </div>
 
             <DialogFooter className="pt-3 flex flex-row items-center justify-between sm:justify-between w-full border-t">
-              {/* 刪除專案按鈕 */}
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => {
-                  if (project) {
-                    setCachedProject({ id: project.id, name: project.name });
-                  }
-                  setShowDeleteConfirm(true);
-                }}
-                className="gap-1 text-xs h-8"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                刪除此專案全部項目
-              </Button>
+              {/* 刪除專案按鈕區 */}
+              {isOfficialYiehPhui ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-xs text-blue-800 bg-blue-50/90 px-2.5 py-1.5 rounded-md border border-blue-200 shadow-2xs font-medium">
+                    <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span>🏢 燁輝列管正式專案（受管制總表保護，無法於內部頁面刪除主檔）</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (project) {
+                        setCachedProject({ id: project.id, name: project.name });
+                      }
+                      setShowClearActionItemsConfirm(true);
+                    }}
+                    className="gap-1 text-xs h-8 text-slate-600 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50"
+                    title="僅清空此專案在內部的待辦追蹤項目，絕不影響燁輝管制總表與週報"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    清空內部待辦
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (project) {
+                      setCachedProject({ id: project.id, name: project.name });
+                    }
+                    setShowDeleteConfirm(true);
+                  }}
+                  className="gap-1 text-xs h-8"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  刪除此內部專案 (POC)
+                </Button>
+              )}
 
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -491,7 +549,7 @@ export function EditInternalProjectDialog({
         </DialogContent>
       </Dialog>
 
-      {/* 刪除專案二次防呆確認對話框 */}
+      {/* 刪除純內部專案 (POC) 防呆確認對話框 */}
       <AlertDialog
         open={showDeleteConfirm}
         onOpenChange={(nextOpen) => {
@@ -503,17 +561,19 @@ export function EditInternalProjectDialog({
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
-              確認刪除專案「{project?.name || cachedProject?.name || ''}」？
+              確認刪除內部專案「{project?.name || cachedProject?.name || ''}」？
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2 text-xs">
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-medium leading-relaxed">
+                🛡️ <strong>系統安全保證</strong>：此專案為純內部 POC / 評估案，刪除僅會移除內部專案基本資料與其待辦記錄，<strong>【絕對不會】影響任何外部燁輝管制總表、子專案與週報紀錄</strong>！
+              </div>
               <p>
-                ⚠️ 警告：此操作將會<strong>直接刪除該專案的所有內容</strong>，包括：
+                此操作將會刪除以下內部內容：
               </p>
               <ul className="list-disc pl-5 space-y-1 text-slate-700">
-                <li>專案主檔與所有基本資訊</li>
-                <li>專案下所屬的<strong>所有內部待辦追蹤項目與歷程記錄</strong></li>
-                <li>專案下所屬的<strong>所有子專案與相關週報紀錄</strong></li>
-                <li>解除與其他專案的所有雙向關聯</li>
+                <li>內部專案主檔基本資訊</li>
+                <li>專案所屬的內部待辦追蹤項目與歷程記錄</li>
+                <li>解除與其他專案的雙向關聯（若有）</li>
               </ul>
               <p className="text-rose-600 font-semibold pt-1">
                 此動作刪除後將無法復原，請確認是否繼續執行？
@@ -535,7 +595,51 @@ export function EditInternalProjectDialog({
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? '正在刪除專案項目...' : '確認刪除此專案'}
+              {isDeleting ? '正在刪除內部專案...' : '確認刪除此內部專案'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 清空內部待辦防呆確認對話框 */}
+      <AlertDialog
+        open={showClearActionItemsConfirm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isClearing) return;
+          setShowClearActionItemsConfirm(nextOpen);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              確認清空專案「{project?.name || cachedProject?.name || ''}」的內部待辦事項？
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-xs">
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded text-blue-900 font-medium leading-relaxed">
+                🛡️ <strong>安全隔離保證</strong>：此操作僅會清空內部專案管理介面下的所有待辦追蹤記錄與附件，<strong>【絕對不會】刪除或影響【燁輝管制總表】上的專案主檔、子專案進度與任何對外週報紀錄</strong>！
+              </div>
+              <p className="text-slate-700 pt-1">
+                清空後該專案的內部待辦事項數將重設為 0，專案本身依然完整保留於管制總表與內部列表中。
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isClearing}
+              onClick={() => setShowClearActionItemsConfirm(false)}
+            >
+              取消返回
+            </Button>
+            <Button
+              type="button"
+              onClick={handleClearActionItems}
+              disabled={isClearing}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+            >
+              {isClearing ? '正在清空待辦事項...' : '確認清空內部待辦事項'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

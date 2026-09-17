@@ -671,6 +671,115 @@ export async function deleteProject(projectId: string) {
     }
 }
 
+/**
+ * 內部專案刪除（專供內部專案管制頁面 /internal-tasks 使用）
+ * 【核心安全防護】：
+ * 1. 嚴格檢查專案來源：若是「🏢 燁輝列管專案」或具備正式管制案號的專案，強制拒絕刪除主檔，防範誤刪對外週報與管制總表！
+ * 2. 僅允許刪除純內部 POC / 評估案 / 億威自建專案。
+ * 3. 刪除 POC 專案時，若其有被任何燁輝專案關聯，僅解除關聯 ID，絕對不刪除任何燁輝管制總表專案！
+ */
+export async function deleteInternalProject(projectId: string) {
+    const supabase = getSupabaseClient();
+    try {
+        // 1. 查詢該專案中繼資訊與來源
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', projectId)
+            .single();
+        if (fetchErr || !proj) throw fetchErr || new Error('找不到該專案');
+
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        const cNum = proj.case_number ? String(proj.case_number).trim() : '';
+        const isPoc = !cNum || cNum.toUpperCase() === 'POC';
+        const isOfficialYiehPhui = (meta.sourceType === '燁輝列管專案' || (!meta.sourceType && !isPoc && meta.isInternal !== true));
+
+        // 核心安全屏障：若是燁輝管制總表正式專案，一律強制拒絕刪除！
+        if (isOfficialYiehPhui) {
+            return {
+                success: false,
+                message: '【安全保護機制生效】此專案為「燁輝管制總表」正式列管專案，系統已全面禁止於內部待辦介面刪除專案主檔，以確保外部進度管制總表與週報不受任何影響！'
+            };
+        }
+
+        // 2. 刪除該內部專案所屬的內部待辦事項與雲端附件
+        const { data: actionItems } = await supabase
+            .from('project_action_items')
+            .select('id')
+            .eq('project_id', projectId);
+        if (actionItems && actionItems.length > 0) {
+            for (const ai of actionItems) {
+                await deleteActionItem(ai.id).catch(e => console.warn('刪除待辦事項失敗:', e));
+            }
+        }
+
+        // 3. 解除可能與其他專案存在的關聯（如其他專案關聯此 POC 專案，只解除關聯，絕對不刪除其他專案）
+        const { data: linkedProjs } = await supabase.from('projects').select('id, on_hold_notes');
+        if (linkedProjs) {
+            for (const p of linkedProjs) {
+                const pMeta = parseProjectMeta(p.on_hold_notes);
+                let changed = false;
+                if (pMeta.linkedInternalProjectId === projectId) {
+                    delete pMeta.linkedInternalProjectId;
+                    changed = true;
+                }
+                if (pMeta.linkedCustomerProjectId === projectId) {
+                    delete pMeta.linkedCustomerProjectId;
+                    changed = true;
+                }
+                if (changed) {
+                    await supabase.from('projects').update({
+                        on_hold_notes: serializeProjectMeta(pMeta)
+                    }).eq('id', p.id);
+                }
+            }
+        }
+
+        // 4. 刪除該內部專案主檔（僅刪除自身 POC 專案）
+        const { error: deleteErr } = await supabase
+            .from('projects')
+            .delete()
+            .eq('id', projectId);
+        if (deleteErr) throw deleteErr;
+
+        revalidatePath('/internal-tasks');
+        revalidatePath('/dashboard');
+        return { success: true, message: '內部專案及所屬待辦事項已成功刪除！（燁輝管制總表毫無影響）' };
+    } catch (err: any) {
+        console.error('刪除內部專案失敗:', err);
+        return { success: false, message: err?.message || '刪除內部專案失敗' };
+    }
+}
+
+/**
+ * 清空特定專案的所有內部待辦事項（專案主檔、子專案與週報 100% 完整保留）
+ */
+export async function clearActionItemsForProject(projectId: string) {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: actionItems, error } = await supabase
+            .from('project_action_items')
+            .select('id')
+            .eq('project_id', projectId);
+        if (error) throw error;
+        
+        if (actionItems && actionItems.length > 0) {
+            for (const ai of actionItems) {
+                await deleteActionItem(ai.id).catch(e => console.warn('刪除待辦事項失敗:', e));
+            }
+        }
+
+        revalidatePath('/internal-tasks');
+        return { 
+            success: true, 
+            message: `已成功清空該專案的 ${actionItems?.length || 0} 筆內部待辦事項！（燁輝管制總表與專案主檔 100% 完整保留）` 
+        };
+    } catch (err: any) {
+        console.error('清空內部待辦事項失敗:', err);
+        return { success: false, message: err?.message || '清空待辦事項失敗' };
+    }
+}
+
 // --- 專案管理 ---
 
 export async function createProject(data: any) {

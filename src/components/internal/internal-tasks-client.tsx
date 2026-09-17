@@ -598,7 +598,7 @@ export function InternalTasksClient({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('確定要刪除這筆待辦歷程嗎？此操作無法還原。')) return;
+    if (!confirm('確定要刪除這筆待辦歷程嗎？此操作無法還原，關聯雲端附件亦將同步移除。\n\n🛡️ 安全保證：此操作僅刪除該筆內部待辦事項，【絕對不會】影響任何燁輝管制總表專案與週報紀錄！')) return;
     try {
       const res = await deleteActionItem(id);
       if (res.success) {
@@ -2055,6 +2055,10 @@ export function InternalTasksClient({
             document.body.style.pointerEvents = '';
             document.body.style.overflow = '';
           }, 50);
+        }}
+        onActionItemsCleared={(clearedProjectId) => {
+          setActionItems((prev) => prev.filter((item) => item.projectId !== clearedProjectId));
+          router.refresh();
         }}
       />
 
