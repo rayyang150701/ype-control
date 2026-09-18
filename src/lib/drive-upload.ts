@@ -101,6 +101,12 @@ export type UploadProgressCallback = (
  * 透過 Google Apps Script 端點直傳 Google 雲端硬碟 (使用 5TB 空間，避開 Vercel 4.5MB 限制)
  * 支援真實位元組上傳進度、傳輸速率、剩餘時間預估與雲端處理心跳回饋
  */
+/**
+ * 透過 Google Apps Script 端點直傳 Google 雲端硬碟 (使用 5TB 空間)
+ * 策略：
+ * 1. 檔案 <= 4MB 時，優先透過內部代理 (/api/drive/upload) 轉發，免除跨域 (CORS)、企業防火牆與 Google 帳號衝突。
+ * 2. 檔案 > 4MB (避開 Vercel 4.5MB 限制) 或內部代理異常時，自動平滑切換至 GAS 直傳備援機制。
+ */
 export async function uploadFileToDrive(
   file: File,
   onProgress?: UploadProgressCallback
@@ -118,7 +124,7 @@ export async function uploadFileToDrive(
   });
 
   const base64 = await fileToBase64(file, (p) => {
-    const pct = Math.min(10, Math.max(2, Math.round(p * 0.1)));
+    const pct = Math.min(15, Math.max(2, Math.round(p * 0.15)));
     onProgress?.(pct, 'requesting_session', {
       percent: pct,
       status: 'requesting_session',
@@ -133,217 +139,169 @@ export async function uploadFileToDrive(
     base64: base64,
   });
 
-  // 2. 優先使用 XMLHttpRequest 以獲得精準真實的位元組上傳進度與速率
-  return new Promise<ActionItemAttachment>((resolve, reject) => {
-    let timer: NodeJS.Timeout | null = null;
-    let fallbackAttempted = false;
+  // 輔助函式：透過直接 GAS 端點直傳 (備援或 > 4MB 大檔案)
+  const executeDirectGASUpload = async (): Promise<ActionItemAttachment> => {
+    let simulatedPct = 30;
+    onProgress?.(simulatedPct, 'uploading', {
+      percent: simulatedPct,
+      status: 'uploading',
+      stageMessage: `正在直傳雲端硬碟 (${formatFileSize(file.size)})...`,
+    });
 
-    const executeFallbackFetch = async () => {
-      if (fallbackAttempted) return;
-      fallbackAttempted = true;
-      if (timer) clearInterval(timer);
-
-      try {
-        let simulatedPct = 35;
+    const simInterval = setInterval(() => {
+      if (simulatedPct < 88) {
+        simulatedPct += 2;
         onProgress?.(simulatedPct, 'uploading', {
           percent: simulatedPct,
           status: 'uploading',
-          stageMessage: `正在直傳雲端硬碟 (${formatFileSize(file.size)})...`,
-        });
-
-        const simInterval = setInterval(() => {
-          if (simulatedPct < 88) {
-            simulatedPct += 2;
-            onProgress?.(simulatedPct, 'uploading', {
-              percent: simulatedPct,
-              status: 'uploading',
-              stageMessage: `正在直傳雲端硬碟 (${simulatedPct}%)...`,
-            });
-          }
-        }, 800);
-
-        const res = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: payloadStr,
-        });
-
-        clearInterval(simInterval);
-
-        onProgress?.(92, 'publishing', {
-          percent: 92,
-          status: 'publishing',
-          stageMessage: '檔案已送達雲端，Google Drive 正處理儲存與設定分享權限...',
-        });
-
-        if (!res.ok) {
-          throw new Error(`Google 雲端硬碟連線失敗 (HTTP ${res.status})`);
-        }
-
-        const data = await res.json();
-        if (!data.success || !data.file) {
-          throw new Error(data.error || 'Google 雲端硬碟建立檔案失敗');
-        }
-
-        onProgress?.(100, 'done', {
-          percent: 100,
-          status: 'done',
-          stageMessage: '已完成上傳與權限發布！',
-        });
-
-        const f = data.file;
-        resolve({
-          id: f.id,
-          fileId: f.id,
-          name: f.name || file.name,
-          size: f.size || file.size,
-          mimeType: f.mimeType || file.type || 'application/octet-stream',
-          webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
-          webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
-          uploadedAt: new Date().toISOString(),
-        });
-      } catch (err: any) {
-        reject(err);
-      }
-    };
-
-    // 檢查瀏覽器是否支援 XMLHttpRequest
-    if (typeof XMLHttpRequest === 'undefined') {
-      executeFallbackFetch();
-      return;
-    }
-
-    const xhr = new XMLHttpRequest();
-    const startTime = Date.now();
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && e.total > 0) {
-        const ratio = e.loaded / e.total;
-        // 映射網路傳輸進度至 10% ~ 90%
-        const percent = Math.min(90, Math.max(10, Math.round(10 + ratio * 80)));
-        const elapsedSec = (Date.now() - startTime) / 1000;
-        const speedBytes = elapsedSec > 0 ? e.loaded / elapsedSec : 0;
-        const remainingBytes = Math.max(0, e.total - e.loaded);
-        const etaSec = speedBytes > 0 ? Math.round(remainingBytes / speedBytes) : 0;
-
-        const speedText = speedBytes > 1024 * 1024
-          ? `${(speedBytes / (1024 * 1024)).toFixed(1)} MB/s`
-          : `${Math.round(speedBytes / 1024)} KB/s`;
-        const etaText = etaSec > 0 ? `剩餘約 ${etaSec} 秒` : '';
-        const loadedFormatted = formatFileSize(Math.round(ratio * file.size));
-        const totalFormatted = formatFileSize(file.size);
-
-        onProgress?.(percent, 'uploading', {
-          percent,
-          status: 'uploading',
-          loadedBytes: Math.round(ratio * file.size),
-          totalBytes: file.size,
-          speedText,
-          etaText,
-          stageMessage: `正在直傳雲端硬碟 (${loadedFormatted} / ${totalFormatted}) · ${speedText}${etaText ? ' · ' + etaText : ''}`,
+          stageMessage: `正在直傳雲端硬碟 (${simulatedPct}%)...`,
         });
       }
-    };
-
-    xhr.upload.onloadend = () => {
-      // 網路傳輸完畢，進入 Google Drive 雲端儲存與分享權限設定階段
-      let publishPct = 91;
-      onProgress?.(publishPct, 'publishing', {
-        percent: publishPct,
-        status: 'publishing',
-        stageMessage: '檔案已全數送達！Google Drive 正在儲存檔案並設定檢視權限 (約需 5~10 秒)...',
-      });
-
-      // 雲端處理心跳，避免 90%~98% 畫面停滯
-      timer = setInterval(() => {
-        if (publishPct < 98) {
-          publishPct += 1;
-          onProgress?.(publishPct, 'publishing', {
-            percent: publishPct,
-            status: 'publishing',
-            stageMessage: 'Google Drive 正完成雲端硬碟寫入與連結發布中，請稍候...',
-          });
-        }
-      }, 2000);
-    };
-
-    xhr.onload = () => {
-      if (timer) clearInterval(timer);
-
-      if (xhr.status >= 200 && xhr.status < 400) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (data.success && data.file) {
-            onProgress?.(100, 'done', {
-              percent: 100,
-              status: 'done',
-              stageMessage: '已完成上傳與權限發布！',
-            });
-
-            const f = data.file;
-            resolve({
-              id: f.id,
-              fileId: f.id,
-              name: f.name || file.name,
-              size: f.size || file.size,
-              mimeType: f.mimeType || file.type || 'application/octet-stream',
-              webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
-              webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
-              uploadedAt: new Date().toISOString(),
-            });
-            return;
-          }
-          reject(new Error(data.error || 'Google 雲端硬碟建立檔案失敗'));
-        } catch {
-          // 若 XHR 收到重導向但回應解析異常，回退至 fetch
-          console.warn('XHR 回應解析失敗，嘗試 Fetch 回退機制...');
-          executeFallbackFetch();
-        }
-      } else {
-        console.warn(`XHR HTTP ${xhr.status}，嘗試 Fetch 回退機制...`);
-        executeFallbackFetch();
-      }
-    };
-
-    xhr.onerror = () => {
-      if (timer) clearInterval(timer);
-      console.warn('XHR 跨域或連線中斷，切換為 Fetch 模式...');
-      executeFallbackFetch();
-    };
-
-    xhr.ontimeout = () => {
-      if (timer) clearInterval(timer);
-      reject(new Error('Google 雲端硬碟直傳請求逾時，請檢查網路連線'));
-    };
+    }, 800);
 
     try {
-      xhr.open('POST', gasUrl, true);
-      xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-      xhr.timeout = 180000; // 3 分鐘超時保護 (支援超大檔案)
-      xhr.send(payloadStr);
-    } catch {
-      if (timer) clearInterval(timer);
-      executeFallbackFetch();
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payloadStr,
+        redirect: 'follow',
+      });
+
+      clearInterval(simInterval);
+
+      onProgress?.(92, 'publishing', {
+        percent: 92,
+        status: 'publishing',
+        stageMessage: '檔案已送達雲端，Google Drive 正處理儲存與設定分享權限...',
+      });
+
+      if (!res.ok) {
+        throw new Error(`Google 雲端硬碟連線失敗 (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.file) {
+        throw new Error(data.error || 'Google 雲端硬碟建立檔案失敗');
+      }
+
+      onProgress?.(100, 'done', {
+        percent: 100,
+        status: 'done',
+        stageMessage: '已完成上傳與權限發布！',
+      });
+
+      const f = data.file;
+      return {
+        id: f.id,
+        fileId: f.id,
+        name: f.name || file.name,
+        size: f.size || file.size,
+        mimeType: f.mimeType || file.type || 'application/octet-stream',
+        webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+        webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
+        uploadedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      clearInterval(simInterval);
+      throw err;
     }
-  });
+  };
+
+  // 2. 若檔案 <= 4MB，優先走同源內部代理 API (/api/drive/upload)
+  // 這可以 100% 避開企業內網防火牆攔截 script.google.com、跨域 302 CORS 與 Google 帳號 Cookie 衝突
+  const PROXY_SIZE_LIMIT = 4 * 1024 * 1024; // 4MB
+  if (file.size <= PROXY_SIZE_LIMIT) {
+    let proxyPct = 20;
+    onProgress?.(proxyPct, 'uploading', {
+      percent: proxyPct,
+      status: 'uploading',
+      stageMessage: `正在安全傳輸至 Google Drive (${formatFileSize(file.size)})...`,
+    });
+
+    const proxyInterval = setInterval(() => {
+      if (proxyPct < 88) {
+        proxyPct += 3;
+        onProgress?.(proxyPct, 'uploading', {
+          percent: proxyPct,
+          status: 'uploading',
+          stageMessage: `正在安全傳輸至 Google Drive (${proxyPct}%)...`,
+        });
+      }
+    }, 400);
+
+    try {
+      const res = await fetch('/api/drive/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payloadStr,
+      });
+
+      clearInterval(proxyInterval);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.file) {
+          onProgress?.(100, 'done', {
+            percent: 100,
+            status: 'done',
+            stageMessage: '已完成上傳與權限發布！',
+          });
+
+          const f = data.file;
+          return {
+            id: f.id,
+            fileId: f.id,
+            name: f.name || file.name,
+            size: f.size || file.size,
+            mimeType: f.mimeType || file.type || 'application/octet-stream',
+            webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+            webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
+            uploadedAt: new Date().toISOString(),
+          };
+        }
+      }
+
+      console.warn('內部代理上傳回應異常，切換至直接端點備援...');
+    } catch (proxyErr) {
+      clearInterval(proxyInterval);
+      console.warn('內部代理端點連線異常，切換至直接端點備援:', proxyErr);
+    }
+  }
+
+  // 3. 超過 4MB 或內部代理回退：執行直接 GAS 直傳
+  return await executeDirectGASUpload();
 }
 
 /**
  * 透過 Google Apps Script 端點將 Google 雲端硬碟檔案移至垃圾桶 (雙向同步刪除)
+ * 優先走內部代理 /api/drive/upload，若失敗則回退至直接端點
  */
 export async function deleteFileFromDrive(fileId: string): Promise<boolean> {
   if (!fileId) return false;
+
+  // 1. 優先透過內部代理
+  try {
+    const res = await fetch('/api/drive/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', fileId }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) return true;
+    }
+  } catch {
+    // 內部代理失敗時靜默回退
+  }
+
+  // 2. 備援：直接呼叫 GAS
   try {
     const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
     const res = await fetch(gasUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({
-        action: 'delete',
-        fileId: fileId,
-      }),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', fileId }),
+      redirect: 'follow',
     });
     if (!res.ok) return false;
     const data = await res.json();
@@ -353,4 +311,5 @@ export async function deleteFileFromDrive(fileId: string): Promise<boolean> {
     return false;
   }
 }
+
 

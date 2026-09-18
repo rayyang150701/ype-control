@@ -21,6 +21,7 @@ import {
   Paperclip,
   Copy,
   Check,
+  RotateCw,
 } from 'lucide-react';
 import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive } from '@/lib/drive-upload';
 import { copyToClipboard } from '@/lib/utils';
@@ -160,7 +161,13 @@ export function AttachmentsUploader({
       });
     } catch (err: any) {
       console.error('上傳失敗:', err);
-      const msg = err?.message || '上傳失敗，請確認網路或雲端硬碟設定';
+      const rawMsg = err?.message || '';
+      let msg = rawMsg;
+      if (rawMsg.includes('Failed to fetch') || rawMsg.includes('NetworkError') || rawMsg.includes('404')) {
+        msg = '雲端硬碟連線異常或遭網路阻擋，請點擊「重新嘗試」或手動上傳。';
+      } else if (!msg) {
+        msg = '上傳失敗，請確認網路或雲端硬碟設定';
+      }
       setTasks((prev) =>
         prev.map((t) => (t.tempId === task.tempId ? { ...t, status: 'error', errorMsg: msg } : t))
       );
@@ -170,6 +177,27 @@ export function AttachmentsUploader({
         variant: 'destructive',
       });
     }
+  };
+
+  const handleRetryTask = (task: UploadTask) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.tempId === task.tempId
+          ? {
+              ...t,
+              percent: 0,
+              status: 'requesting_session',
+              errorMsg: undefined,
+              stageMessage: '準備重新嘗試上傳...',
+            }
+          : t
+      )
+    );
+    uploadSingleFile(task);
+  };
+
+  const handleClearAllErrors = () => {
+    setTasks((prev) => prev.filter((t) => t.status !== 'error'));
   };
 
   const handleRemoveAttachment = async (id: string, name?: string) => {
@@ -277,13 +305,33 @@ export function AttachmentsUploader({
         </div>
       </div>
 
-      {/* 正在上傳中的任務清單 */}
+      {/* 正在上傳中或失敗的任務清單 */}
       {tasks.length > 0 && (
         <div className="space-y-1.5 pt-1">
+          {tasks.some((t) => t.status === 'error') && (
+            <div className="flex items-center justify-between bg-rose-50/90 border border-rose-200 rounded-md px-2.5 py-1.5 text-[11.5px] text-rose-800 shadow-2xs">
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                <span>有 {tasks.filter((t) => t.status === 'error').length} 個檔案上傳未成功</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleClearAllErrors}
+                className="text-xs text-rose-700 hover:text-rose-900 font-semibold underline underline-offset-2 cursor-pointer transition-colors"
+              >
+                清除所有錯誤資訊
+              </button>
+            </div>
+          )}
+
           {tasks.map((task) => (
             <div
               key={task.tempId}
-              className="border border-slate-200 rounded-md p-2.5 bg-white text-xs space-y-1.5 shadow-2xs"
+              className={`border rounded-md p-2.5 text-xs space-y-1.5 shadow-2xs transition-colors ${
+                task.status === 'error'
+                  ? 'border-rose-300 bg-rose-50/30'
+                  : 'border-slate-200 bg-white'
+              }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
@@ -310,15 +358,16 @@ export function AttachmentsUploader({
                     {task.status === 'uploading' && `${task.percent}%`}
                     {task.status === 'publishing' && `${task.percent}% (雲端儲存中)`}
                     {task.status === 'done' && '完成'}
-                    {task.status === 'error' && '失敗'}
+                    {task.status === 'error' && <span className="text-rose-600">上傳失敗</span>}
                   </span>
                   {task.status === 'error' && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-5 w-5 text-slate-400 hover:text-slate-600"
+                      className="h-5 w-5 text-slate-400 hover:text-rose-600"
                       onClick={() => handleDismissTask(task.tempId)}
+                      title="移除此錯誤項目"
                     >
                       ×
                     </Button>
@@ -354,9 +403,32 @@ export function AttachmentsUploader({
               )}
 
               {task.errorMsg && (
-                <p className="text-[11px] text-rose-600 leading-tight bg-rose-50 p-1.5 rounded">
-                  {task.errorMsg}
-                </p>
+                <div className="bg-rose-50 border border-rose-200/80 rounded p-2 text-[11px] text-rose-700 space-y-1.5">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <span className="leading-normal">{task.errorMsg}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-200/60">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px] bg-white border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-800 shadow-2xs cursor-pointer"
+                      onClick={() => handleDismissTask(task.tempId)}
+                    >
+                      ✕ 移除此項
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px] bg-white border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-800 gap-1 shadow-2xs cursor-pointer"
+                      onClick={() => handleRetryTask(task)}
+                    >
+                      <RotateCw className="h-3 w-3" />
+                      重新嘗試
+                    </Button>
+                  </div>
+                </div>
               )}
             </div>
           ))}
