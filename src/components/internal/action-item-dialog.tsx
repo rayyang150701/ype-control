@@ -48,6 +48,7 @@ export function ActionItemDialog({
 }: ActionItemDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [clientList, setClientList] = useState<Client[]>(initialClients);
 
   // 若父層沒傳或需要更新 clients，主動載入客戶清單
@@ -81,6 +82,29 @@ export function ActionItemDialog({
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
+
+  // 當附件完成上傳時，若為既有待辦，自動同步至資料庫以保證 100% 不漏失
+  const handleAttachmentUploaded = async (
+    newAttachment: ActionItemAttachment,
+    updatedList: ActionItemAttachment[]
+  ) => {
+    if (item?.id) {
+      try {
+        const res = await updateActionItem(item.id, {
+          attachments: updatedList,
+        });
+        if (res.success && res.data) {
+          onSuccess(res.data as any);
+          toast({
+            title: '附件已自動儲存至待辦事項',
+            description: `檔案「${newAttachment.name}」已同步存入 Google Drive 與待辦事項記錄中。`,
+          });
+        }
+      } catch (e) {
+        console.warn('附件背景自動儲存失敗，待手動點擊確認更新:', e);
+      }
+    }
+  };
 
   // 組合客戶選項清單 (保證同時相容資料庫真實名稱與億威/燁輝別名)
   const effectiveClientOptions: Client[] = useMemo(() => {
@@ -246,6 +270,14 @@ export function ActionItemDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUploadingAttachments) {
+      toast({
+        title: '檔案仍在直傳雲端硬碟中',
+        description: '請等待附件上傳完成後再行儲存，避免附件漏存。',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!title.trim()) {
       toast({ title: '請輸入事項標題', variant: 'destructive' });
       return;
@@ -585,6 +617,8 @@ export function ActionItemDialog({
             attachments={attachments}
             onChange={setAttachments}
             disabled={isSubmitting}
+            onUploadingChange={setIsUploadingAttachments}
+            onAttachmentUploaded={handleAttachmentUploaded}
           />
 
           {/* 經驗檢討 (Lesson Learnt) */}
@@ -603,12 +637,36 @@ export function ActionItemDialog({
             />
           </div>
 
+          {isUploadingAttachments && (
+            <div className="text-xs text-blue-700 bg-blue-50/90 border border-blue-200 p-2.5 rounded-md flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping shrink-0" />
+              <span>
+                檔案正在直傳 Google 雲端硬碟中，完成後將自動加入附件清單，請稍候片刻再儲存...
+              </span>
+            </div>
+          )}
+
           <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               取消
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? '儲存中...' : item ? '確認更新' : '建立待辦'}
+            <Button
+              type="submit"
+              disabled={isSubmitting || isUploadingAttachments}
+              className={isUploadingAttachments ? 'opacity-80 cursor-not-allowed' : ''}
+            >
+              {isSubmitting
+                ? '儲存中...'
+                : isUploadingAttachments
+                ? '檔案直傳中，請稍候...'
+                : item
+                ? '確認更新'
+                : '建立待辦'}
             </Button>
           </DialogFooter>
         </form>

@@ -27,6 +27,8 @@ interface AttachmentsUploaderProps {
   attachments: ActionItemAttachment[];
   onChange: (newAttachments: ActionItemAttachment[]) => void;
   disabled?: boolean;
+  onUploadingChange?: (isUploading: boolean) => void;
+  onAttachmentUploaded?: (newAttachment: ActionItemAttachment, updatedList: ActionItemAttachment[]) => void;
 }
 
 interface UploadTask {
@@ -34,6 +36,8 @@ interface UploadTask {
   file: File;
   percent: number;
   status: 'requesting_session' | 'uploading' | 'publishing' | 'done' | 'error';
+  speedText?: string;
+  stageMessage?: string;
   errorMsg?: string;
 }
 
@@ -41,11 +45,25 @@ export function AttachmentsUploader({
   attachments,
   onChange,
   disabled = false,
+  onUploadingChange,
+  onAttachmentUploaded,
 }: AttachmentsUploaderProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // 維護最新 attachments 參照，防止長時間非同步上傳後的 stale closure 造成覆蓋遺失
+  const attachmentsRef = useRef(attachments);
+  React.useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  // 回報上傳狀態給父元件 (控制送出按鈕與提示防呆)
+  const isUploadingAny = tasks.some((t) => t.status !== 'done' && t.status !== 'error');
+  React.useEffect(() => {
+    onUploadingChange?.(isUploadingAny);
+  }, [isUploadingAny, onUploadingChange]);
 
   const handleFiles = async (files: FileList | File[]) => {
     if (disabled || files.length === 0) return;
@@ -56,6 +74,7 @@ export function AttachmentsUploader({
       file: f,
       percent: 0,
       status: 'requesting_session',
+      stageMessage: '準備上傳中...',
     }));
 
     setTasks((prev) => [...prev, ...newTasks]);
@@ -68,23 +87,44 @@ export function AttachmentsUploader({
 
   const uploadSingleFile = async (task: UploadTask) => {
     try {
-      const attachment = await uploadFileToDrive(task.file, (percent, status) => {
+      const attachment = await uploadFileToDrive(task.file, (percent, status, info) => {
         setTasks((prev) =>
-          prev.map((t) => (t.tempId === task.tempId ? { ...t, percent, status } : t))
+          prev.map((t) =>
+            t.tempId === task.tempId
+              ? {
+                  ...t,
+                  percent,
+                  status,
+                  speedText: info?.speedText,
+                  stageMessage: info?.stageMessage,
+                }
+              : t
+          )
         );
       });
 
-      // 成功完成，將附件物件加到 attachments 清單
-      onChange([...attachments, attachment]);
+      // 成功完成：使用最新 ref 疊加新附件，排除重複
+      const currentList = attachmentsRef.current || [];
+      const updatedList = [
+        ...currentList.filter((a) => a.id !== attachment.id && a.fileId !== attachment.id),
+        attachment,
+      ];
+
+      onChange(updatedList);
+      onAttachmentUploaded?.(attachment, updatedList);
 
       // 更新 task 狀態為完成，稍後自動淡出移除
       setTasks((prev) =>
-        prev.map((t) => (t.tempId === task.tempId ? { ...t, percent: 100, status: 'done' } : t))
+        prev.map((t) =>
+          t.tempId === task.tempId
+            ? { ...t, percent: 100, status: 'done', stageMessage: '上傳完成！已加入待辦附件' }
+            : t
+        )
       );
 
       setTimeout(() => {
         setTasks((prev) => prev.filter((t) => t.tempId !== task.tempId));
-      }, 2000);
+      }, 2500);
 
       toast({
         title: '附件已上傳至雲端硬碟',
@@ -142,8 +182,6 @@ export function AttachmentsUploader({
         return <File className="h-4 w-4 text-slate-500 shrink-0" />;
     }
   };
-
-  const isUploadingAny = tasks.some((t) => t.status !== 'done' && t.status !== 'error');
 
   return (
     <div className="space-y-2">
@@ -217,10 +255,10 @@ export function AttachmentsUploader({
           {tasks.map((task) => (
             <div
               key={task.tempId}
-              className="border border-slate-200 rounded-md p-2 bg-white text-xs space-y-1.5 shadow-2xs"
+              className="border border-slate-200 rounded-md p-2.5 bg-white text-xs space-y-1.5 shadow-2xs"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 truncate">
+                <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
                   {task.status === 'error' ? (
                     <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
                   ) : task.status === 'done' ? (
@@ -228,16 +266,21 @@ export function AttachmentsUploader({
                   ) : (
                     <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
                   )}
-                  <span className="truncate font-medium text-slate-800">{task.file.name}</span>
-                  <span className="text-[10px] text-slate-400 shrink-0">
+                  <span className="truncate font-medium text-slate-800" title={task.file.name}>{task.file.name}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0 font-mono">
                     ({formatFileSize(task.file.size)})
                   </span>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <span className="text-[11px] font-mono text-slate-500">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {task.speedText && task.status === 'uploading' && (
+                    <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono font-medium">
+                      {task.speedText}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-mono font-semibold text-slate-600">
                     {task.status === 'requesting_session' && '準備中...'}
                     {task.status === 'uploading' && `${task.percent}%`}
-                    {task.status === 'publishing' && '設定權限中...'}
+                    {task.status === 'publishing' && `${task.percent}% (雲端儲存中)`}
                     {task.status === 'done' && '完成'}
                     {task.status === 'error' && '失敗'}
                   </span>
@@ -258,9 +301,28 @@ export function AttachmentsUploader({
               {task.status !== 'error' && (
                 <Progress
                   value={task.percent}
-                  className="h-1.5 bg-slate-100"
-                  indicatorClassName={task.status === 'done' ? 'bg-emerald-500' : 'bg-blue-600'}
+                  className="h-2 bg-slate-100 rounded-full overflow-hidden"
+                  indicatorClassName={
+                    task.status === 'done'
+                      ? 'bg-emerald-500'
+                      : task.status === 'publishing'
+                      ? 'bg-indigo-500 animate-pulse'
+                      : 'bg-blue-600 transition-all duration-300'
+                  }
                 />
+              )}
+
+              {task.stageMessage && task.status !== 'done' && task.status !== 'error' && (
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-0.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0" />
+                  <span className="truncate">{task.stageMessage}</span>
+                </div>
+              )}
+
+              {task.status === 'publishing' && task.file.size > 10 * 1024 * 1024 && (
+                <div className="text-[10.5px] text-amber-800 bg-amber-50/80 p-1.5 rounded border border-amber-200/60 leading-normal">
+                  💡 20MB 以上大檔案，Google Drive 正在進行雲端轉碼與分享權限設定（約需 5~10 秒），完成後將自動加入列表。
+                </div>
               )}
 
               {task.errorMsg && (
