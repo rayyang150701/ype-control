@@ -24,8 +24,11 @@ import {
   RotateCcw,
   Layers,
   Paperclip,
+  Copy,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
+import { copyToClipboard } from '@/lib/utils';
 import type { FullProject, ProjectActionItem, User, Client } from '@/types';
 
 interface TaskCentricViewProps {
@@ -72,6 +75,32 @@ export function TaskCentricView({
   const [localActiveTab, setLocalActiveTab] = useState<'all' | 'blocked' | 'overdue' | 'active' | 'completed'>('all');
   const activeTab = propActiveTab !== undefined ? propActiveTab : localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
+  const { toast } = useToast();
+  const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
+
+  const handleCopyAttachmentLink = async (url: string, fileName: string, fileId?: string) => {
+    if (!url || url === '#') {
+      toast({ title: '無法複製', description: '無效的檔案雲端連結', variant: 'destructive' });
+      return;
+    }
+    const success = await copyToClipboard(url);
+    if (success) {
+      if (fileId) setCopiedFileId(fileId);
+      setTimeout(() => {
+        setCopiedFileId((prev) => (prev === fileId ? null : prev));
+      }, 2000);
+      toast({
+        title: '已複製雲端分享連結',
+        description: `檔案「${fileName}」的 Google Drive 雲端連結已複製到剪貼簿，可直接發送給他人下載/檢視！`,
+      });
+    } else {
+      toast({
+        title: '複製失敗',
+        description: '無法存取剪貼簿，請手動複製連結網址',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // 細部篩選條件
   const [searchQuery, setSearchQuery] = useState('');
@@ -557,21 +586,53 @@ export function TaskCentricView({
                         {item.attachments && item.attachments.length > 0 && (
                           <div className="mt-1.5 flex flex-wrap gap-1.5">
                             {item.attachments.map((att, idx) => {
-                              const fileId = att.id || att.fileId;
+                              const fileId = att.id || att.fileId || `att-${idx}`;
                               const viewUrl = att.webViewLink || att.webContentLink || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '#');
+                              const isCopied = copiedFileId === fileId;
                               return (
-                                <a
-                                  key={fileId || idx}
-                                  href={viewUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 hover:text-blue-900 text-[11px] shadow-2xs transition-colors group"
-                                  title={`在 Google Drive 開啟：${att.name}`}
+                                <div
+                                  key={fileId}
+                                  className="inline-flex items-center rounded border border-blue-200 bg-white text-[11px] shadow-2xs overflow-hidden group hover:border-blue-400 transition-colors"
                                 >
-                                  <Paperclip className="h-2.5 w-2.5 text-blue-500 group-hover:text-blue-700 shrink-0" />
-                                  <span className="max-w-[140px] truncate">{att.name}</span>
-                                  <ExternalLink className="h-2 w-2 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                                </a>
+                                  <a
+                                    href={viewUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-blue-700 hover:text-blue-900 hover:bg-blue-50/70 transition-colors"
+                                    title={`在 Google Drive 開啟：${att.name}`}
+                                  >
+                                    <Paperclip className="h-2.5 w-2.5 text-blue-500 shrink-0" />
+                                    <span className="max-w-[140px] truncate">{att.name}</span>
+                                    <ExternalLink className="h-2 w-2 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                                  </a>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleCopyAttachmentLink(viewUrl, att.name, fileId);
+                                    }}
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 border-l border-blue-100 text-[10px] font-medium transition-colors ${
+                                      isCopied
+                                        ? 'bg-emerald-50 text-emerald-700'
+                                        : 'text-slate-600 hover:text-blue-700 hover:bg-blue-50/80 bg-slate-50/50'
+                                    }`}
+                                    title="複製 Google 雲端硬碟分享連結，任何人無須權限皆可直接下載或檢視"
+                                  >
+                                    {isCopied ? (
+                                      <>
+                                        <Check className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                                        <span>已複製</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="h-2.5 w-2.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                                        <span>複製</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
                               );
                             })}
                           </div>

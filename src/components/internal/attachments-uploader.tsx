@@ -19,8 +19,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Paperclip,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive } from '@/lib/drive-upload';
+import { copyToClipboard } from '@/lib/utils';
 import type { ActionItemAttachment } from '@/types';
 
 interface AttachmentsUploaderProps {
@@ -52,6 +55,31 @@ export function AttachmentsUploader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [tasks, setTasks] = useState<UploadTask[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyLink = async (url?: string, name?: string, fileId?: string) => {
+    if (!url || url === '#') {
+      toast({ title: '無法複製', description: '無效的檔案雲端連結', variant: 'destructive' });
+      return;
+    }
+    const success = await copyToClipboard(url);
+    if (success) {
+      if (fileId) setCopiedId(fileId);
+      setTimeout(() => {
+        setCopiedId((prev) => (prev === fileId ? null : prev));
+      }, 2000);
+      toast({
+        title: '已複製雲端分享連結',
+        description: name ? `檔案「${name}」的 Google Drive 雲端連結已複製到剪貼簿！` : '雲端連結已複製到剪貼簿！',
+      });
+    } else {
+      toast({
+        title: '複製失敗',
+        description: '無法存取剪貼簿，請手動複製網址',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // 維護最新 attachments 參照，防止長時間非同步上傳後的 stale closure 造成覆蓋遺失
   const attachmentsRef = useRef(attachments);
@@ -354,6 +382,30 @@ export function AttachmentsUploader({
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[11px] text-slate-600 hover:text-blue-700 hover:bg-blue-50 gap-1"
+                  onClick={() => {
+                    const shareUrl = att.webViewLink || att.webContentLink || (att.id || att.fileId ? `https://drive.google.com/file/d/${att.id || att.fileId}/view` : '');
+                    handleCopyLink(shareUrl, att.name, att.id || att.fileId);
+                  }}
+                  title="複製此檔案的 Google 雲端分享連結 (其他人無登入權限亦可下載/檢視)"
+                >
+                  {copiedId === (att.id || att.fileId) ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-600" />
+                      <span className="text-emerald-600 font-medium">已複製</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3 text-slate-500" />
+                      <span>複製連結</span>
+                    </>
+                  )}
+                </Button>
+
                 {att.webViewLink && (
                   <Button
                     type="button"
