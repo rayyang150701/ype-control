@@ -56,6 +56,7 @@ export interface Project {
   expectedCompletionDate?: string | null;
   evaluationDate?: string | null;
   kickoffDate?: string | null;
+  vendorOrSupplier?: string;
   autoCompletedByClient?: boolean;
   linkedInternalProjectId?: string;
   linkedInternalProjectName?: string;
@@ -90,6 +91,7 @@ export interface InternalProjectOption {
   expectedCompletionDate?: string | null;
   evaluationDate?: string | null;
   kickoffDate?: string | null;
+  vendorOrSupplier?: string;
   tpmOfficeContact?: string;
 }
 

@@ -37,6 +37,7 @@ import {
   Paperclip,
   ExternalLink,
   Copy,
+  Briefcase,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { copyToClipboard } from '@/lib/utils';
@@ -497,6 +498,7 @@ export function InternalTasksClient({
           (group.project.responsiblePm && group.project.responsiblePm.toLowerCase().includes(queryLower)) ||
           (group.project.clientContact && group.project.clientContact.toLowerCase().includes(queryLower)) ||
           (group.project.sourceType && group.project.sourceType.toLowerCase().includes(queryLower)) ||
+          (group.project.vendorOrSupplier && group.project.vendorOrSupplier.toLowerCase().includes(queryLower)) ||
           (group.project.tpmOfficeContact && group.project.tpmOfficeContact.toLowerCase().includes(queryLower))
         : false;
 
@@ -1817,6 +1819,13 @@ export function InternalTasksClient({
                         <span className="text-[11px] text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
                           <Users className="h-3 w-3 text-slate-500" />
                           窗口: {project.clientContact || project.yiehPhuiProjectManager}
+                        </span>
+                      )}
+
+                      {project.vendorOrSupplier && (
+                        <span className="text-[11px] text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                          <Briefcase className="h-3 w-3 text-purple-600" />
+                          供應商: {project.vendorOrSupplier}
                         </span>
                       )}
 

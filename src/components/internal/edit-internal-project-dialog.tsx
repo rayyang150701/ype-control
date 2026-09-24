@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { updateInternalProject, deleteInternalProject, clearActionItemsForProject, getClients } from '@/lib/actions';
-import { Edit2, Calendar, Trash2, UserCheck, Users, Building2, ShieldCheck, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { Edit2, Calendar, Trash2, UserCheck, Users, Building2, ShieldCheck, AlertTriangle, Clock, CheckCircle, Briefcase } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { FullProject, User, Client, ProjectSourceType } from '@/types';
 
@@ -62,6 +62,7 @@ export function EditInternalProjectDialog({
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [evaluationDate, setEvaluationDate] = useState('');
   const [kickoffDate, setKickoffDate] = useState('');
+  const [vendorOrSupplier, setVendorOrSupplier] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
   const [showClearActionItemsConfirm, setShowClearActionItemsConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -107,6 +108,7 @@ export function EditInternalProjectDialog({
       setExpectedCompletionDate(project.expectedCompletionDate || '');
       setEvaluationDate(project.evaluationDate || (cat === '評估案' ? (project.createdAt ? String(project.createdAt).slice(0, 10) : '') : ''));
       setKickoffDate(project.kickoffDate || (cat === '已開案' && project.evaluationDate ? (project.createdAt ? String(project.createdAt).slice(0, 10) : '') : ''));
+      setVendorOrSupplier(project.vendorOrSupplier || '');
       setProjectPurpose(project.projectPurpose || '');
     }
   }, [project, open]);
@@ -152,6 +154,7 @@ export function EditInternalProjectDialog({
         clientName: clientName.trim() || '燁輝',
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
+        vendorOrSupplier: vendorOrSupplier.trim() || undefined,
         expectedCompletionDate: expectedCompletionDate || null,
         evaluationDate: evaluationDate || null,
         kickoffDate: kickoffDate || null,
@@ -250,6 +253,65 @@ export function EditInternalProjectDialog({
     return false;
   };
 
+  // 外包供應商選項清單：來源來自客戶欄位 (clients) + 窗口/成員，格式為「"廠商" + "名字"」
+  const vendorSupplierOptions = useMemo(() => {
+    const list: { value: string; label: string; hint?: string }[] = [];
+    const seen = new Set<string>();
+
+    clientList.forEach((c) => {
+      const vendorName = c.name?.trim();
+      if (!vendorName) return;
+
+      // 1. 若該客戶在客戶維護中有設定主要窗口 (contactPerson)
+      if (c.contactPerson && c.contactPerson.trim()) {
+        const itemVal = `${vendorName} - ${c.contactPerson.trim()}`;
+        if (!seen.has(itemVal)) {
+          seen.add(itemVal);
+          list.push({
+            value: itemVal,
+            label: itemVal,
+            hint: `主要窗口`,
+          });
+        }
+      }
+
+      // 2. 尋找成員管理 (users) 中屬於該客戶的成員 (displayName)
+      const matchedUsers = users.filter((u) => {
+        if (u.clientName && isClientMatch(u.clientName, vendorName)) return true;
+        const emailLower = u.email?.toLowerCase() || '';
+        if (vendorName.includes('億威') && emailLower.includes('emmt.com.tw')) return true;
+        if (vendorName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) return true;
+        return false;
+      });
+
+      matchedUsers.forEach((u) => {
+        const userName = (u.displayName || u.email || '').trim();
+        if (!userName) return;
+        const itemVal = `${vendorName} - ${userName}`;
+        if (!seen.has(itemVal)) {
+          seen.add(itemVal);
+          list.push({
+            value: itemVal,
+            label: itemVal,
+            hint: u.department ? `部門: ${u.department}` : `廠商成員`,
+          });
+        }
+      });
+
+      // 3. 也保留單純廠商名稱的選項 (供若尚無特定窗口名字時選取)
+      if (!seen.has(vendorName)) {
+        seen.add(vendorName);
+        list.push({
+          value: vendorName,
+          label: vendorName,
+          hint: c.code ? `代碼: ${c.code}` : `廠商/客戶`,
+        });
+      }
+    });
+
+    return list;
+  }, [clientList, users]);
+
   // 客戶窗口預設建議名單 (直接從成員管理中挑選「所屬客戶」符合該專案客戶的使用者；備援加上客戶表主要窗口)
   const matchedClientUsers = users.filter((u) => {
     if (u.clientName && isClientMatch(u.clientName, clientName || '燁輝')) return true;
@@ -261,14 +323,48 @@ export function EditInternalProjectDialog({
   const clientUserContacts = matchedClientUsers.map((u) => u.displayName || u.email);
   const clientMainContact = clientList.find((c) => c.name === clientName)?.contactPerson;
 
-  const contactOptions = Array.from(
-    new Set([
-      ...clientUserContacts,
-      ...(clientMainContact ? [clientMainContact] : []),
-      // 若為燁輝專案且尚未建立任何對應成員，備援放入燁輝預設聯絡人
-      ...(clientUserContacts.length === 0 && (clientName || '').includes('燁輝') ? ['黃裕峰', '張簡'] : []),
-    ])
-  ).filter(Boolean);
+  const contactOptions = useMemo(() => {
+    const list: { value: string; label: string; hint?: string }[] = [];
+    const seen = new Set<string>();
+
+    const targetClient = clientName || '燁輝';
+
+    // 1. 該客戶主要窗口
+    if (clientMainContact && clientMainContact.trim()) {
+      const p = clientMainContact.trim();
+      seen.add(p);
+      list.push({
+        value: p,
+        label: `${targetClient} - ${p}`,
+        hint: `主要窗口`,
+      });
+    }
+
+    // 2. 該客戶所屬成員
+    clientUserContacts.forEach((p) => {
+      if (p && !seen.has(p)) {
+        seen.add(p);
+        list.push({
+          value: p,
+          label: `${targetClient} - ${p}`,
+          hint: `所屬成員`,
+        });
+      }
+    });
+
+    // 3. 備援名單
+    if (list.length === 0 && targetClient.includes('燁輝')) {
+      ['黃裕峰', '張簡'].forEach((p) => {
+        list.push({
+          value: p,
+          label: `燁輝 - ${p}`,
+          hint: `預設窗口`,
+        });
+      });
+    }
+
+    return list;
+  }, [clientUserContacts, clientMainContact, clientName]);
 
   return (
     <>
@@ -400,11 +496,14 @@ export function EditInternalProjectDialog({
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
                   {clientList.length > 0 ? (
-                    clientList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name} {c.code ? `(${c.code})` : ''}
-                      </SelectItem>
-                    ))
+                    clientList.map((c) => {
+                      const contact = c.contactPerson?.trim() || users.find(u => u.clientName && isClientMatch(u.clientName, c.name))?.displayName;
+                      return (
+                        <SelectItem key={c.id} value={c.name}>
+                          {c.name} {contact ? `(${contact})` : (c.code ? `(${c.code})` : '')}
+                        </SelectItem>
+                      );
+                    })
                   ) : (
                     <SelectItem value="燁輝">燁輝 (預設)</SelectItem>
                   )}
@@ -558,14 +657,31 @@ export function EditInternalProjectDialog({
               </div>
             </div>
 
-            {/* 7. 案號代碼 */}
-            <div>
-              <Label className="text-xs font-semibold">案號代碼</Label>
-              <Input
-                className="mt-1 text-xs font-mono"
-                value={caseNumber}
-                onChange={(e) => setCaseNumber(e.target.value)}
-              />
+            {/* 7. 案號代碼與外包供應商 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">案號代碼</Label>
+                <Input
+                  className="mt-1 text-xs font-mono"
+                  value={caseNumber}
+                  onChange={(e) => setCaseNumber(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold flex items-center gap-1">
+                  <Briefcase className="h-3.5 w-3.5 text-slate-500" />
+                  外包供應商 (下拉/輸入)
+                </Label>
+                <div className="mt-1">
+                  <SearchableCombobox
+                    value={vendorOrSupplier}
+                    onChange={setVendorOrSupplier}
+                    options={vendorSupplierOptions}
+                    placeholder="選擇供應商 (廠商+名字) 或直接輸入..."
+                  />
+                </div>
+              </div>
             </div>
 
             {/* 7. 專案目的說明 */}

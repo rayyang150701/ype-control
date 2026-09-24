@@ -32,6 +32,7 @@ import {
   Plus,
   Paperclip,
   Copy,
+  Briefcase,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { getLinkedInternalProjectDetails, updateActionItem, deleteActionItem, getUsers, getClients } from '@/lib/actions';
@@ -671,6 +672,13 @@ export function LinkedInternalProgressDialog({
                       <div className="text-xs text-muted-foreground flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200">
                         <Users className="h-3.5 w-3.5 text-slate-500" />
                         <span>窗口: <strong>{project.clientContact || project.yiehPhuiProjectManager}</strong></span>
+                      </div>
+                    )}
+
+                    {project.vendorOrSupplier && (
+                      <div className="text-xs text-purple-700 flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                        <Briefcase className="h-3.5 w-3.5 text-purple-600" />
+                        <span>供應商: <strong>{project.vendorOrSupplier}</strong></span>
                       </div>
                     )}
                   </div>

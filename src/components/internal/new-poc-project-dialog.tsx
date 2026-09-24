@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createPocProject, getClients } from '@/lib/actions';
-import { FolderPlus, Calendar, UserCheck, Users, Building2 } from 'lucide-react';
+import { FolderPlus, Calendar, UserCheck, Users, Building2, Briefcase } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { User, Client, ProjectSourceType } from '@/types';
 
@@ -41,6 +41,7 @@ export function NewPocProjectDialog({
   const [evaluationDate, setEvaluationDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [responsiblePm, setResponsiblePm] = useState('');
   const [clientContact, setClientContact] = useState('');
+  const [vendorOrSupplier, setVendorOrSupplier] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
 
   const handleCategoryChange = (newCat: '評估案' | '已開案') => {
@@ -93,6 +94,7 @@ export function NewPocProjectDialog({
         clientName: clientName.trim() || '燁輝',
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
+        vendorOrSupplier: vendorOrSupplier.trim() || undefined,
         caseNumber: finalCaseNumber || undefined,
         expectedCompletionDate: expectedCompletionDate || undefined,
         evaluationDate: evaluationDate || undefined,
@@ -108,6 +110,7 @@ export function NewPocProjectDialog({
         setEvaluationDate(new Date().toISOString().slice(0, 10));
         setResponsiblePm('');
         setClientContact('');
+        setVendorOrSupplier('');
         setProjectPurpose('');
         setCategory('評估案');
         setSourceType('億威內部自建專案');
@@ -145,6 +148,65 @@ export function NewPocProjectDialog({
     return false;
   };
 
+  // 外包供應商選項清單：來源來自客戶欄位 (clients) + 窗口/成員，格式為「"廠商" + "名字"」
+  const vendorSupplierOptions = useMemo(() => {
+    const list: { value: string; label: string; hint?: string }[] = [];
+    const seen = new Set<string>();
+
+    clientList.forEach((c) => {
+      const vendorName = c.name?.trim();
+      if (!vendorName) return;
+
+      // 1. 若該客戶在客戶維護中有設定主要窗口 (contactPerson)
+      if (c.contactPerson && c.contactPerson.trim()) {
+        const itemVal = `${vendorName} - ${c.contactPerson.trim()}`;
+        if (!seen.has(itemVal)) {
+          seen.add(itemVal);
+          list.push({
+            value: itemVal,
+            label: itemVal,
+            hint: `主要窗口`,
+          });
+        }
+      }
+
+      // 2. 尋找成員管理 (users) 中屬於該客戶的成員 (displayName)
+      const matchedUsers = users.filter((u) => {
+        if (u.clientName && isClientMatch(u.clientName, vendorName)) return true;
+        const emailLower = u.email?.toLowerCase() || '';
+        if (vendorName.includes('億威') && emailLower.includes('emmt.com.tw')) return true;
+        if (vendorName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) return true;
+        return false;
+      });
+
+      matchedUsers.forEach((u) => {
+        const userName = (u.displayName || u.email || '').trim();
+        if (!userName) return;
+        const itemVal = `${vendorName} - ${userName}`;
+        if (!seen.has(itemVal)) {
+          seen.add(itemVal);
+          list.push({
+            value: itemVal,
+            label: itemVal,
+            hint: u.department ? `部門: ${u.department}` : `廠商成員`,
+          });
+        }
+      });
+
+      // 3. 也保留單純廠商名稱的選項 (供若尚無特定窗口名字時選取)
+      if (!seen.has(vendorName)) {
+        seen.add(vendorName);
+        list.push({
+          value: vendorName,
+          label: vendorName,
+          hint: c.code ? `代碼: ${c.code}` : `廠商/客戶`,
+        });
+      }
+    });
+
+    return list;
+  }, [clientList, users]);
+
   // 客戶窗口預設建議名單 (直接從成員管理中挑選「所屬客戶」符合該專案客戶的使用者；備援加上客戶表主要窗口)
   const matchedClientUsers = users.filter((u) => {
     if (u.clientName && isClientMatch(u.clientName, clientName || '燁輝')) return true;
@@ -156,14 +218,48 @@ export function NewPocProjectDialog({
   const clientUserContacts = matchedClientUsers.map((u) => u.displayName || u.email);
   const clientMainContact = clientList.find((c) => c.name === clientName)?.contactPerson;
 
-  const contactOptions = Array.from(
-    new Set([
-      ...clientUserContacts,
-      ...(clientMainContact ? [clientMainContact] : []),
-      // 若為燁輝專案且尚未建立任何對應成員，備援放入燁輝預設聯絡人
-      ...(clientUserContacts.length === 0 && (clientName || '').includes('燁輝') ? ['黃裕峰', '張簡'] : []),
-    ])
-  ).filter(Boolean);
+  const contactOptions = useMemo(() => {
+    const list: { value: string; label: string; hint?: string }[] = [];
+    const seen = new Set<string>();
+
+    const targetClient = clientName || '燁輝';
+
+    // 1. 該客戶主要窗口
+    if (clientMainContact && clientMainContact.trim()) {
+      const p = clientMainContact.trim();
+      seen.add(p);
+      list.push({
+        value: p,
+        label: `${targetClient} - ${p}`,
+        hint: `主要窗口`,
+      });
+    }
+
+    // 2. 該客戶所屬成員
+    clientUserContacts.forEach((p) => {
+      if (p && !seen.has(p)) {
+        seen.add(p);
+        list.push({
+          value: p,
+          label: `${targetClient} - ${p}`,
+          hint: `所屬成員`,
+        });
+      }
+    });
+
+    // 3. 備援名單
+    if (list.length === 0 && targetClient.includes('燁輝')) {
+      ['黃裕峰', '張簡'].forEach((p) => {
+        list.push({
+          value: p,
+          label: `燁輝 - ${p}`,
+          hint: `預設窗口`,
+        });
+      });
+    }
+
+    return list;
+  }, [clientUserContacts, clientMainContact, clientName]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,11 +359,14 @@ export function NewPocProjectDialog({
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
                   {clientList.length > 0 ? (
-                    clientList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name} {c.code ? `(${c.code})` : ''}
-                      </SelectItem>
-                    ))
+                    clientList.map((c) => {
+                      const contact = c.contactPerson?.trim() || users.find(u => u.clientName && isClientMatch(u.clientName, c.name))?.displayName;
+                      return (
+                        <SelectItem key={c.id} value={c.name}>
+                          {c.name} {contact ? `(${contact})` : (c.code ? `(${c.code})` : '')}
+                        </SelectItem>
+                      );
+                    })
                   ) : (
                     <SelectItem value="燁輝">燁輝 (預設)</SelectItem>
                   )}
@@ -372,7 +471,7 @@ export function NewPocProjectDialog({
             </div>
           </div>
 
-          {/* 6. 案號代碼與自動評估時間效益提示 */}
+          {/* 6. 案號代碼與外包供應商 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs font-semibold">案號代碼 (評估案預設為 POC)</Label>
@@ -384,8 +483,19 @@ export function NewPocProjectDialog({
               />
             </div>
 
-            <div className="flex items-center text-[11px] text-purple-700 bg-purple-50/80 border border-purple-200/70 rounded-md px-2.5 py-1.5 mt-auto leading-relaxed shadow-2xs">
-              💡 記錄評估起始日；未來若評估完成轉為「已開案」，系統將自動計算評估歷時天數供成效追蹤！
+            <div>
+              <Label className="text-xs font-semibold flex items-center gap-1">
+                <Briefcase className="h-3.5 w-3.5 text-slate-500" />
+                外包供應商 (下拉/輸入)
+              </Label>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={vendorOrSupplier}
+                  onChange={setVendorOrSupplier}
+                  options={vendorSupplierOptions}
+                  placeholder="選擇供應商 (廠商+名字) 或直接輸入..."
+                />
+              </div>
             </div>
           </div>
 

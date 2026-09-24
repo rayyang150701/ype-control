@@ -60,6 +60,7 @@ export interface ProjectMeta {
     expectedCompletionDate?: string | null;
     evaluationDate?: string | null;
     kickoffDate?: string | null;
+    vendorOrSupplier?: string;
     autoCompletedByClient?: boolean;
     linkedInternalProjectId?: string;
     linkedCustomerProjectId?: string;
@@ -1920,6 +1921,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
         const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
         const evalDate = meta.evaluationDate || (isEval ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
         const kickoffDate = meta.kickoffDate || (!isEval && meta.evaluationDate ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
+        const vendorOrSupplier = meta.vendorOrSupplier?.trim() || '';
 
         return {
             id: doc.id,
@@ -1936,6 +1938,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             expectedCompletionDate: meta.expectedCompletionDate || null,
             evaluationDate: evalDate,
             kickoffDate: kickoffDate,
+            vendorOrSupplier,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: doc.project_purpose || '',
@@ -1959,6 +1962,7 @@ export async function createInternalProject(data: {
     clientName?: string;
     responsiblePm?: string;
     clientContact?: string;
+    vendorOrSupplier?: string;
     projectPurpose?: string;
     tpmOfficeContact?: string;
     expectedCompletionDate?: string | null;
@@ -1982,6 +1986,7 @@ export async function createInternalProject(data: {
         const clientName = data.clientName?.trim() || '燁輝';
         const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || '';
         const clientContact = data.clientContact?.trim() || '';
+        const vendorOrSupplier = data.vendorOrSupplier?.trim() || '';
         const todayStr = new Date().toISOString().slice(0, 10);
         const evalDate = data.evaluationDate !== undefined ? data.evaluationDate : (isEval ? todayStr : null);
         const kickoffDate = data.kickoffDate !== undefined ? data.kickoffDate : (!isEval ? todayStr : null);
@@ -1994,6 +1999,7 @@ export async function createInternalProject(data: {
             clientName,
             responsiblePm,
             clientContact,
+            vendorOrSupplier: vendorOrSupplier || undefined,
             expectedCompletionDate: data.expectedCompletionDate || null,
             evaluationDate: evalDate,
             kickoffDate: kickoffDate,
@@ -2028,6 +2034,7 @@ export async function createInternalProject(data: {
                 clientName,
                 responsiblePm,
                 clientContact,
+                vendorOrSupplier,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
                 evaluationDate: meta.evaluationDate || null,
                 kickoffDate: meta.kickoffDate || null,
@@ -2049,6 +2056,7 @@ export async function updateInternalProject(projectId: string, data: {
     clientName?: string;
     responsiblePm?: string;
     clientContact?: string;
+    vendorOrSupplier?: string;
     tpmOfficeContact?: string;
     projectPurpose?: string;
     expectedCompletionDate?: string | null;
@@ -2079,6 +2087,7 @@ export async function updateInternalProject(projectId: string, data: {
         if (data.clientName) meta.clientName = data.clientName.trim();
         if (data.responsiblePm !== undefined) meta.responsiblePm = data.responsiblePm.trim();
         if (data.clientContact !== undefined) meta.clientContact = data.clientContact.trim();
+        if (data.vendorOrSupplier !== undefined) meta.vendorOrSupplier = data.vendorOrSupplier.trim();
 
         const updateData: any = {
             name: data.name.trim(),
@@ -2142,6 +2151,7 @@ export async function updateInternalProject(projectId: string, data: {
                 clientName: meta.clientName,
                 responsiblePm: meta.responsiblePm,
                 clientContact: meta.clientContact,
+                vendorOrSupplier: meta.vendorOrSupplier,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
                 evaluationDate: meta.evaluationDate || null,
                 kickoffDate: meta.kickoffDate || null,
@@ -2291,6 +2301,7 @@ export async function getInternalProjectsForDropdown(): Promise<InternalProjectO
         clientName: p.clientName,
         responsiblePm: p.responsiblePm,
         clientContact: p.clientContact,
+        vendorOrSupplier: p.vendorOrSupplier || '',
         expectedCompletionDate: p.expectedCompletionDate || null,
         tpmOfficeContact: p.tpmOfficeContact,
     }));
