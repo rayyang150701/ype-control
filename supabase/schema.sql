@@ -152,4 +152,37 @@ ON CONFLICT (name) DO NOTHING;
 -- 7. 擴充欄位 (若既有資料庫尚未具備附件欄位，可執行以下語法)
 ALTER TABLE public.project_action_items ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
 
+-- 8. 出差與行事曆行程資料表 (Business Trips)
+CREATE TABLE IF NOT EXISTS public.business_trips (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject TEXT NOT NULL,
+  project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
+  project_name TEXT DEFAULT '',
+  customer_id UUID REFERENCES public.clients(id) ON DELETE SET NULL,
+  customer_name TEXT DEFAULT '',
+  travelers JSONB DEFAULT '[]'::jsonb,
+  location TEXT NOT NULL DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  start_time TEXT NOT NULL DEFAULT '09:00',
+  end_time TEXT NOT NULL DEFAULT '17:00',
+  category TEXT NOT NULL DEFAULT 'business',
+  tpm TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_trips_start_date ON public.business_trips(start_date);
+CREATE INDEX IF NOT EXISTS idx_business_trips_end_date ON public.business_trips(end_date);
+CREATE INDEX IF NOT EXISTS idx_business_trips_project_id ON public.business_trips(project_id);
+CREATE INDEX IF NOT EXISTS idx_business_trips_customer_id ON public.business_trips(customer_id);
+
+ALTER TABLE public.business_trips ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read business_trips" ON public.business_trips FOR SELECT USING (true);
+CREATE POLICY "Allow service role all business_trips" ON public.business_trips FOR ALL USING (auth.role() = 'service_role');
+
+
 

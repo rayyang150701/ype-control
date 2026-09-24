@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday } from '@/types';
 import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
+import { DEFAULT_TAIWAN_HOLIDAYS } from '@/lib/calendar-helper';
 
 /**
  * 格式化為 ISO 字串
@@ -2579,4 +2580,437 @@ export async function getHistoricalWeeklyProjectsAction(periodLabel: string): Pr
         }),
     }));
 }
+
+// ─────────────────────────────────────────────────────────────
+// 8. 出差與行事曆行程管理模組 (Business Trip & Calendar Module)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 客戶端/伺服器通用出差行程篩選過濾器
+ */
+function applyTripFilters(list: BusinessTrip[], filter: TripFilter): BusinessTrip[] {
+    let result = [...list];
+
+    // 關鍵字搜尋（主題、專案、客戶、人員、地點）
+    if (filter.searchKeyword && filter.searchKeyword.trim()) {
+        const kw = filter.searchKeyword.toLowerCase().trim();
+        result = result.filter((trip) =>
+            trip.subject.toLowerCase().includes(kw) ||
+            (trip.projectName && trip.projectName.toLowerCase().includes(kw)) ||
+            (trip.customerName && trip.customerName.toLowerCase().includes(kw)) ||
+            trip.location.toLowerCase().includes(kw) ||
+            trip.travelers.some((t) => t.toLowerCase().includes(kw))
+        );
+    }
+
+    // 客戶篩選
+    if (filter.customerId) {
+        result = result.filter((t) => t.customerId === filter.customerId);
+    }
+
+    // 專案篩選
+    if (filter.projectId) {
+        result = result.filter((t) => t.projectId === filter.projectId);
+    }
+
+    // 類別篩選
+    if (filter.category) {
+        result = result.filter((t) => t.category === filter.category);
+    }
+
+    // 狀態篩選
+    if (filter.status) {
+        result = result.filter((t) => t.status === filter.status);
+    }
+
+    // TPM 篩選
+    if (filter.tpm) {
+        result = result.filter((t) => t.tpm === filter.tpm);
+    }
+
+    // 人員篩選
+    if (filter.travelers && filter.travelers.length > 0) {
+        const target = filter.travelers[0].toLowerCase();
+        result = result.filter((t) =>
+            t.travelers.some((trav) => trav.toLowerCase().includes(target))
+        );
+    }
+
+    // 日期範圍篩選
+    if (filter.startDate) {
+        result = result.filter((t) => t.endDate >= filter.startDate!);
+    }
+    if (filter.endDate) {
+        result = result.filter((t) => t.startDate <= filter.endDate!);
+    }
+
+    return result;
+}
+
+/**
+ * 取得所有出差行程 (支援條件篩選，具備 Supabase 主表與備援機制)
+ */
+export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTrip[]> {
+    const supabase = getSupabaseClient();
+    try {
+        // 1. 優先查詢 public.business_trips 主資料表
+        const { data, error } = await supabase
+            .from('business_trips')
+            .select('*')
+            .order('start_date', { ascending: false });
+
+        if (!error && data) {
+            let list: BusinessTrip[] = data.map((doc: any) => ({
+                id: doc.id,
+                subject: doc.subject || '',
+                projectId: doc.project_id || undefined,
+                projectName: doc.project_name || '',
+                customerId: doc.customer_id || undefined,
+                customerName: doc.customer_name || '',
+                travelers: Array.isArray(doc.travelers)
+                    ? doc.travelers
+                    : (typeof doc.travelers === 'string' ? JSON.parse(doc.travelers || '[]') : []),
+                location: doc.location || '',
+                startDate: doc.start_date ? String(doc.start_date).slice(0, 10) : '',
+                endDate: doc.end_date ? String(doc.end_date).slice(0, 10) : '',
+                startTime: doc.start_time || '09:00',
+                endTime: doc.end_time || '17:00',
+                category: doc.category || 'business',
+                tpm: doc.tpm || '',
+                status: doc.status || 'pending',
+                notes: doc.notes || '',
+                createdBy: doc.created_by || '',
+                createdAt: formatISO(doc.created_at),
+                updatedAt: formatISO(doc.updated_at),
+            }));
+
+            if (filter) {
+                list = applyTripFilters(list, filter);
+            }
+            return list;
+        }
+
+        // 2. 備援儲存讀取 (當資料表尚未於 Supabase SQL 執行時)
+        const { data: fallbackRecord } = await supabase
+            .from('clients')
+            .select('notes')
+            .eq('name', '__SYSTEM_BUSINESS_TRIPS__')
+            .maybeSingle();
+
+        if (fallbackRecord && fallbackRecord.notes) {
+            try {
+                let list: BusinessTrip[] = JSON.parse(fallbackRecord.notes);
+                if (filter) {
+                    list = applyTripFilters(list, filter);
+                }
+                return list;
+            } catch {}
+        }
+
+        return [];
+    } catch (err) {
+        console.error('取得出差行程失敗:', err);
+        return [];
+    }
+}
+
+/**
+ * 建立全新出差行程
+ */
+export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>) {
+    const supabase = getSupabaseClient();
+    try {
+        const nowIso = new Date().toISOString();
+        const payload: any = {
+            subject: tripData.subject,
+            project_id: tripData.projectId || null,
+            project_name: tripData.projectName || '',
+            customer_id: tripData.customerId || null,
+            customer_name: tripData.customerName || '',
+            travelers: JSON.stringify(tripData.travelers || []),
+            location: tripData.location || '',
+            start_date: tripData.startDate,
+            end_date: tripData.endDate,
+            start_time: tripData.startTime || '09:00',
+            end_time: tripData.endTime || '17:00',
+            category: tripData.category || 'business',
+            tpm: tripData.tpm || '',
+            status: tripData.status || 'pending',
+            notes: tripData.notes || '',
+            created_by: tripData.createdBy || '',
+            created_at: nowIso,
+            updated_at: nowIso,
+        };
+
+        const { data, error } = await supabase
+            .from('business_trips')
+            .insert(payload)
+            .select('*')
+            .single();
+
+        if (!error && data) {
+            revalidatePath('/schedules');
+            return {
+                success: true,
+                message: '出差行程已成功建立！',
+                data: {
+                    id: data.id,
+                    subject: data.subject,
+                    projectId: data.project_id || undefined,
+                    projectName: data.project_name || '',
+                    customerId: data.customer_id || undefined,
+                    customerName: data.customer_name || '',
+                    travelers: Array.isArray(data.travelers) ? data.travelers : JSON.parse(data.travelers || '[]'),
+                    location: data.location || '',
+                    startDate: String(data.start_date).slice(0, 10),
+                    endDate: String(data.end_date).slice(0, 10),
+                    startTime: data.start_time || '09:00',
+                    endTime: data.end_time || '17:00',
+                    category: data.category || 'business',
+                    tpm: data.tpm || '',
+                    status: data.status || 'pending',
+                    notes: data.notes || '',
+                    createdBy: data.created_by || '',
+                    createdAt: formatISO(data.created_at),
+                    updatedAt: formatISO(data.updated_at),
+                } as BusinessTrip,
+            };
+        }
+
+        // 備援儲存機制
+        const newTrip: BusinessTrip = {
+            ...tripData,
+            id: `trip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+        };
+        const currentList = await getBusinessTrips();
+        const updatedList = [newTrip, ...currentList.filter(t => t.id !== newTrip.id)];
+
+        await supabase.from('clients').upsert({
+            name: '__SYSTEM_BUSINESS_TRIPS__',
+            code: 'SYS_TRIPS',
+            notes: JSON.stringify(updatedList),
+            updated_at: nowIso,
+        }, { onConflict: 'name' });
+
+        revalidatePath('/schedules');
+        return { success: true, message: '出差行程已成功建立！', data: newTrip };
+    } catch (err: any) {
+        console.error('建立出差行程失敗:', err);
+        return { success: false, message: err?.message || '建立出差行程失敗' };
+    }
+}
+
+/**
+ * 更新出差行程
+ */
+export async function updateBusinessTrip(id: string, tripData: Partial<BusinessTrip>) {
+    const supabase = getSupabaseClient();
+    try {
+        const nowIso = new Date().toISOString();
+        const updatePayload: any = { updated_at: nowIso };
+
+        if (tripData.subject !== undefined) updatePayload.subject = tripData.subject;
+        if (tripData.projectId !== undefined) updatePayload.project_id = tripData.projectId || null;
+        if (tripData.projectName !== undefined) updatePayload.project_name = tripData.projectName;
+        if (tripData.customerId !== undefined) updatePayload.customer_id = tripData.customerId || null;
+        if (tripData.customerName !== undefined) updatePayload.customer_name = tripData.customerName;
+        if (tripData.travelers !== undefined) updatePayload.travelers = JSON.stringify(tripData.travelers);
+        if (tripData.location !== undefined) updatePayload.location = tripData.location;
+        if (tripData.startDate !== undefined) updatePayload.start_date = tripData.startDate;
+        if (tripData.endDate !== undefined) updatePayload.end_date = tripData.endDate;
+        if (tripData.startTime !== undefined) updatePayload.start_time = tripData.startTime;
+        if (tripData.endTime !== undefined) updatePayload.end_time = tripData.endTime;
+        if (tripData.category !== undefined) updatePayload.category = tripData.category;
+        if (tripData.tpm !== undefined) updatePayload.tpm = tripData.tpm;
+        if (tripData.status !== undefined) updatePayload.status = tripData.status;
+        if (tripData.notes !== undefined) updatePayload.notes = tripData.notes;
+
+        const { data, error } = await supabase
+            .from('business_trips')
+            .update(updatePayload)
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (!error && data) {
+            revalidatePath('/schedules');
+            return {
+                success: true,
+                message: '行程已更新！',
+                data: {
+                    id: data.id,
+                    subject: data.subject,
+                    projectId: data.project_id || undefined,
+                    projectName: data.project_name || '',
+                    customerId: data.customer_id || undefined,
+                    customerName: data.customer_name || '',
+                    travelers: Array.isArray(data.travelers) ? data.travelers : JSON.parse(data.travelers || '[]'),
+                    location: data.location || '',
+                    startDate: String(data.start_date).slice(0, 10),
+                    endDate: String(data.end_date).slice(0, 10),
+                    startTime: data.start_time || '09:00',
+                    endTime: data.end_time || '17:00',
+                    category: data.category || 'business',
+                    tpm: data.tpm || '',
+                    status: data.status || 'pending',
+                    notes: data.notes || '',
+                    createdBy: data.created_by || '',
+                    createdAt: formatISO(data.created_at),
+                    updatedAt: formatISO(data.updated_at),
+                } as BusinessTrip,
+            };
+        }
+
+        // 備援更新
+        const currentList = await getBusinessTrips();
+        let updatedTrip: BusinessTrip | undefined;
+        const updatedList = currentList.map((t) => {
+            if (t.id === id) {
+                updatedTrip = { ...t, ...tripData, updatedAt: nowIso };
+                return updatedTrip;
+            }
+            return t;
+        });
+
+        await supabase.from('clients').upsert({
+            name: '__SYSTEM_BUSINESS_TRIPS__',
+            code: 'SYS_TRIPS',
+            notes: JSON.stringify(updatedList),
+            updated_at: nowIso,
+        }, { onConflict: 'name' });
+
+        revalidatePath('/schedules');
+        return { success: true, message: '行程已更新！', data: updatedTrip };
+    } catch (err: any) {
+        console.error('更新出差行程失敗:', err);
+        return { success: false, message: err?.message || '更新行程失敗' };
+    }
+}
+
+/**
+ * 刪除出差行程
+ */
+export async function deleteBusinessTrip(id: string) {
+    const supabase = getSupabaseClient();
+    try {
+        const { error } = await supabase.from('business_trips').delete().eq('id', id);
+        
+        // 同步處理備援
+        const currentList = await getBusinessTrips();
+        const updatedList = currentList.filter((t) => t.id !== id);
+        await supabase.from('clients').upsert({
+            name: '__SYSTEM_BUSINESS_TRIPS__',
+            code: 'SYS_TRIPS',
+            notes: JSON.stringify(updatedList),
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'name' });
+
+        revalidatePath('/schedules');
+        return { success: true, message: '出差行程已成功刪除！' };
+    } catch (err: any) {
+        console.error('刪除出差行程失敗:', err);
+        return { success: false, message: err?.message || '刪除行程失敗' };
+    }
+}
+
+/**
+ * 切換出差行程狀態 (已確認 <-> 待確認)
+ */
+export async function updateBusinessTripStatus(id: string, status: 'confirmed' | 'pending') {
+    return await updateBusinessTrip(id, { status });
+}
+
+/**
+ * 取得假日清單 (自動合併台灣法定假日與使用者自訂假日)
+ */
+export async function getHolidays(): Promise<Holiday[]> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: record } = await supabase
+            .from('clients')
+            .select('notes')
+            .eq('name', '__SYSTEM_HOLIDAYS__')
+            .maybeSingle();
+
+        const customHolidays: Holiday[] = record && record.notes ? JSON.parse(record.notes) : [];
+
+        // 合併預設台灣假日與自訂假日（依日期去重）
+        const map = new Map<string, Holiday>();
+        DEFAULT_TAIWAN_HOLIDAYS.forEach((h) => map.set(h.date, h));
+        customHolidays.forEach((h) => map.set(h.date, h));
+
+        return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+    } catch (err) {
+        console.warn('取得假日失敗，回傳預設法定假日:', err);
+        return DEFAULT_TAIWAN_HOLIDAYS;
+    }
+}
+
+/**
+ * 新增或更新自訂假日
+ */
+export async function saveHoliday(holiday: Holiday) {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: record } = await supabase
+            .from('clients')
+            .select('notes')
+            .eq('name', '__SYSTEM_HOLIDAYS__')
+            .maybeSingle();
+
+        let list: Holiday[] = record && record.notes ? JSON.parse(record.notes) : [];
+        const index = list.findIndex((h) => h.id === holiday.id || h.date === holiday.date);
+        if (index >= 0) {
+            list[index] = holiday;
+        } else {
+            list.push(holiday);
+        }
+
+        await supabase.from('clients').upsert({
+            name: '__SYSTEM_HOLIDAYS__',
+            code: 'SYS_HOLIDAYS',
+            notes: JSON.stringify(list),
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'name' });
+
+        revalidatePath('/schedules');
+        return { success: true, message: '假日已成功儲存！' };
+    } catch (err: any) {
+        console.error('儲存假日失敗:', err);
+        return { success: false, message: err?.message || '儲存假日失敗' };
+    }
+}
+
+/**
+ * 刪除自訂假日
+ */
+export async function deleteHoliday(idOrDate: string) {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: record } = await supabase
+            .from('clients')
+            .select('notes')
+            .eq('name', '__SYSTEM_HOLIDAYS__')
+            .maybeSingle();
+
+        let list: Holiday[] = record && record.notes ? JSON.parse(record.notes) : [];
+        list = list.filter((h) => h.id !== idOrDate && h.date !== idOrDate);
+
+        await supabase.from('clients').upsert({
+            name: '__SYSTEM_HOLIDAYS__',
+            code: 'SYS_HOLIDAYS',
+            notes: JSON.stringify(list),
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'name' });
+
+        revalidatePath('/schedules');
+        return { success: true, message: '已移除自訂假日！' };
+    } catch (err: any) {
+        console.error('刪除假日失敗:', err);
+        return { success: false, message: err?.message || '刪除假日失敗' };
+    }
+}
+
 

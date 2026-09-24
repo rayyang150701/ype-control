@@ -219,3 +219,6 @@ export interface WeeklySnapshotData {
   users: User[];
 }
 
+export * from './businessTrip';
+
+

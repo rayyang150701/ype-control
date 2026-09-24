@@ -1,7 +1,7 @@
 
 'use client';
 import { useState } from 'react';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar } from 'lucide-react';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -331,7 +331,38 @@ export function Header() {
             </button>
           )}
 
-          {/* 3. AI 智慧診斷 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
+          {/* 3. 出差行程行事曆 - 管理者與編輯者開放，訪客提示登入 */}
+          {isEditor ? (
+            <Link
+              href="/schedules"
+              prefetch={true}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                pathname.startsWith('/schedules')
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+              }`}
+            >
+              <span>📅 出差行程行事曆</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                toast({
+                  title: '需要登入權限',
+                  description: '「出差行程行事曆」僅限登入成員檢視，請先登入帳號。',
+                });
+                setIsLoginDialogOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200/70 text-slate-400 border border-slate-300/60 cursor-not-allowed hover:bg-slate-200"
+              title="僅限登入成員存取 (未開放未登入訪客)"
+            >
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              <span>📅 出差行程行事曆 (登入後檢視)</span>
+            </button>
+          )}
+
+          {/* 4. AI 智慧診斷 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
           {isAdmin ? (
             <button
               type="button"
@@ -379,6 +410,8 @@ export function Header() {
             ? '🏢 客戶維護管理：管理所有合作客戶名單'
             : pathname.startsWith('/users')
             ? '👥 成員管理：維護系統使用者、所屬客戶與部門'
+            : pathname.startsWith('/schedules')
+            ? '📅 出差行程行事曆：跨廠調校、會議與國定假日行事曆'
             : pathname.startsWith('/internal-tasks')
             ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}
