@@ -3,7 +3,7 @@
 
 export type TripCategory = 'business' | 'meeting' | 'other';
 export type TripStatus = 'confirmed' | 'pending';
-export type CalendarViewType = 'month' | 'week' | 'list' | 'overdue';
+export type CalendarViewType = 'month' | 'week' | 'list' | 'overdue' | 'analytics';
 
 export interface BusinessTrip {
   id: string;

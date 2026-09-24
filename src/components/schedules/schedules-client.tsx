@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   CalendarDays,
   FileSpreadsheet,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +43,7 @@ import { MonthView } from './month-view';
 import { WeekView } from './week-view';
 import { ScheduleListView } from './schedule-list-view';
 import { OverdueView } from './overdue-view';
+import { TravelAnalyticsView } from './travel-analytics-view';
 import { TripFormDialog } from './trip-form-dialog';
 import { TripDetailDialog } from './trip-detail-dialog';
 import { HolidayManagementDialog } from './holiday-management-dialog';
@@ -405,19 +407,21 @@ export function SchedulesClient({
         </div>
       </div>
 
-      {/* 篩選面板 (搜尋、客戶、專案、類別、狀態、WK週別、TPM) */}
-      <TripFilterPanel
-        trips={trips}
-        clients={clients}
-        projects={projects}
-        currentYear={currentYear}
-        filter={filter}
-        onFilterChange={setFilter}
-        onWeekSelect={(wInfo) => {
-          setViewType('week');
-          setCurrentWeek(wInfo);
-        }}
-      />
+      {/* 篩選面板 (搜尋、客戶、專案、類別、狀態、WK週別、TPM) - 在行事曆視圖中顯示 */}
+      {viewType !== 'analytics' && (
+        <TripFilterPanel
+          trips={trips}
+          clients={clients}
+          projects={projects}
+          currentYear={currentYear}
+          filter={filter}
+          onFilterChange={setFilter}
+          onWeekSelect={(wInfo) => {
+            setViewType('week');
+            setCurrentWeek(wInfo);
+          }}
+        />
+      )}
 
       {/* 視圖切換標籤列 */}
       <div className="flex items-center gap-1 border-b border-gray-200 bg-white rounded-t-xl px-3 pt-1 shadow-2xs">
@@ -474,6 +478,20 @@ export function SchedulesClient({
             </span>
           )}
         </button>
+
+        {/* 🆕 出差分析儀表板分頁 */}
+        <button
+          type="button"
+          onClick={() => setViewType('analytics')}
+          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
+            viewType === 'analytics'
+              ? 'text-blue-600 border-blue-600'
+              : 'text-gray-500 hover:text-gray-900 border-transparent'
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          <span>出差分析</span>
+        </button>
       </div>
 
       {/* 視圖內容渲染 */}
@@ -508,10 +526,23 @@ export function SchedulesClient({
           onEditTrip={handleEditTrip}
           onDeleteTrip={(t) => handleDeleteTrip(t)}
         />
-      ) : (
+      ) : viewType === 'overdue' ? (
         <OverdueView
           trips={filteredTrips}
           onFillReport={(t) => handleEditTrip(t)}
+        />
+      ) : (
+        <TravelAnalyticsView
+          trips={trips}
+          users={users}
+          clients={clients}
+          onArrangeVisit={(customerName) => {
+            const matched = clients.find((c) => c.name === customerName);
+            handleOpenCreateForm();
+            if (matched) {
+              setFilter((prev) => ({ ...prev, customerId: matched.id }));
+            }
+          }}
         />
       )}
 
