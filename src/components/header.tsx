@@ -285,16 +285,16 @@ export function Header() {
       </div>
 
       {/* 雙視圖切換分頁列：燁輝進度管制 vs 內部專案待辦追蹤 vs AI診斷 */}
-      <div className="w-full bg-slate-100/80 border-t px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="w-full bg-slate-50/90 border-t border-b border-slate-200/80 px-4 py-2 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           {/* 1. 燁輝進度管制總表 (對外週報) - 所有人皆可點擊 */}
           <Link
             href="/dashboard"
             prefetch={true}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
               pathname.startsWith('/dashboard') || pathname === '/'
-                ? 'bg-primary text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
             }`}
           >
             <span>📊 燁輝進度管制總表 (對外週報)</span>
@@ -305,10 +305,10 @@ export function Header() {
             <Link
               href="/internal-tasks"
               prefetch={true}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
                 pathname.startsWith('/internal-tasks')
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
               <span>📋 內部專案與待辦追蹤 (對內跟催 & 歷程)</span>
@@ -323,7 +323,7 @@ export function Header() {
                 });
                 setIsLoginDialogOpen(true);
               }}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200/70 text-slate-400 border border-slate-300/60 cursor-not-allowed hover:bg-slate-200"
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
@@ -336,10 +336,10 @@ export function Header() {
             <Link
               href="/schedules"
               prefetch={true}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
                 pathname.startsWith('/schedules')
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
               <span>📅 出差行程行事曆</span>
@@ -354,7 +354,7 @@ export function Header() {
                 });
                 setIsLoginDialogOpen(true);
               }}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200/70 text-slate-400 border border-slate-300/60 cursor-not-allowed hover:bg-slate-200"
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
@@ -373,10 +373,10 @@ export function Header() {
                   router.push('/internal-tasks?ai=open');
                 }
               }}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer active:scale-95"
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-200/80 shadow-2xs cursor-pointer active:scale-95"
               title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
             >
-              <Bot className="h-3.5 w-3.5" />
+              <Bot className="h-4 w-4 text-indigo-600" />
               <span>🤖 AI 智慧診斷</span>
             </button>
           ) : (
@@ -397,7 +397,7 @@ export function Header() {
                   });
                 }
               }}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all bg-slate-200 text-slate-400 border border-slate-300/60 shadow-none cursor-not-allowed hover:bg-slate-200"
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 shadow-none cursor-not-allowed hover:bg-slate-100"
               title="僅限管理員與主管理員使用"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
@@ -405,7 +405,7 @@ export function Header() {
             </button>
           )}
         </div>
-        <div className="text-xs text-muted-foreground hidden md:block">
+        <div className="text-xs text-slate-500 font-medium hidden lg:block">
           {pathname.startsWith('/clients')
             ? '🏢 客戶維護管理：管理所有合作客戶名單'
             : pathname.startsWith('/users')
