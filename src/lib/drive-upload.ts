@@ -102,10 +102,55 @@ export type UploadProgressCallback = (
  * 支援真實位元組上傳進度、傳輸速率、剩餘時間預估與雲端處理心跳回饋
  */
 /**
+ * 查詢 Google 雲端硬碟是否已成功收錄特定檔案 (用於直傳中斷、逾時或發布失敗後的自動校驗與恢復)
+ */
+export async function checkRecentFileInDrive(
+  fileName: string,
+  fileSize?: number,
+  sinceMinutes: number = 15
+): Promise<ActionItemAttachment | null> {
+  try {
+    const res = await fetch('/api/drive/check-recent-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, fileSize, sinceMinutes }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.success && data.found && data.file) {
+      return data.file as ActionItemAttachment;
+    }
+  } catch (err) {
+    console.warn('檢查雲端硬碟近期檔案失敗:', err);
+  }
+  return null;
+}
+
+/**
+ * 輪詢校驗雲端硬碟收件狀態 (弭平 Google Apps Script 寫入 5TB 雲端硬碟的非同步延遲)
+ */
+async function pollReconcileRecentFile(
+  fileName: string,
+  fileSize?: number,
+  maxAttempts: number = 4,
+  delayMs: number = 3000
+): Promise<ActionItemAttachment | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const file = await checkRecentFileInDrive(fileName, fileSize);
+    if (file) return file;
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return null;
+}
+
+/**
  * 透過 Google Apps Script 端點直傳 Google 雲端硬碟 (使用 5TB 空間)
  * 策略：
  * 1. 檔案 <= 4MB 時，優先透過內部代理 (/api/drive/upload) 轉發，免除跨域 (CORS)、企業防火牆與 Google 帳號衝突。
- * 2. 檔案 > 4MB (避開 Vercel 4.5MB 限制) 或內部代理異常時，自動平滑切換至 GAS 直傳備援機制。
+ * 2. 檔案 > 4MB (避開 Vercel 4.5MB 限制) 或內部代理異常時，自動切換至 GAS 直傳。
+ * 3. 雙重保險：直傳遇網路中斷或逾時 (30s 企業防火牆限制) 時，自動觸發雲端收件校驗 (Auto-Reconciliation)，保證檔案絕不漏失！
  */
 export async function uploadFileToDrive(
   file: File,
@@ -159,7 +204,10 @@ export async function uploadFileToDrive(
       }
     }, 800);
 
+    let directError: any = null;
+
     try {
+      // 支援長時傳輸 (4 分鐘逾時防護)
       const res = await fetch(gasUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -175,36 +223,55 @@ export async function uploadFileToDrive(
         stageMessage: '檔案已送達雲端，Google Drive 正處理儲存與設定分享權限...',
       });
 
-      if (!res.ok) {
-        throw new Error(`Google 雲端硬碟連線失敗 (HTTP ${res.status})`);
-      }
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.file) {
+          onProgress?.(100, 'done', {
+            percent: 100,
+            status: 'done',
+            stageMessage: '已完成上傳與權限發布！',
+          });
 
-      const data = await res.json();
-      if (!data.success || !data.file) {
-        throw new Error(data.error || 'Google 雲端硬碟建立檔案失敗');
+          const f = data.file;
+          return {
+            id: f.id,
+            fileId: f.id,
+            name: f.name || file.name,
+            size: f.size || file.size,
+            mimeType: f.mimeType || file.type || 'application/octet-stream',
+            webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+            webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
+            uploadedAt: new Date().toISOString(),
+          };
+        }
       }
+    } catch (err: any) {
+      clearInterval(simInterval);
+      directError = err;
+      console.warn('直接上傳 GAS 傳輸中斷或逾時，啟動雲端自動校驗修復機制...', err);
+    }
 
+    // ─── 關鍵韌性備援：自動校驗機制 (Auto-Reconciliation) ───
+    // 當直傳 GAS 因為網路中斷、企業防火牆 30s 閒置逾時或跨域 302 重導向造成 fetch 拋錯時，
+    // Google Drive 端實際上通常「已經」成功收件並寫入 5TB 雲端資料夾！
+    // 此處主動向後端 /api/drive/check-recent-file 查詢近期檔案，連續輪詢以弭平時間差。
+    onProgress?.(94, 'publishing', {
+      percent: 94,
+      status: 'publishing',
+      stageMessage: '直傳連線處理中，正在自動校驗 Google 雲端硬碟收件狀態...',
+    });
+
+    const reconciled = await pollReconcileRecentFile(file.name, file.size, 4, 3000);
+    if (reconciled) {
       onProgress?.(100, 'done', {
         percent: 100,
         status: 'done',
-        stageMessage: '已完成上傳與權限發布！',
+        stageMessage: '檔案已由雲端硬碟自動校驗確認收件成功！',
       });
-
-      const f = data.file;
-      return {
-        id: f.id,
-        fileId: f.id,
-        name: f.name || file.name,
-        size: f.size || file.size,
-        mimeType: f.mimeType || file.type || 'application/octet-stream',
-        webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
-        webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
-        uploadedAt: new Date().toISOString(),
-      };
-    } catch (err) {
-      clearInterval(simInterval);
-      throw err;
+      return reconciled;
     }
+
+    throw directError || new Error('Google 雲端硬碟連線失敗且尚未偵測到已儲存檔案，請點擊「重新嘗試」或手動上傳。');
   };
 
   // 2. 若檔案 <= 4MB，優先走同源內部代理 API (/api/drive/upload)

@@ -22,8 +22,9 @@ import {
   Copy,
   Check,
   RotateCw,
+  Search,
 } from 'lucide-react';
-import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive } from '@/lib/drive-upload';
+import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive, checkRecentFileInDrive } from '@/lib/drive-upload';
 import { copyToClipboard } from '@/lib/utils';
 import type { ActionItemAttachment } from '@/types';
 
@@ -194,6 +195,84 @@ export function AttachmentsUploader({
       )
     );
     uploadSingleFile(task);
+  };
+
+  const handleCheckDriveRecovery = async (task: UploadTask) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.tempId === task.tempId
+          ? {
+              ...t,
+              status: 'publishing',
+              errorMsg: undefined,
+              stageMessage: '正在查詢 Google 雲端硬碟收件狀態...',
+            }
+          : t
+      )
+    );
+    try {
+      const recovered = await checkRecentFileInDrive(task.file.name, task.file.size);
+      if (recovered) {
+        const currentList = attachmentsRef.current || [];
+        const updatedList = [
+          ...currentList.filter((a) => a.id !== recovered.id && a.fileId !== recovered.id),
+          recovered,
+        ];
+        onChange(updatedList);
+        onAttachmentUploaded?.(recovered, updatedList);
+
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.tempId === task.tempId
+              ? {
+                  ...t,
+                  percent: 100,
+                  status: 'done',
+                  stageMessage: '已於雲端硬碟尋獲檔案，已成功加入附件清單！',
+                }
+              : t
+          )
+        );
+        setTimeout(() => {
+          setTasks((prev) => prev.filter((t) => t.tempId !== task.tempId));
+        }, 2000);
+
+        toast({
+          title: '已成功尋獲雲端檔案',
+          description: `檔案「${recovered.name}」已由雲端硬碟成功加入待辦事項。`,
+        });
+        return;
+      }
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.tempId === task.tempId
+            ? {
+                ...t,
+                status: 'error',
+                errorMsg: 'Google 雲端硬碟尚未收錄此檔案，請重新嘗試上傳。',
+              }
+            : t
+        )
+      );
+      toast({
+        title: '雲端硬碟無此檔案',
+        description: '尚未於 Google 雲端硬碟尋獲相符檔案，請點擊「重新嘗試」上傳。',
+        variant: 'destructive',
+      });
+    } catch (e: any) {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.tempId === task.tempId
+            ? {
+                ...t,
+                status: 'error',
+                errorMsg: e?.message || '查詢雲端硬碟失敗',
+              }
+            : t
+        )
+      );
+    }
   };
 
   const handleClearAllErrors = () => {
@@ -407,7 +486,7 @@ export function AttachmentsUploader({
                   <div className="flex items-start justify-between gap-1.5">
                     <span className="leading-normal">{task.errorMsg}</span>
                   </div>
-                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-200/60">
+                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-200/60 flex-wrap">
                     <Button
                       type="button"
                       size="sm"
@@ -426,6 +505,17 @@ export function AttachmentsUploader({
                     >
                       <RotateCw className="h-3 w-3" />
                       重新嘗試
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[11px] bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100 hover:text-blue-800 gap-1 shadow-2xs cursor-pointer font-medium"
+                      onClick={() => handleCheckDriveRecovery(task)}
+                      title="若檔案其實已傳輸至雲端，可直接從 Google Drive 自動尋回並加入待辦事項"
+                    >
+                      <Search className="h-3 w-3" />
+                      檢查雲端是否已收件
                     </Button>
                   </div>
                 </div>
