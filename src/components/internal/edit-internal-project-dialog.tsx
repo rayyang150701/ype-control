@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { updateInternalProject, deleteInternalProject, clearActionItemsForProject, getClients } from '@/lib/actions';
-import { Edit2, Calendar, Trash2, UserCheck, Users, Building2, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Edit2, Calendar, Trash2, UserCheck, Users, Building2, ShieldCheck, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { FullProject, User, Client, ProjectSourceType } from '@/types';
 
@@ -60,6 +60,8 @@ export function EditInternalProjectDialog({
   const [responsiblePm, setResponsiblePm] = useState('');
   const [clientContact, setClientContact] = useState('');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
+  const [evaluationDate, setEvaluationDate] = useState('');
+  const [kickoffDate, setKickoffDate] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
   const [showClearActionItemsConfirm, setShowClearActionItemsConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -103,6 +105,8 @@ export function EditInternalProjectDialog({
       setClientContact(contact);
 
       setExpectedCompletionDate(project.expectedCompletionDate || '');
+      setEvaluationDate(project.evaluationDate || (cat === '評估案' ? (project.createdAt ? String(project.createdAt).slice(0, 10) : '') : ''));
+      setKickoffDate(project.kickoffDate || (cat === '已開案' && project.evaluationDate ? (project.createdAt ? String(project.createdAt).slice(0, 10) : '') : ''));
       setProjectPurpose(project.projectPurpose || '');
     }
   }, [project, open]);
@@ -115,6 +119,10 @@ export function EditInternalProjectDialog({
       }
     } else if (newCat === '已開案') {
       setCaseNumber((prev) => prev.replace(/^POC[\s\-_]*/i, '').trim());
+      // 若切換為已開案且無開案日，自動預設為今日
+      if (!kickoffDate) {
+        setKickoffDate(new Date().toISOString().slice(0, 10));
+      }
     }
   };
 
@@ -145,6 +153,8 @@ export function EditInternalProjectDialog({
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
         expectedCompletionDate: expectedCompletionDate || null,
+        evaluationDate: evaluationDate || null,
+        kickoffDate: kickoffDate || null,
         tpmOfficeContact: responsiblePm.trim(),
         projectPurpose,
       });
@@ -446,22 +456,88 @@ export function EditInternalProjectDialog({
               </div>
             </div>
 
-            {/* 6. 案號代碼與預估完成日 */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 評估歷時資訊卡片 (當有評估日或開案日時呈現) */}
+            {(() => {
+              if (!evaluationDate) return null;
+              if (category === '已開案') {
+                const endTimestamp = kickoffDate ? new Date(kickoffDate).getTime() : Date.now();
+                const diffMs = endTimestamp - new Date(evaluationDate).getTime();
+                const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+                return (
+                  <div className="flex items-center gap-2 p-2.5 rounded-md text-xs border bg-emerald-50/80 text-emerald-800 border-emerald-200 shadow-2xs">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>已開案 · 評估耗時共 <strong>{days}</strong> 天 ({evaluationDate} 評估 ➔ {kickoffDate || '已開案'})</span>
+                  </div>
+                );
+              } else {
+                const diffMs = Date.now() - new Date(evaluationDate).getTime();
+                const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+                return (
+                  <div className="flex items-center gap-2 p-2.5 rounded-md text-xs border bg-purple-50/80 text-purple-800 border-purple-200 shadow-2xs">
+                    <Clock className="h-4 w-4 text-purple-600 shrink-0" />
+                    <span>評估中 · 自 {evaluationDate} 至今已評估 <strong>{days}</strong> 天</span>
+                  </div>
+                );
+              }
+            })()}
+
+            {/* 6. 評估與開案時程 (評估日期、轉已開案日期、預估完成日) */}
+            <div className={`grid ${category === '已開案' ? 'grid-cols-3' : 'grid-cols-2'} gap-2.5`}>
               <div>
-                <Label className="text-xs font-semibold">案號代碼</Label>
+                <Label className="text-xs font-semibold flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5 text-purple-600" />
+                    評估起始日期
+                  </span>
+                  {evaluationDate && (
+                    <button
+                      type="button"
+                      onClick={() => setEvaluationDate('')}
+                      className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                    >
+                      清除
+                    </button>
+                  )}
+                </Label>
                 <Input
-                  className="mt-1 text-xs font-mono"
-                  value={caseNumber}
-                  onChange={(e) => setCaseNumber(e.target.value)}
+                  type="date"
+                  className="mt-1 text-xs h-9 border-purple-200 focus-visible:ring-purple-400"
+                  value={evaluationDate}
+                  onChange={(e) => setEvaluationDate(e.target.value)}
                 />
               </div>
+
+              {category === '已開案' && (
+                <div>
+                  <Label className="text-xs font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                      轉已開案日期
+                    </span>
+                    {kickoffDate && (
+                      <button
+                        type="button"
+                        onClick={() => setKickoffDate('')}
+                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                      >
+                        清除
+                      </button>
+                    )}
+                  </Label>
+                  <Input
+                    type="date"
+                    className="mt-1 text-xs h-9 border-emerald-200 focus-visible:ring-emerald-400"
+                    value={kickoffDate}
+                    onChange={(e) => setKickoffDate(e.target.value)}
+                  />
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs font-semibold flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                    專案預估完成日期
+                    預估完成日期
                   </span>
                   {expectedCompletionDate && (
                     <button
@@ -469,7 +545,7 @@ export function EditInternalProjectDialog({
                       onClick={() => setExpectedCompletionDate('')}
                       className="text-[11px] text-muted-foreground hover:text-foreground underline"
                     >
-                      清除日期
+                      清除
                     </button>
                   )}
                 </Label>
@@ -480,6 +556,16 @@ export function EditInternalProjectDialog({
                   onChange={(e) => setExpectedCompletionDate(e.target.value)}
                 />
               </div>
+            </div>
+
+            {/* 7. 案號代碼 */}
+            <div>
+              <Label className="text-xs font-semibold">案號代碼</Label>
+              <Input
+                className="mt-1 text-xs font-mono"
+                value={caseNumber}
+                onChange={(e) => setCaseNumber(e.target.value)}
+              />
             </div>
 
             {/* 7. 專案目的說明 */}

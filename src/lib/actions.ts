@@ -58,6 +58,8 @@ export interface ProjectMeta {
     responsiblePm?: string;
     clientContact?: string;
     expectedCompletionDate?: string | null;
+    evaluationDate?: string | null;
+    kickoffDate?: string | null;
     autoCompletedByClient?: boolean;
     linkedInternalProjectId?: string;
     linkedCustomerProjectId?: string;
@@ -1916,6 +1918,8 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
         const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
         const responsiblePm = meta.responsiblePm?.trim() || doc.tpm_office_contact || doc.egiga_contact || '';
         const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
+        const evalDate = meta.evaluationDate || (isEval ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
+        const kickoffDate = meta.kickoffDate || (!isEval && meta.evaluationDate ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
 
         return {
             id: doc.id,
@@ -1930,6 +1934,8 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             responsiblePm,
             clientContact,
             expectedCompletionDate: meta.expectedCompletionDate || null,
+            evaluationDate: evalDate,
+            kickoffDate: kickoffDate,
             autoCompletedByClient: !!meta.autoCompletedByClient,
             linkedCustomerProjectId: meta.linkedCustomerProjectId,
             projectPurpose: doc.project_purpose || '',
@@ -1956,6 +1962,8 @@ export async function createInternalProject(data: {
     projectPurpose?: string;
     tpmOfficeContact?: string;
     expectedCompletionDate?: string | null;
+    evaluationDate?: string | null;
+    kickoffDate?: string | null;
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -1974,6 +1982,9 @@ export async function createInternalProject(data: {
         const clientName = data.clientName?.trim() || '燁輝';
         const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || '';
         const clientContact = data.clientContact?.trim() || '';
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const evalDate = data.evaluationDate !== undefined ? data.evaluationDate : (isEval ? todayStr : null);
+        const kickoffDate = data.kickoffDate !== undefined ? data.kickoffDate : (!isEval ? todayStr : null);
 
         const meta: ProjectMeta = {
             isInternal: true,
@@ -1984,6 +1995,8 @@ export async function createInternalProject(data: {
             responsiblePm,
             clientContact,
             expectedCompletionDate: data.expectedCompletionDate || null,
+            evaluationDate: evalDate,
+            kickoffDate: kickoffDate,
         };
 
         const { data: newProject, error } = await supabase.from('projects').insert({
@@ -2016,6 +2029,8 @@ export async function createInternalProject(data: {
                 responsiblePm,
                 clientContact,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
+                evaluationDate: meta.evaluationDate || null,
+                kickoffDate: meta.kickoffDate || null,
                 subProjects: []
             } 
         };
@@ -2037,6 +2052,8 @@ export async function updateInternalProject(projectId: string, data: {
     tpmOfficeContact?: string;
     projectPurpose?: string;
     expectedCompletionDate?: string | null;
+    evaluationDate?: string | null;
+    kickoffDate?: string | null;
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -2053,6 +2070,11 @@ export async function updateInternalProject(projectId: string, data: {
         if (data.category) meta.category = data.category;
         if (data.internalStatus) meta.internalStatus = data.internalStatus;
         if (data.expectedCompletionDate !== undefined) meta.expectedCompletionDate = data.expectedCompletionDate;
+        if (data.evaluationDate !== undefined) meta.evaluationDate = data.evaluationDate;
+        if (data.kickoffDate !== undefined) meta.kickoffDate = data.kickoffDate;
+        if (data.category === '已開案' && (!meta.kickoffDate || meta.kickoffDate === null)) {
+            meta.kickoffDate = new Date().toISOString().slice(0, 10);
+        }
         if (data.sourceType) meta.sourceType = data.sourceType;
         if (data.clientName) meta.clientName = data.clientName.trim();
         if (data.responsiblePm !== undefined) meta.responsiblePm = data.responsiblePm.trim();
@@ -2121,6 +2143,8 @@ export async function updateInternalProject(projectId: string, data: {
                 responsiblePm: meta.responsiblePm,
                 clientContact: meta.clientContact,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
+                evaluationDate: meta.evaluationDate || null,
+                kickoffDate: meta.kickoffDate || null,
                 tpmOfficeContact: effectivePm ?? proj.tpm_office_contact,
                 projectPurpose: data.projectPurpose ?? proj.project_purpose,
             }
@@ -2157,13 +2181,14 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
             meta.internalStatus = payload.internalStatus;
         }
 
-        const updateData: any = {
-            on_hold_notes: serializeProjectMeta(meta),
-        };
-
         let nextCaseNumber = proj.case_number;
+        const updateData: any = {};
+
         if (payload.category === '已開案') {
             updateData.status = 'active';
+            if (meta.category !== '已開案' || !meta.kickoffDate) {
+                meta.kickoffDate = meta.kickoffDate || new Date().toISOString().slice(0, 10);
+            }
             if (proj.case_number) {
                 nextCaseNumber = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
                 updateData.case_number = nextCaseNumber;
@@ -2183,8 +2208,9 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
         } else if (payload.internalStatus === 'in_progress') {
             updateData.status = meta.category === '評估案' ? 'evaluation' : 'active';
             meta.autoCompletedByClient = false;
-            updateData.on_hold_notes = serializeProjectMeta(meta);
         }
+
+        updateData.on_hold_notes = serializeProjectMeta(meta);
 
         const { error: updateErr } = await supabase
             .from('projects')
@@ -2210,6 +2236,8 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
                 caseNumber: nextCaseNumber,
                 category: meta.category,
                 internalStatus: meta.internalStatus,
+                evaluationDate: meta.evaluationDate || null,
+                kickoffDate: meta.kickoffDate || null,
             }
         };
     } catch (err: any) {

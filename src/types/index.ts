@@ -54,6 +54,8 @@ export interface Project {
   responsiblePm?: string;
   clientContact?: string;
   expectedCompletionDate?: string | null;
+  evaluationDate?: string | null;
+  kickoffDate?: string | null;
   autoCompletedByClient?: boolean;
   linkedInternalProjectId?: string;
   linkedInternalProjectName?: string;
@@ -86,6 +88,8 @@ export interface InternalProjectOption {
   responsiblePm?: string;
   clientContact?: string;
   expectedCompletionDate?: string | null;
+  evaluationDate?: string | null;
+  kickoffDate?: string | null;
   tpmOfficeContact?: string;
 }
 

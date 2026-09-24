@@ -38,6 +38,7 @@ export function NewPocProjectDialog({
   const [name, setName] = useState('');
   const [caseNumber, setCaseNumber] = useState('POC');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
+  const [evaluationDate, setEvaluationDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [responsiblePm, setResponsiblePm] = useState('');
   const [clientContact, setClientContact] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
@@ -94,6 +95,7 @@ export function NewPocProjectDialog({
         clientContact: clientContact.trim(),
         caseNumber: finalCaseNumber || undefined,
         expectedCompletionDate: expectedCompletionDate || undefined,
+        evaluationDate: evaluationDate || undefined,
         tpmOfficeContact: responsiblePm.trim(),
         projectPurpose,
       });
@@ -103,6 +105,7 @@ export function NewPocProjectDialog({
         setName('');
         setCaseNumber('POC');
         setExpectedCompletionDate('');
+        setEvaluationDate(new Date().toISOString().slice(0, 10));
         setResponsiblePm('');
         setClientContact('');
         setProjectPurpose('');
@@ -318,15 +321,29 @@ export function NewPocProjectDialog({
             </div>
           </div>
 
-          {/* 5. 案號代碼與預估完成日 */}
+          {/* 5. 評估/開案日期 與 預估完成日 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs font-semibold">案號代碼 (評估案預設為 POC)</Label>
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-purple-600" />
+                  {category === '評估案' ? '評估起始日期 (評估日)' : '正式開案日期 (立案日)'}
+                </span>
+                {evaluationDate && (
+                  <button
+                    type="button"
+                    onClick={() => setEvaluationDate('')}
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                  >
+                    清除
+                  </button>
+                )}
+              </Label>
               <Input
-                className="mt-1 text-xs font-mono"
-                placeholder={category === '評估案' ? "POC" : "留空自動編號或填入案號"}
-                value={caseNumber}
-                onChange={(e) => setCaseNumber(e.target.value)}
+                type="date"
+                className="mt-1 text-xs h-9 border-purple-200 focus-visible:ring-purple-400"
+                value={evaluationDate}
+                onChange={(e) => setEvaluationDate(e.target.value)}
               />
             </div>
 
@@ -352,6 +369,23 @@ export function NewPocProjectDialog({
                 value={expectedCompletionDate}
                 onChange={(e) => setExpectedCompletionDate(e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* 6. 案號代碼與自動評估時間效益提示 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-semibold">案號代碼 (評估案預設為 POC)</Label>
+              <Input
+                className="mt-1 text-xs font-mono"
+                placeholder={category === '評估案' ? "POC" : "留空自動編號或填入案號"}
+                value={caseNumber}
+                onChange={(e) => setCaseNumber(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center text-[11px] text-purple-700 bg-purple-50/80 border border-purple-200/70 rounded-md px-2.5 py-1.5 mt-auto leading-relaxed shadow-2xs">
+              💡 記錄評估起始日；未來若評估完成轉為「已開案」，系統將自動計算評估歷時天數供成效追蹤！
             </div>
           </div>
 

@@ -681,11 +681,15 @@ export function InternalTasksClient({
             if (payload.category === '已開案' && updatedCaseNumber) {
               updatedCaseNumber = updatedCaseNumber.replace(/^POC[\s\-_]*/i, '').trim();
             }
+            const updatedEvaluationDate = (res as any).data?.evaluationDate !== undefined ? (res as any).data.evaluationDate : p.evaluationDate;
+            const updatedKickoffDate = (res as any).data?.kickoffDate !== undefined ? (res as any).data.kickoffDate : (payload.category === '已開案' ? (p.kickoffDate || new Date().toISOString().slice(0, 10)) : p.kickoffDate);
             return {
               ...p,
               caseNumber: updatedCaseNumber,
               projectCategory: updatedCategory,
               internalStatus: updatedInternalStatus,
+              evaluationDate: updatedEvaluationDate,
+              kickoffDate: updatedKickoffDate,
               autoCompletedByClient: payload.internalStatus === 'in_progress' ? false : p.autoCompletedByClient,
             };
           })
@@ -1745,6 +1749,38 @@ export function InternalTasksClient({
                           <span>🚀 已開案</span>
                         </Badge>
                       )}
+
+                      {/* 評估歷時 / 評估天數統計徽章 */}
+                      {(() => {
+                        const evalDate = project.evaluationDate;
+                        if (!evalDate) return null;
+                        if (isEvalCategory) {
+                          const diffMs = Date.now() - new Date(evalDate).getTime();
+                          const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+                          return (
+                            <span
+                              className="text-[11px] text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0"
+                              title={`評估起始日期：${evalDate} (至今已持續評估 ${days} 天)`}
+                            >
+                              <Clock className="h-3 w-3 text-purple-600" />
+                              <span>評估中 {days}天</span>
+                            </span>
+                          );
+                        } else {
+                          const endMs = project.kickoffDate ? new Date(project.kickoffDate).getTime() : Date.now();
+                          const diffMs = endMs - new Date(evalDate).getTime();
+                          const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+                          return (
+                            <span
+                              className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0"
+                              title={`評估起始：${evalDate} ➔ 轉已開案：${project.kickoffDate || '已開案'} (評估歷時共 ${days} 天)`}
+                            >
+                              <Clock className="h-3 w-3 text-emerald-600" />
+                              <span>評估耗時 {days}天</span>
+                            </span>
+                          );
+                        }
+                      })()}
 
                       {/* 專案名稱 */}
                       <h2 className="text-sm sm:text-base font-bold text-slate-900 mr-1">{project.name}</h2>

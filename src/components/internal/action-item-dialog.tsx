@@ -71,6 +71,7 @@ export function ActionItemDialog({
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCaseNumber, setNewProjectCaseNumber] = useState('');
   const [newProjectCategory, setNewProjectCategory] = useState<'評估案' | '已開案'>('評估案');
+  const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const [title, setTitle] = useState(item?.title || '');
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '開發/施工');
@@ -254,6 +255,8 @@ export function ActionItemDialog({
         setIsCreatingNewProject(false);
         setNewProjectName('');
         setNewProjectCaseNumber('');
+        setNewProjectCategory('評估案');
+        setNewProjectEvaluationDate(new Date().toISOString().slice(0, 10));
         setTitle('');
         setPhase('開發/施工');
         setStatus('pending');
@@ -303,6 +306,8 @@ export function ActionItemDialog({
           category: newProjectCategory,
           caseNumber: newProjectCaseNumber.trim() || undefined,
           tpmOfficeContact: owner || undefined,
+          evaluationDate: newProjectEvaluationDate || new Date().toISOString().slice(0, 10),
+          kickoffDate: newProjectCategory === '已開案' ? (newProjectEvaluationDate || new Date().toISOString().slice(0, 10)) : undefined,
         });
 
         if (!pocRes.success || !pocRes.data) {
@@ -438,9 +443,17 @@ export function ActionItemDialog({
                     onChange={(e) => setNewProjectCaseNumber(e.target.value)}
                     className="bg-white text-xs h-8"
                   />
-                  <span className="text-[11px] text-muted-foreground flex items-center">
-                    未填將自動配發案號
-                  </span>
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded px-2 h-8">
+                    <span className="text-[11px] text-slate-500 shrink-0 font-medium">
+                      {newProjectCategory === '評估案' ? '📅 評估日:' : '🚀 開案日:'}
+                    </span>
+                    <input
+                      type="date"
+                      value={newProjectEvaluationDate}
+                      onChange={(e) => setNewProjectEvaluationDate(e.target.value)}
+                      className="text-xs bg-transparent border-0 outline-none w-full text-slate-700 font-medium cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
