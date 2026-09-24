@@ -205,6 +205,33 @@ export function InternalTasksClient({
   // 待辦工作總覽的狀態頁籤 (需求2 方法1)
   const [activeTaskTab, setActiveTaskTab] = useState<'all' | 'blocked' | 'overdue' | 'active' | 'completed'>('all');
 
+  // 點擊頂部 KPI 指標卡直接快速跳轉至對應待辦清單 (待辦工作總覽 view)
+  const handleKpiCardClick = (target: 'projects' | 'all-tasks' | 'blocked' | 'overdue' | 'completed') => {
+    if (target === 'projects') {
+      handleSetViewMode('project');
+      setSelectedCategory('all');
+    } else {
+      handleSetViewMode('task');
+      if (target === 'all-tasks') {
+        setActiveTaskTab('all');
+      } else if (target === 'blocked') {
+        setActiveTaskTab('blocked');
+      } else if (target === 'overdue') {
+        setActiveTaskTab('overdue');
+      } else if (target === 'completed') {
+        setActiveTaskTab('completed');
+      }
+    }
+
+    // 平滑滾動至視圖內容區塊
+    setTimeout(() => {
+      const contentEl = document.getElementById('internal-tasks-view-content');
+      if (contentEl) {
+        contentEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 80);
+  };
+
   // 計算待辦工作總覽各狀態數量 (用於頂部快速選項)
   const taskTabCounts = useMemo(() => {
     const today = new Date();
@@ -1131,61 +1158,131 @@ export function InternalTasksClient({
         </div>
       </div>
 
-      {/* KPI 核心統計指標卡 */}
+      {/* KPI 核心統計指標卡 (點擊直接切換至對應待辦工作總覽/專案分組清單，快速跳到重點) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-        <Card className="shadow-none border bg-slate-50/50">
+        {/* 1. 列管專案總數 */}
+        <Card
+          onClick={() => handleKpiCardClick('projects')}
+          className={`shadow-none border transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 hover:shadow-sm ${
+            viewMode === 'project'
+              ? 'ring-2 ring-slate-800 bg-slate-100/90 border-slate-300 shadow-xs'
+              : 'bg-slate-50/60 border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+          }`}
+          title="點擊切換為「依專案分組檢視」"
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
-              <div className="text-xs text-muted-foreground">列管專案總數</div>
-              <div className="text-xl font-bold text-slate-800">{kpiStats.totalProjects} 個</div>
+              <div className="text-xs text-muted-foreground font-medium">列管專案總數</div>
+              <div className="text-xl font-bold text-slate-800 mt-0.5">{kpiStats.totalProjects} 個</div>
+              <div className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+                viewMode === 'project' ? 'text-slate-800' : 'text-slate-500'
+              }`}>
+                {viewMode === 'project' ? '● 目前檢視中' : '👆 點擊檢視專案'}
+              </div>
             </div>
-            <FolderGit2 className="h-7 w-7 text-slate-400" />
+            <FolderGit2 className={`h-7 w-7 ${viewMode === 'project' ? 'text-slate-700' : 'text-slate-400'}`} />
           </CardContent>
         </Card>
 
-        <Card className="shadow-none border bg-blue-50/40 border-blue-200">
+        {/* 2. 總待辦事項 */}
+        <Card
+          onClick={() => handleKpiCardClick('all-tasks')}
+          className={`shadow-none border transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 hover:shadow-sm ${
+            viewMode === 'task' && activeTaskTab === 'all'
+              ? 'ring-2 ring-blue-600 bg-blue-100/80 border-blue-300 shadow-xs'
+              : 'bg-blue-50/40 border-blue-200 hover:border-blue-300 hover:bg-blue-50/80'
+          }`}
+          title="點擊切換至「待辦工作總覽」檢視全部待辦事項"
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
-              <div className="text-xs text-blue-700">總待辦事項</div>
-              <div className="text-xl font-bold text-blue-900">{kpiStats.totalItems} 項</div>
+              <div className="text-xs text-blue-700 font-medium">總待辦事項</div>
+              <div className="text-xl font-bold text-blue-900 mt-0.5">{kpiStats.totalItems} 項</div>
+              <div className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+                viewMode === 'task' && activeTaskTab === 'all' ? 'text-blue-700' : 'text-blue-600/80'
+              }`}>
+                {viewMode === 'task' && activeTaskTab === 'all' ? '● 目前檢視中' : '👆 點擊列出全部'}
+              </div>
             </div>
-            <Layers className="h-7 w-7 text-blue-400" />
+            <Layers className={`h-7 w-7 ${viewMode === 'task' && activeTaskTab === 'all' ? 'text-blue-600' : 'text-blue-400'}`} />
           </CardContent>
         </Card>
 
-        <Card className="shadow-none border bg-rose-50 border-rose-200">
+        {/* 3. 卡關等候中 (Blocked) */}
+        <Card
+          onClick={() => handleKpiCardClick('blocked')}
+          className={`shadow-none border transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 hover:shadow-sm ${
+            viewMode === 'task' && activeTaskTab === 'blocked'
+              ? 'ring-2 ring-rose-600 bg-rose-100/90 border-rose-300 shadow-xs'
+              : 'bg-rose-50 border-rose-200 hover:border-rose-300 hover:bg-rose-100/60'
+          }`}
+          title="點擊立即在下方「待辦工作總覽」列出所有卡關等候項目"
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
               <div className="text-xs text-rose-700 font-semibold">🚨 卡關等候中 (Blocked)</div>
-              <div className="text-xl font-bold text-rose-600">{kpiStats.blockedCount} 項</div>
+              <div className="text-xl font-bold text-rose-600 mt-0.5">{kpiStats.blockedCount} 項</div>
+              <div className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+                viewMode === 'task' && activeTaskTab === 'blocked' ? 'text-rose-700' : 'text-rose-600/80'
+              }`}>
+                {viewMode === 'task' && activeTaskTab === 'blocked' ? '● 目前檢視中' : '👆 點擊速查卡關'}
+              </div>
             </div>
-            <AlertCircle className="h-7 w-7 text-rose-500" />
+            <AlertCircle className={`h-7 w-7 ${viewMode === 'task' && activeTaskTab === 'blocked' ? 'text-rose-600' : 'text-rose-500'}`} />
           </CardContent>
         </Card>
 
-        <Card className="shadow-none border bg-amber-50 border-amber-200">
+        {/* 4. 逾期未完成 (需跟催) */}
+        <Card
+          onClick={() => handleKpiCardClick('overdue')}
+          className={`shadow-none border transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 hover:shadow-sm ${
+            viewMode === 'task' && activeTaskTab === 'overdue'
+              ? 'ring-2 ring-amber-600 bg-amber-100/90 border-amber-300 shadow-xs'
+              : 'bg-amber-50 border-amber-200 hover:border-amber-300 hover:bg-amber-100/60'
+          }`}
+          title="點擊立即在下方「待辦工作總覽」列出所有逾期與即將到期之待辦事項"
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
               <div className="text-xs text-amber-700 font-semibold">⚠️ 逾期未完成 (需跟催)</div>
-              <div className="text-xl font-bold text-amber-700">{kpiStats.overdueCount} 項</div>
+              <div className="text-xl font-bold text-amber-700 mt-0.5">{kpiStats.overdueCount} 項</div>
+              <div className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+                viewMode === 'task' && activeTaskTab === 'overdue' ? 'text-amber-800' : 'text-amber-700/80'
+              }`}>
+                {viewMode === 'task' && activeTaskTab === 'overdue' ? '● 目前檢視中' : '👆 點擊速查逾期'}
+              </div>
             </div>
-            <AlertTriangle className="h-7 w-7 text-amber-500" />
+            <AlertTriangle className={`h-7 w-7 ${viewMode === 'task' && activeTaskTab === 'overdue' ? 'text-amber-600' : 'text-amber-500'}`} />
           </CardContent>
         </Card>
 
-        <Card className="shadow-none border bg-emerald-50/50 border-emerald-200 col-span-2 md:col-span-1">
+        {/* 5. 已完結項目 */}
+        <Card
+          onClick={() => handleKpiCardClick('completed')}
+          className={`shadow-none border transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 hover:shadow-sm col-span-2 md:col-span-1 ${
+            viewMode === 'task' && activeTaskTab === 'completed'
+              ? 'ring-2 ring-emerald-600 bg-emerald-100/90 border-emerald-300 shadow-xs'
+              : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-300 hover:bg-emerald-100/60'
+          }`}
+          title="點擊立即在下方「待辦工作總覽」列出所有已完成之待辦事項"
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div>
-              <div className="text-xs text-emerald-700">已完結項目</div>
-              <div className="text-xl font-bold text-emerald-700">{kpiStats.completedCount} 項</div>
+              <div className="text-xs text-emerald-700 font-medium">已完結項目</div>
+              <div className="text-xl font-bold text-emerald-700 mt-0.5">{kpiStats.completedCount} 項</div>
+              <div className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+                viewMode === 'task' && activeTaskTab === 'completed' ? 'text-emerald-800' : 'text-emerald-700/80'
+              }`}>
+                {viewMode === 'task' && activeTaskTab === 'completed' ? '● 目前檢視中' : '👆 點擊速查完結'}
+              </div>
             </div>
-            <CheckCircle2 className="h-7 w-7 text-emerald-500" />
+            <CheckCircle2 className={`h-7 w-7 ${viewMode === 'task' && activeTaskTab === 'completed' ? 'text-emerald-600' : 'text-emerald-500'}`} />
           </CardContent>
         </Card>
       </div>
 
       {/* 視圖切換器與快速選項 (需求2 方法1 + 需求4) */}
-      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between border-b pb-3 gap-3">
+      <div id="internal-tasks-view-content" className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between border-b pb-3 gap-3">
         {/* 左側：視圖切換 + 依視圖顯示的快速選項標籤 */}
         <div className="flex flex-wrap items-center gap-2">
           {/* 主視圖切換 */}
