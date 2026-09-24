@@ -2678,6 +2678,7 @@ export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTri
                 category: doc.category || 'business',
                 tpm: doc.tpm || '',
                 status: doc.status || 'pending',
+                lunchBoxes: doc.lunch_boxes || 0,
                 notes: doc.notes || '',
                 createdBy: doc.created_by || '',
                 createdAt: formatISO(doc.created_at),
@@ -2736,6 +2737,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
             category: tripData.category || 'business',
             tpm: tripData.tpm || '',
             status: tripData.status || 'pending',
+            lunch_boxes: tripData.lunchBoxes || 0,
             notes: tripData.notes || '',
             created_by: tripData.createdBy || '',
             created_at: nowIso,
@@ -2769,6 +2771,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
                     category: data.category || 'business',
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
+                    lunchBoxes: data.lunch_boxes || 0,
                     notes: data.notes || '',
                     createdBy: data.created_by || '',
                     createdAt: formatISO(data.created_at),
@@ -2825,6 +2828,7 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
         if (tripData.category !== undefined) updatePayload.category = tripData.category;
         if (tripData.tpm !== undefined) updatePayload.tpm = tripData.tpm;
         if (tripData.status !== undefined) updatePayload.status = tripData.status;
+        if (tripData.lunchBoxes !== undefined) updatePayload.lunch_boxes = tripData.lunchBoxes;
         if (tripData.notes !== undefined) updatePayload.notes = tripData.notes;
 
         const { data, error } = await supabase
@@ -2855,6 +2859,7 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
                     category: data.category || 'business',
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
+                    lunchBoxes: data.lunch_boxes || 0,
                     notes: data.notes || '',
                     createdBy: data.created_by || '',
                     createdAt: formatISO(data.created_at),

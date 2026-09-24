@@ -26,7 +26,7 @@ export default async function SchedulesPage() {
   ]);
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="container mx-auto px-4 py-6 max-w-7xl print:max-w-none print:w-full print:p-0 print:m-0">
       <Suspense
         fallback={
           <div className="flex flex-col items-center justify-center py-24 text-gray-500">

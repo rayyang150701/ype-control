@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, Clock, MapPin, Users, Building, FileText, Check } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, MapPin, Users, Building, FileText, Check, UtensilsCrossed, Sparkles, Filter } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, TIME_OPTIONS, TripCategory, TripStatus } from '@/types/businessTrip';
 import type { Client, Project, User } from '@/types';
 import { formatDate } from '@/lib/calendar-helper';
@@ -55,43 +55,133 @@ export function TripFormDialog({
     category: 'business' as TripCategory,
     tpm: '',
     status: 'pending' as TripStatus,
+    lunchBoxes: 0,
     notes: '',
   });
 
-  const [travelerModes, setTravelerModes] = useState<('select' | 'other')[]>(['select']);
-  const [customTravelers, setCustomTravelers] = useState<string[]>(['']);
+  // 人員選擇之客戶/單位篩選條件 (預設全部或隨關聯客戶連動)
+  const [travelerClientFilter, setTravelerClientFilter] = useState<string>('all');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 提取人員列表（包含使用者名稱）
-  const userOptions = useMemo(() => {
-    return users
-      .map((u) => u.displayName || u.username || u.email)
-      .filter((name): name is string => Boolean(name && name.trim()));
-  }, [users]);
+  // 判斷關聯客戶是否為燁輝相關
+  const isYiehPhui = useMemo(() => {
+    return Boolean(
+      (formData.customerName && formData.customerName.includes('燁輝')) ||
+      (formData.customerId && clients.find((c) => c.id === formData.customerId)?.name.includes('燁輝'))
+    );
+  }, [formData.customerName, formData.customerId, clients]);
 
-  // 提取既有專案中的 TPM 負責人名單作為快速選項
-  const tpmOptions = useMemo(() => {
+  // 提取所有可供篩選的客戶/單位列表
+  const clientFilterOptions = useMemo(() => {
+    const list = new Set<string>();
+    clients.forEach((c) => {
+      if (c.name?.trim()) list.add(c.name.trim());
+    });
+    users.forEach((u) => {
+      if (u.clientName?.trim()) list.add(u.clientName.trim());
+      if (u.department?.trim()) list.add(u.department.trim());
+    });
+    return Array.from(list);
+  }, [clients, users]);
+
+  // 所有同仁與人員名冊
+  const allPersonnelList = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; department?: string; clientName?: string }>();
+    users.forEach((u) => {
+      const name = (u.displayName || u.username || u.email || '').trim();
+      if (name) {
+        map.set(name, {
+          id: u.uid,
+          name,
+          department: u.department?.trim(),
+          clientName: u.clientName?.trim(),
+        });
+      }
+    });
+
+    // 從既有專案中補充相關聯絡人 (若尚未在 user 表)
+    projects.forEach((p) => {
+      const pClient = p.clientName?.trim();
+      if (p.tpmOfficeContact?.trim() && !map.has(p.tpmOfficeContact.trim())) {
+        map.set(p.tpmOfficeContact.trim(), { id: `p-tpm-${p.id}`, name: p.tpmOfficeContact.trim(), department: 'TPM', clientName: pClient });
+      }
+      if (p.yiehPhuiProjectManager?.trim() && !map.has(p.yiehPhuiProjectManager.trim())) {
+        map.set(p.yiehPhuiProjectManager.trim(), { id: `p-ypm-${p.id}`, name: p.yiehPhuiProjectManager.trim(), department: '燁輝PM', clientName: '燁輝' });
+      }
+      if (p.clientContact?.trim() && !map.has(p.clientContact.trim())) {
+        map.set(p.clientContact.trim(), { id: `p-cc-${p.id}`, name: p.clientContact.trim(), clientName: pClient });
+      }
+      if (p.responsiblePm?.trim() && !map.has(p.responsiblePm.trim())) {
+        map.set(p.responsiblePm.trim(), { id: `p-rpm-${p.id}`, name: p.responsiblePm.trim(), department: 'PM' });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [users, projects]);
+
+  // 依據 travelerClientFilter 篩選對應人名
+  const filteredPersonnelOptions = useMemo(() => {
+    if (!travelerClientFilter || travelerClientFilter === 'all') {
+      return allPersonnelList;
+    }
+    const filterLower = travelerClientFilter.toLowerCase();
+    return allPersonnelList.filter((p) => {
+      const matchClient = p.clientName?.toLowerCase().includes(filterLower);
+      const matchDept = p.department?.toLowerCase().includes(filterLower);
+      if (travelerClientFilter.includes('燁輝')) {
+        return matchClient || matchDept || p.department?.toUpperCase().includes('TPM');
+      }
+      return matchClient || matchDept;
+    });
+  }, [allPersonnelList, travelerClientFilter]);
+
+  // 燁輝專屬 TPM 名單 (當客戶為燁輝時優先提取 部門=TPM 與 燁輝人員)
+  const yiehPhuiTpmOptions = useMemo(() => {
+    const list = new Set<string>();
+    allPersonnelList.forEach((p) => {
+      const isDeptTpm = p.department?.toUpperCase().includes('TPM');
+      const isClientYp = p.clientName?.includes('燁輝') || p.department?.includes('燁輝');
+      if (isDeptTpm || isClientYp) {
+        list.add(p.name);
+      }
+    });
+
+    // 專案的 TPM 與 燁輝窗口
+    projects
+      .filter((p) => p.clientName?.includes('燁輝'))
+      .forEach((p) => {
+        if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
+        if (p.yiehPhuiProjectManager?.trim()) list.add(p.yiehPhuiProjectManager.trim());
+      });
+
+    // 若篩選為空，提供常規人員與所有專案 TPM
+    if (list.size === 0) {
+      projects.forEach((p) => {
+        if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
+      });
+      allPersonnelList.forEach((p) => list.add(p.name));
+    }
+
+    return Array.from(list);
+  }, [allPersonnelList, projects]);
+
+  // 一般 TPM 選項名單 (非燁輝時)
+  const regularTpmOptions = useMemo(() => {
     const list = new Set<string>();
     projects.forEach((p) => {
       if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
       if (p.yiehPhuiProjectManager?.trim()) list.add(p.yiehPhuiProjectManager.trim());
     });
-    // 也可加入常規人員
-    userOptions.forEach((u) => list.add(u));
+    allPersonnelList.forEach((p) => list.add(p.name));
     return Array.from(list);
-  }, [projects, userOptions]);
+  }, [projects, allPersonnelList]);
 
   // 依據傳入的 trip 或 selectedDate 初始化
   useEffect(() => {
     if (open) {
       if (trip) {
         const trvs = trip.travelers && trip.travelers.length > 0 ? trip.travelers : [''];
-        const modes: ('select' | 'other')[] = trvs.map((name) =>
-          userOptions.includes(name) ? 'select' : 'other'
-        );
-        const customs = trvs.map((name, i) => (modes[i] === 'other' ? name : ''));
-
         setFormData({
           subject: trip.subject || '',
           projectId: trip.projectId || '',
@@ -107,10 +197,15 @@ export function TripFormDialog({
           category: trip.category || 'business',
           tpm: trip.tpm || '',
           status: trip.status || 'pending',
+          lunchBoxes: trip.lunchBoxes || 0,
           notes: trip.notes || '',
         });
-        setTravelerModes(modes);
-        setCustomTravelers(customs);
+
+        if (trip.customerName) {
+          setTravelerClientFilter(trip.customerName);
+        } else {
+          setTravelerClientFilter('all');
+        }
       } else {
         const initDate = selectedDate ? formatDate(selectedDate) : formatDate(new Date());
         let initCustomerName = '';
@@ -134,23 +229,26 @@ export function TripFormDialog({
           category: 'business',
           tpm: '',
           status: 'pending',
+          lunchBoxes: 0,
           notes: '',
         });
-        setTravelerModes(['select']);
-        setCustomTravelers(['']);
+
+        if (initCustomerName) {
+          setTravelerClientFilter(initCustomerName);
+        } else {
+          setTravelerClientFilter('all');
+        }
       }
       setErrors({});
       setIsSubmitting(false);
     }
-  }, [open, trip, selectedDate, defaultCustomerId, clients, userOptions]);
+  }, [open, trip, selectedDate, defaultCustomerId, clients]);
 
   const handleAddTraveler = () => {
     setFormData((prev) => ({
       ...prev,
       travelers: [...prev.travelers, ''],
     }));
-    setTravelerModes((prev) => [...prev, 'select']);
-    setCustomTravelers((prev) => [...prev, '']);
   };
 
   const handleRemoveTraveler = (index: number) => {
@@ -158,8 +256,6 @@ export function TripFormDialog({
       ...prev,
       travelers: prev.travelers.filter((_, i) => i !== index),
     }));
-    setTravelerModes((prev) => prev.filter((_, i) => i !== index));
-    setCustomTravelers((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleTravelerChange = (index: number, value: string) => {
@@ -169,32 +265,10 @@ export function TripFormDialog({
     }));
   };
 
-  const handleTravelerModeChange = (index: number, mode: 'select' | 'other') => {
-    setTravelerModes((prev) => prev.map((m, i) => (i === index ? mode : m)));
-    if (mode === 'select') {
-      handleTravelerChange(index, '');
-      setCustomTravelers((prev) => prev.map((c, i) => (i === index ? '' : c)));
-    }
-  };
-
-  const handleCustomTravelerChange = (index: number, value: string) => {
-    setCustomTravelers((prev) => prev.map((c, i) => (i === index ? value : c)));
-    handleTravelerChange(index, value);
-  };
-
-  const handleTravelerSelectChange = (index: number, value: string) => {
-    if (value === '__OTHER__') {
-      handleTravelerModeChange(index, 'other');
-    } else {
-      handleTravelerChange(index, value);
-    }
-  };
-
   // 當專案改變時，自動關聯專案名稱與對應客戶（若客戶未指定）
   const handleProjectChange = (projectId: string) => {
     const proj = projects.find((p) => p.id === projectId);
     if (proj) {
-      // 嘗試根據專案的 clientName 尋找客戶
       let matchedClientId = formData.customerId;
       let matchedClientName = formData.customerName;
 
@@ -212,6 +286,10 @@ export function TripFormDialog({
         customerName: matchedClientName,
         tpm: prev.tpm || proj.tpmOfficeContact || '',
       }));
+
+      if (matchedClientName) {
+        setTravelerClientFilter(matchedClientName);
+      }
     } else {
       setFormData((prev) => ({
         ...prev,
@@ -223,11 +301,19 @@ export function TripFormDialog({
 
   const handleCustomerChange = (customerId: string) => {
     const client = clients.find((c) => c.id === customerId);
+    const newCustomerName = client ? client.name : '';
     setFormData((prev) => ({
       ...prev,
       customerId,
-      customerName: client ? client.name : '',
+      customerName: newCustomerName,
+      lunchBoxes: newCustomerName.includes('燁輝') ? prev.lunchBoxes : 0,
     }));
+
+    if (newCustomerName) {
+      setTravelerClientFilter(newCustomerName);
+    } else {
+      setTravelerClientFilter('all');
+    }
   };
 
   const validate = () => {
@@ -270,6 +356,7 @@ export function TripFormDialog({
         category: formData.category,
         tpm: formData.tpm ? formData.tpm.trim() : undefined,
         status: formData.status,
+        lunchBoxes: isYiehPhui ? Number(formData.lunchBoxes) || 0 : 0,
         notes: formData.notes ? formData.notes.trim() : undefined,
       });
       onOpenChange(false);
@@ -340,61 +427,98 @@ export function TripFormDialog({
             </div>
           </div>
 
-          {/* 出差人員 */}
-          <div>
-            <Label className="text-sm font-semibold text-gray-700 flex items-center justify-between">
-              <span>出差參與人員 <span className="text-red-500">*</span></span>
+          {/* 出差人員 (支援手動輸入 + 下拉選擇，以及依客戶別篩選人名) */}
+          <div className="space-y-2 p-3.5 bg-slate-50/70 border border-slate-200 rounded-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <Label className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-blue-600" />
+                <span>出差參與人員 <span className="text-red-500">*</span></span>
+              </Label>
+
+              {/* 依客戶別過濾人名 */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 flex items-center gap-1 shrink-0">
+                  <Filter className="w-3 h-3 text-slate-400" />
+                  依單位/客戶篩選：
+                </span>
+                <select
+                  value={travelerClientFilter}
+                  onChange={(e) => setTravelerClientFilter(e.target.value)}
+                  className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                >
+                  <option value="all">🌐 全部單位 / 所有同仁</option>
+                  {clientFilterOptions.map((cName) => (
+                    <option key={cName} value={cName}>
+                      🏢 {cName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 flex items-center justify-between">
+              <span>
+                💡 支援直接手動輸入任意姓名，或點選右側下拉選單快速帶入同仁名單
+              </span>
               <button
                 type="button"
                 onClick={handleAddTraveler}
-                className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 cursor-pointer"
+                className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 cursor-pointer ml-auto shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ 增加人員</span>
               </button>
-            </Label>
-            <div className="space-y-2 mt-1.5">
+            </div>
+
+            <div className="space-y-2 mt-2">
               {formData.travelers.map((traveler, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  {travelerModes[index] === 'other' ? (
-                    <div className="flex-1 flex gap-2">
-                      <Input
-                        value={customTravelers[index] || ''}
-                        onChange={(e) => handleCustomTravelerChange(index, e.target.value)}
-                        placeholder="請輸入姓名 (如：張工程師)"
-                        className="text-sm"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleTravelerModeChange(index, 'select')}
-                        className="text-xs text-blue-600"
-                      >
-                        切換下拉
-                      </Button>
-                    </div>
-                  ) : (
-                    <select
-                      value={traveler || ''}
-                      onChange={(e) => handleTravelerSelectChange(index, e.target.value)}
-                      className="flex-1 px-3 py-2 border rounded-md text-sm bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- 請選擇同仁 --</option>
-                      {userOptions.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
+                  {/* 手動輸入 + datalist 智慧補齊 */}
+                  <div className="relative flex-1">
+                    <Input
+                      type="text"
+                      list={`traveler-datalist-${index}`}
+                      value={traveler}
+                      onChange={(e) => handleTravelerChange(index, e.target.value)}
+                      placeholder="手動輸入姓名或點右側快速選取"
+                      className="text-sm bg-white"
+                    />
+                    <datalist id={`traveler-datalist-${index}`}>
+                      {filteredPersonnelOptions.map((p) => (
+                        <option
+                          key={`${p.name}-${p.id}`}
+                          value={p.name}
+                        >
+                          {p.name} {p.department || p.clientName ? `(${[p.department, p.clientName].filter(Boolean).join(' · ')})` : ''}
                         </option>
                       ))}
-                      <option value="__OTHER__">✏️ 其他（手動自填姓名）</option>
-                    </select>
-                  )}
+                    </datalist>
+                  </div>
+
+                  {/* 下拉式快速選取 */}
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleTravelerChange(index, e.target.value);
+                      }
+                    }}
+                    className="w-36 sm:w-44 px-2 py-2 border rounded-md text-xs bg-white hover:bg-slate-50 text-slate-700 cursor-pointer focus:ring-1 focus:ring-blue-500 shrink-0"
+                    title="從已篩選名單中快速選取帶入"
+                  >
+                    <option value="">▼ 快速選擇人員...</option>
+                    {filteredPersonnelOptions.map((p) => (
+                      <option key={`${p.name}-${p.id}`} value={p.name}>
+                        {p.name} {p.department || p.clientName ? `(${[p.department, p.clientName].filter(Boolean).join(' · ')})` : ''}
+                      </option>
+                    ))}
+                  </select>
 
                   {formData.travelers.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveTraveler(index)}
-                      className="p-2 text-gray-400 hover:text-red-600 rounded transition"
+                      className="p-2 text-gray-400 hover:text-red-600 rounded transition shrink-0 cursor-pointer"
                       title="移除此人員"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -481,16 +605,16 @@ export function TripFormDialog({
             </div>
           </div>
 
-          {/* 出差類別 */}
+          {/* 出差類別 (含出差、會議、線上會議、其他 4 種類別) */}
           <div>
             <Label className="text-sm font-semibold text-gray-700">行程類別</Label>
-            <div className="grid grid-cols-3 gap-3 mt-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-1.5">
               {TRIP_CATEGORIES.map((cat) => (
                 <label
                   key={cat.value}
-                  className={`flex items-center gap-2.5 p-2.5 border rounded-xl cursor-pointer transition ${
+                  className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer transition ${
                     formData.category === cat.value
-                      ? 'border-blue-500 bg-blue-50/50 shadow-xs'
+                      ? 'border-blue-500 bg-blue-50/60 shadow-xs ring-1 ring-blue-500'
                       : 'border-gray-200 hover:bg-gray-50'
                   }`}
                 >
@@ -502,34 +626,77 @@ export function TripFormDialog({
                     onChange={() => setFormData({ ...formData, category: cat.value })}
                     className="text-blue-600 focus:ring-blue-500"
                   />
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
                       className="w-3 h-3 rounded-full shrink-0"
                       style={{ backgroundColor: cat.color }}
                     />
-                    <span className="text-sm font-medium text-gray-800">{cat.label}</span>
+                    <span className="text-xs sm:text-sm font-medium text-gray-800 truncate">
+                      {cat.label}
+                    </span>
                   </div>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* TPM 與 確認狀態 */}
+          {/* TPM 與 確認狀態 (支援燁輝自動過濾 TPM 部門與人員名單) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-semibold text-gray-700">TPM 負責人 (可選)</Label>
-              <input
-                list="tpm-options-list"
-                value={formData.tpm}
-                onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
-                placeholder="輸入或選擇 TPM 姓名"
-                className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              />
-              <datalist id="tpm-options-list">
-                {tpmOptions.map((opt) => (
-                  <option key={opt} value={opt} />
-                ))}
-              </datalist>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-gray-700">
+                  TPM 負責人 (可選)
+                </Label>
+                {isYiehPhui && (
+                  <span className="text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 flex items-center gap-0.5">
+                    <Sparkles className="w-3 h-3" />
+                    已連動燁輝/TPM
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 mt-1">
+                {/* 手動輸入 + datalist 提示 */}
+                <div className="relative flex-1">
+                  <Input
+                    list="tpm-options-list"
+                    value={formData.tpm}
+                    onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
+                    placeholder={isYiehPhui ? '輸入或選擇 TPM / 燁輝窗口' : '輸入或選擇 TPM 姓名'}
+                    className="text-sm bg-white"
+                  />
+                  <datalist id="tpm-options-list">
+                    {(isYiehPhui ? yiehPhuiTpmOptions : regularTpmOptions).map((opt) => (
+                      <option key={opt} value={opt} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* 下拉式快速選單 */}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFormData((prev) => ({ ...prev, tpm: e.target.value }));
+                    }
+                  }}
+                  className="w-28 px-2 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
+                  title="從名單快速點選帶入 TPM"
+                >
+                  <option value="">▼ 挑選...</option>
+                  {(isYiehPhui ? yiehPhuiTpmOptions : regularTpmOptions).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {isYiehPhui && (
+                <p className="text-[11px] text-amber-700 mt-1">
+                  💡 關聯客戶包含「燁輝」：下拉已自動優先列出 TPM 部門同仁與燁輝窗口。
+                </p>
+              )}
             </div>
 
             <div>
@@ -544,6 +711,90 @@ export function TripFormDialog({
               </select>
             </div>
           </div>
+
+          {/* 燁輝廠區專屬：便當代訂數量 (僅當關聯客戶包含燁輝時顯示) */}
+          {isYiehPhui && (
+            <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/80 space-y-3 transition-all animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold text-amber-900 flex items-center gap-1.5">
+                  <span className="text-base">🍱</span>
+                  <span>燁輝廠區便當代訂數量</span>
+                  <span className="text-xs font-normal text-amber-700 hidden sm:inline">
+                    (至廠調校/會議代訂登記)
+                  </span>
+                </Label>
+                <span className="text-xs font-bold text-amber-900 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                  目前便當數: {formData.lunchBoxes || 0} 個
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 快速常用數量按鈕 */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[0, 1, 2, 3, 4, 5, 6, 8, 10].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, lunchBoxes: num }))}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition cursor-pointer border ${
+                        formData.lunchBoxes === num
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-amber-100 hover:border-amber-300'
+                      }`}
+                    >
+                      {num === 0 ? '無 (0)' : `${num} 個`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 步進輸入調整器 */}
+                <div className="flex items-center border border-amber-300 rounded-lg overflow-hidden bg-white shrink-0 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        lunchBoxes: Math.max(0, (prev.lunchBoxes || 0) - 1),
+                      }))
+                    }
+                    className="px-2.5 py-1 text-gray-600 hover:bg-amber-100 text-sm font-bold cursor-pointer"
+                    title="減少 1 個"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={formData.lunchBoxes || 0}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        lunchBoxes: Math.max(0, parseInt(e.target.value) || 0),
+                      }))
+                    }
+                    className="w-12 text-center text-sm py-1 border-0 focus:outline-hidden font-bold text-amber-950"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        lunchBoxes: (prev.lunchBoxes || 0) + 1,
+                      }))
+                    }
+                    className="px-2.5 py-1 text-gray-600 hover:bg-amber-100 text-sm font-bold cursor-pointer"
+                    title="增加 1 個"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-amber-800/80">
+                ※ 此欄位將同步呈現於月曆卡片、週檢視總表與出差明細，方便總務及廠區同仁提前代訂餐點。
+              </p>
+            </div>
+          )}
 
           {/* 出差重點彙整 (Key Takeaways) */}
           <div>

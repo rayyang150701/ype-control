@@ -169,11 +169,15 @@ CREATE TABLE IF NOT EXISTS public.business_trips (
   category TEXT NOT NULL DEFAULT 'business',
   tpm TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
+  lunch_boxes INTEGER DEFAULT 0,
   notes TEXT DEFAULT '',
   created_by TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 若既有資料表尚未有 lunch_boxes 欄位可執行：
+ALTER TABLE public.business_trips ADD COLUMN IF NOT EXISTS lunch_boxes INTEGER DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_business_trips_start_date ON public.business_trips(start_date);
 CREATE INDEX IF NOT EXISTS idx_business_trips_end_date ON public.business_trips(end_date);

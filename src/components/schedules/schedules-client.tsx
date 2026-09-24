@@ -345,9 +345,9 @@ export function SchedulesClient({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print:space-y-0 print:m-0 print:p-0">
       {/* 頂部主控台標題列 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs print:hidden">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
             <CalendarIcon className="w-5 h-5" />
@@ -409,22 +409,24 @@ export function SchedulesClient({
 
       {/* 篩選面板 (搜尋、客戶、專案、類別、狀態、WK週別、TPM) - 在行事曆視圖中顯示 */}
       {viewType !== 'analytics' && (
-        <TripFilterPanel
-          trips={trips}
-          clients={clients}
-          projects={projects}
-          currentYear={currentYear}
-          filter={filter}
-          onFilterChange={setFilter}
-          onWeekSelect={(wInfo) => {
-            setViewType('week');
-            setCurrentWeek(wInfo);
-          }}
-        />
+        <div className="print:hidden">
+          <TripFilterPanel
+            trips={trips}
+            clients={clients}
+            projects={projects}
+            currentYear={currentYear}
+            filter={filter}
+            onFilterChange={setFilter}
+            onWeekSelect={(wInfo) => {
+              setViewType('week');
+              setCurrentWeek(wInfo);
+            }}
+          />
+        </div>
       )}
 
       {/* 視圖切換標籤列 */}
-      <div className="flex items-center gap-1 border-b border-gray-200 bg-white rounded-t-xl px-3 pt-1 shadow-2xs">
+      <div className="flex items-center gap-1 border-b border-gray-200 bg-white rounded-t-xl px-3 pt-1 shadow-2xs print:hidden">
         <button
           type="button"
           onClick={() => setViewType('month')}

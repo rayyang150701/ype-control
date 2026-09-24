@@ -358,6 +358,11 @@ export function MonthView({
                           👥 {trip.travelers.join(', ')}
                         </div>
                       )}
+                      {Boolean(trip.lunchBoxes && trip.lunchBoxes > 0) && (
+                        <div className="text-amber-800 font-bold text-[10px] flex items-center gap-0.5 mt-0.5 bg-amber-100/70 px-1 py-0.2 rounded w-fit">
+                          <span>🍱 便當: {trip.lunchBoxes} 個</span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}

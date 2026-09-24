@@ -165,7 +165,14 @@ export function ScheduleListView({
                   {/* 行程主題 */}
                   <div className="md:col-span-3 flex items-center min-w-0">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{trip.subject}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-medium text-gray-900 truncate">{trip.subject}</p>
+                        {Boolean(trip.lunchBoxes && trip.lunchBoxes > 0) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            🍱 {trip.lunchBoxes}個便當
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-400 md:hidden">
                         {group.dateLabel} {trip.startTime}–{trip.endTime}
                       </p>

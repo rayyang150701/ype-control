@@ -231,6 +231,22 @@ export function TripDetailDialog({
             </div>
           )}
 
+          {/* 燁輝廠區便當代訂數量 */}
+          {Boolean(trip.lunchBoxes && trip.lunchBoxes > 0) && (
+            <div className="flex items-start gap-3 p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl">
+              <div className="text-xl shrink-0 mt-0.5">🍱</div>
+              <div className="flex-1">
+                <div className="text-xs text-amber-800 font-semibold">燁輝廠區便當代訂</div>
+                <div className="font-bold text-amber-950 text-sm mt-0.5 flex items-center gap-2">
+                  <span>{trip.lunchBoxes} 個便當</span>
+                  <span className="text-[11px] font-normal text-amber-700 bg-amber-100 px-2 py-0.2 rounded-full">
+                    已登記代訂
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 出差重點彙整 */}
           {trip.notes ? (
             <div className="flex items-start gap-3 p-3.5 bg-gray-50/80 border border-gray-100 rounded-xl">

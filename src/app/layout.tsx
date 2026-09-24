@@ -29,10 +29,12 @@ export default function RootLayout({
       >
         <AdminProvider>
           <Header />
-          <main className="w-full px-4 py-4 sm:py-6 lg:py-8">
+          <main className="w-full px-4 py-4 sm:py-6 lg:py-8 print:p-0 print:m-0 print:w-full">
               {children}
           </main>
-          <Toaster />
+          <div className="print:hidden">
+            <Toaster />
+          </div>
         </AdminProvider>
       </body>
     </html>

@@ -87,12 +87,56 @@ export function WeekView({
   const gridCols = displaySettings.showWeekend ? 'grid-cols-7' : 'grid-cols-5';
 
   return (
-    <div className="bg-white rounded-lg shadow border border-gray-200 print:shadow-none print:border-none">
+    <div className="bg-white rounded-lg shadow border border-gray-200 print:shadow-none print:border-none week-print-container">
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 5mm;
+          }
+          html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100% !important;
+            overflow: hidden !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .week-print-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            border: none !important;
+          }
+          .week-print-col {
+            min-height: calc(100vh - 30mm) !important;
+            max-height: calc(100vh - 30mm) !important;
+            overflow: hidden !important;
+            padding: 4px !important;
+          }
+          .week-print-card {
+            padding: 4px 6px !important;
+            margin-bottom: 4px !important;
+            font-size: 10px !important;
+            line-height: 1.25 !important;
+            box-shadow: none !important;
+            border: 1px solid #e2e8f0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+        }
+      `}</style>
+
       {/* 週別導航列 */}
       <div className="flex items-center justify-between p-4 border-b print:hidden">
         <button
           onClick={onPrevWeek}
-          className="p-2 hover:bg-gray-100 rounded-lg transition"
+          className="p-2 hover:bg-gray-100 rounded-lg transition cursor-pointer"
           title="上一週"
         >
           <ChevronLeft className="w-5 h-5 text-gray-600" />
@@ -107,17 +151,18 @@ export function WeekView({
           {/* 列印/PDF 匯出 */}
           <button
             onClick={handlePrint}
-            className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-600"
-            title="列印 / 匯出 PDF"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition text-xs font-semibold text-gray-700 cursor-pointer border border-gray-200"
+            title="以 A4 橫向單頁格式列印或儲存為 PDF"
           >
-            <Printer className="w-5 h-5" />
+            <Printer className="w-4 h-4" />
+            <span>列印週總表 (單頁PDF)</span>
           </button>
 
           {/* 設定按鈕 */}
           <div className="relative">
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-600"
+              className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-600 cursor-pointer"
               title="顯示設定"
             >
               <Settings className="w-5 h-5" />
@@ -216,30 +261,37 @@ export function WeekView({
         </button>
       </div>
 
-      {/* 列印時標題 */}
-      <div className="hidden print:block p-4 border-b text-center">
-        <h2 className="text-xl font-bold">{weekInfo.label} 行程總表</h2>
-        <p className="text-sm text-gray-600">{formatWeekChinese(weekInfo)}</p>
+      {/* 列印專用簡潔標頭 (僅在列印時顯示，聚焦週別與重點行程) */}
+      <div className="hidden print:flex items-center justify-between px-3 py-1.5 border-b-2 border-slate-900 bg-white">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-sm font-extrabold text-slate-900 tracking-wide">
+            【{weekInfo.label}】行程管理週報總表
+          </h1>
+          <span className="text-xs text-slate-600 font-semibold">{formatWeekChinese(weekInfo)}</span>
+        </div>
+        <div className="text-[10px] text-slate-500 font-mono">
+          製表時間：{new Date().toLocaleDateString('zh-TW')}
+        </div>
       </div>
 
       {/* 橫列星期與日期標題 */}
-      <div className="border-b bg-gray-50/70">
+      <div className="border-b bg-gray-50/70 print:bg-slate-100/90">
         <div className={`grid ${gridCols}`}>
           {days.map((date, index) => {
             const holiday = findHoliday(date, holidays);
             return (
               <div
                 key={index}
-                className={`py-2 px-3 text-center text-sm font-medium border-r last:border-r-0 ${
-                  holiday ? 'text-red-600 bg-red-50/60' : 'text-gray-700'
+                className={`py-2 px-3 text-center text-sm font-medium border-r last:border-r-0 print:py-1 print:px-1 ${
+                  holiday ? 'text-red-600 bg-red-50/60 print:bg-red-50' : 'text-gray-700'
                 }`}
               >
-                <div>{getDayName(date.getDay())}</div>
-                <div className={`text-xs ${holiday ? 'text-red-500 font-semibold' : 'text-gray-500'}`}>
+                <div className="print:text-xs print:font-bold">{getDayName(date.getDay())}</div>
+                <div className={`text-xs print:text-[10px] ${holiday ? 'text-red-500 font-semibold' : 'text-gray-500'}`}>
                   {date.getMonth() + 1}/{date.getDate()}
                 </div>
                 {holiday && (
-                  <div className="text-[11px] text-red-600 font-medium mt-0.5 truncate">{holiday.name}</div>
+                  <div className="text-[11px] print:text-[9px] text-red-600 font-medium mt-0.5 truncate">{holiday.name}</div>
                 )}
               </div>
             );
@@ -248,7 +300,7 @@ export function WeekView({
       </div>
 
       {/* 日期內容欄位 */}
-      <div className={`grid ${gridCols} divide-x`}>
+      <div className={`grid ${gridCols} divide-x print:border-b print:border-slate-300`}>
         {days.map((date, index) => {
           const dayTrips = getTripsForDate(date);
           const isTodayDate = isToday(date);
@@ -257,7 +309,7 @@ export function WeekView({
           return (
             <div
               key={index}
-              className={`min-h-[420px] p-2 group transition-colors ${
+              className={`week-print-col min-h-[420px] p-2 group transition-colors print:min-h-0 print:p-1 print:bg-white ${
                 holiday
                   ? 'bg-red-50/40'
                   : isTodayDate
@@ -266,9 +318,9 @@ export function WeekView({
               }`}
             >
               {/* 日期與快速新增 */}
-              <div className="flex items-center justify-between mb-2 px-1">
+              <div className="flex items-center justify-between mb-2 px-1 print:mb-1">
                 <span
-                  className={`text-lg font-bold ${
+                  className={`text-lg font-bold print:text-xs ${
                     holiday ? 'text-red-600' : isTodayDate ? 'text-blue-600' : 'text-gray-700'
                   }`}
                 >
@@ -276,7 +328,7 @@ export function WeekView({
                 </span>
                 <button
                   onClick={() => onDateClick(date)}
-                  className="p-1 hover:bg-gray-200/80 rounded transition opacity-0 group-hover:opacity-100 text-gray-500 print:hidden"
+                  className="p-1 hover:bg-gray-200/80 rounded transition opacity-0 group-hover:opacity-100 text-gray-500 print:hidden cursor-pointer"
                   title="新增行程"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -284,9 +336,9 @@ export function WeekView({
               </div>
 
               {/* 行程卡片 */}
-              <div className="space-y-2">
+              <div className="space-y-2 print:space-y-1">
                 {dayTrips.length === 0 ? (
-                  <div className="text-xs text-gray-400 text-center py-8">
+                  <div className="text-xs text-gray-400 text-center py-8 print:py-2 print:text-[10px]">
                     暫無行程
                   </div>
                 ) : (
@@ -296,15 +348,15 @@ export function WeekView({
                       <button
                         key={trip.id}
                         onClick={() => onTripClick(trip)}
-                        className="w-full text-left p-2.5 rounded-lg hover:shadow-md transition border bg-white cursor-pointer"
+                        className="week-print-card w-full text-left p-2.5 rounded-lg hover:shadow-md transition border bg-white cursor-pointer print:p-1.5 print:mb-1 print:border-slate-300 print:shadow-none"
                         style={{
                           borderLeft: `4px solid ${getCategoryColor(trip.category)}`,
                         }}
                       >
                         {/* 主題與狀態標籤 */}
-                        <div className="font-semibold text-sm text-gray-900 mb-1 flex items-start justify-between gap-1">
-                          <span className="line-clamp-2">{trip.subject}</span>
-                          <div className="flex items-center gap-1 shrink-0">
+                        <div className="font-semibold text-sm text-gray-900 mb-1 flex items-start justify-between gap-1 print:text-[11px] print:mb-0.5">
+                          <span className="line-clamp-2 print:line-clamp-2">{trip.subject}</span>
+                          <div className="flex items-center gap-1 shrink-0 print:hidden">
                             {isOverdue && (
                               <span
                                 className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded flex items-center gap-0.5"
@@ -323,7 +375,7 @@ export function WeekView({
                         </div>
 
                         {/* 動態顯示詳細資訊 */}
-                        <div className="space-y-1 text-xs text-gray-600">
+                        <div className="space-y-1 text-xs text-gray-600 print:space-y-0.5 print:text-[9.5px]">
                           {displaySettings.showCustomer && trip.customerName && (
                             <div className="flex items-center gap-1 truncate">
                               <span className="text-gray-400 shrink-0">🏢</span>
@@ -348,7 +400,7 @@ export function WeekView({
                           {displaySettings.showTime && (
                             <div className="flex items-center gap-1">
                               <span className="text-gray-400 shrink-0">🕐</span>
-                              <span className="text-[11px]">{trip.startTime} - {trip.endTime}</span>
+                              <span className="text-[11px] print:text-[9.5px]">{trip.startTime} - {trip.endTime}</span>
                             </div>
                           )}
 
@@ -358,12 +410,19 @@ export function WeekView({
                               <span className="truncate">{trip.travelers.join(', ')}</span>
                             </div>
                           )}
+
+                          {/* 🍱 便當數顯示 */}
+                          {Boolean(trip.lunchBoxes && trip.lunchBoxes > 0) && (
+                            <div className="flex items-center gap-1 text-amber-900 font-bold text-[10px] print:text-[9px] bg-amber-100/90 px-1.5 py-0.2 rounded border border-amber-300 w-fit mt-0.5">
+                              <span>🍱 便當: {trip.lunchBoxes} 個</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* 類別標籤 */}
-                        <div className="mt-2">
+                        <div className="mt-2 print:mt-1">
                           <span
-                            className="inline-block px-2 py-0.5 rounded text-[10px] font-medium text-white"
+                            className="inline-block px-2 py-0.5 rounded text-[10px] print:text-[8.5px] font-medium text-white"
                             style={{ backgroundColor: getCategoryColor(trip.category) }}
                           >
                             {TRIP_CATEGORIES.find((c) => c.value === trip.category)?.label}

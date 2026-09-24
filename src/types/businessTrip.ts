@@ -1,7 +1,7 @@
 // src/types/businessTrip.ts
 // 出差行程管理型別定義 (移植並增強自 Emmt Nexus)
 
-export type TripCategory = 'business' | 'meeting' | 'other';
+export type TripCategory = 'business' | 'meeting' | 'online_meeting' | 'other';
 export type TripStatus = 'confirmed' | 'pending';
 export type CalendarViewType = 'month' | 'week' | 'list' | 'overdue' | 'analytics';
 
@@ -18,9 +18,10 @@ export interface BusinessTrip {
   endDate: string; // 結束日期 (格式: "YYYY-MM-DD")
   startTime: string; // 開始時間 (格式: "HH:mm")
   endTime: string; // 結束時間 (格式: "HH:mm")
-  category: TripCategory; // 類別: 出差、會議、其他
+  category: TripCategory; // 類別: 出差、會議、線上會議、其他
   tpm?: string; // TPM 負責人 / 窗口
   status: TripStatus; // 確認狀態: confirmed (已確認) | pending (待確認)
+  lunchBoxes?: number; // 燁輝廠區便當代訂數量
   notes?: string; // 出差重點報告 / 備忘錄
   createdBy?: string; // 建立者
   createdAt?: string;
@@ -49,6 +50,13 @@ export const TRIP_CATEGORIES: TripCategoryInfo[] = [
     color: '#059669', // emerald-600
     bgColor: '#d1fae5', // emerald-100
     borderColor: '#10b981', // emerald-500
+  },
+  {
+    value: 'online_meeting',
+    label: '線上會議',
+    color: '#8b5cf6', // purple-500
+    bgColor: '#ede9fe', // purple-100
+    borderColor: '#a78bfa', // purple-400
   },
   {
     value: 'other',
