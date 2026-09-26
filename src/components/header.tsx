@@ -393,7 +393,38 @@ export function Header() {
             </button>
           )}
 
-          {/* 5. AI分析 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
+          {/* 5. 專案KM - 管理者與編輯者開放，訪客提示登入 */}
+          {isEditor ? (
+            <Link
+              href="/km"
+              prefetch={true}
+              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
+                pathname.startsWith('/km')
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+              }`}
+            >
+              <span>📚 專案KM</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                toast({
+                  title: '需要登入權限',
+                  description: '「專案KM」僅限登入成員檢視，請先登入帳號。',
+                });
+                setIsLoginDialogOpen(true);
+              }}
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
+              title="僅限登入成員存取 (未開放未登入訪客)"
+            >
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              <span>📚 專案KM (登入後檢視)</span>
+            </button>
+          )}
+
+          {/* 6. AI分析 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
           {isAdmin ? (
             <button
               type="button"
@@ -443,6 +474,8 @@ export function Header() {
             ? '👥 成員管理：維護系統使用者、所屬客戶與部門'
             : pathname.startsWith('/schedules')
             ? '📅 行程管理：跨廠調校、會議與國定假日行事曆'
+            : pathname.startsWith('/km')
+            ? '📚 專案KM：跨專案關鍵文件、教育訓練教材與驗收資料即時檢索'
             : pathname.startsWith('/project-variance')
             ? '📊 專案差異分析：四大階段預定規劃期程 vs 待辦事項實際進度比較'
             : pathname.startsWith('/internal-tasks')
