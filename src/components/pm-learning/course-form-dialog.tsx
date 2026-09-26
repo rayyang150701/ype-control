@@ -27,6 +27,8 @@ interface CourseFormDialogProps {
   pmoMembers: User[];
   courseToEdit?: PMLearningCourse | null;
   onSuccess: (course: PMLearningCourse) => void;
+  currentUserId?: string;
+  defaultAssignedUserId?: string;
 }
 
 const CATEGORY_OPTIONS = [
@@ -44,6 +46,8 @@ export function CourseFormDialog({
   pmoMembers,
   courseToEdit,
   onSuccess,
+  currentUserId,
+  defaultAssignedUserId,
 }: CourseFormDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,15 +93,19 @@ export function CourseFormDialog({
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       setEndDate(nextMonth.toISOString().slice(0, 10));
       setDescription('');
-      // 預設指派所有 PMO 成員
-      setAssignedUserIds(pmoMembers.map((m) => m.uid));
+      // 預設指派成員 (若從個人工作區新增，預設指派自己；若從團隊新增則全選)
+      if (defaultAssignedUserId) {
+        setAssignedUserIds([defaultAssignedUserId]);
+      } else {
+        setAssignedUserIds(pmoMembers.map((m) => m.uid));
+      }
       setChecklistItems([
         '觀看完成核心課程章節 1~3',
         '繳交學習重點心得筆記',
         '實機測試或專案應用驗收',
       ]);
     }
-  }, [courseToEdit, isOpen, pmoMembers]);
+  }, [courseToEdit, isOpen, pmoMembers, defaultAssignedUserId]);
 
   const handleToggleMember = (uid: string) => {
     setAssignedUserIds((prev) =>
@@ -171,6 +179,7 @@ export function CourseFormDialog({
           assignedUserNames: assignedNames,
           defaultChecklist: checklistItems,
           initialChecklist: checklistItems,
+          createdBy: currentUserId || defaultAssignedUserId || 'user',
         });
 
         if (res.success && res.data) {

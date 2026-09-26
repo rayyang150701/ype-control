@@ -22,6 +22,7 @@ import {
   User as UserIcon,
   Plus,
   Trash2,
+  Edit3,
   Save,
   Paperclip,
   FileText,
@@ -31,8 +32,10 @@ import {
   ChevronDown,
   Layers,
   Link as LinkIcon,
+  ShieldCheck,
 } from 'lucide-react';
-import { updatePMMemberProgress } from '@/lib/pm-learning-actions';
+import { updatePMMemberProgress, deletePMLearningCourse } from '@/lib/pm-learning-actions';
+import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
 
@@ -43,6 +46,9 @@ interface MyLearningViewProps {
   onActiveUserIdChange: (userId: string) => void;
   currentUser?: CurrentUser | null;
   onCourseUpdated: (course: PMLearningCourse) => void;
+  onOpenCreateDialog: (defaultUserId?: string) => void;
+  onEditCourse: (course: PMLearningCourse) => void;
+  onCourseDeleted: (courseId: string) => void;
 }
 
 export function MyLearningView({
@@ -52,7 +58,12 @@ export function MyLearningView({
   onActiveUserIdChange,
   currentUser,
   onCourseUpdated,
+  onOpenCreateDialog,
+  onEditCourse,
+  onCourseDeleted,
 }: MyLearningViewProps) {
+  const { toast } = useToast();
+
   // 目前選中的億威 PMO 成員
   const activeMember = pmoMembers.find((m) => m.uid === activeUserId) || pmoMembers[0];
 
@@ -87,44 +98,84 @@ export function MyLearningView({
     };
   }, [myCourses, activeMember]);
 
+  // 刪除課程處理
+  const handleDeleteCourse = async (courseId: string, title: string) => {
+    if (!window.confirm(`確定要刪除「${title}」這門培訓課程嗎？此動作無法復原。`)) {
+      return;
+    }
+    try {
+      const res = await deletePMLearningCourse(courseId);
+      if (res.success) {
+        toast({ title: '已刪除課程', description: `課程「${title}」已成功移除` });
+        onCourseDeleted(courseId);
+      } else {
+        toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: '刪除出錯', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  const isAdminOrJames = isCourseManager(currentUser);
+
   return (
     <div className="space-y-6">
       {/* 頂部人員切換與身分識別區 (限定億威電子 PMO 部門) */}
       <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-lg flex items-center justify-center shadow-2xs">
+          <div className="w-11 h-11 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-lg flex items-center justify-center shadow-2xs shrink-0">
             {(activeMember?.displayName || activeMember?.email || 'PM').slice(0, 1).toUpperCase()}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900">
                 {activeMember?.displayName || activeMember?.email} 的個人工作區
               </h2>
-              <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+              <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-semibold">
                 🏢 億威電子 · {activeMember?.department || 'PMO專案管理處'}
               </Badge>
+              {isAdminOrJames && (
+                <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold">
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                  <span>管理員編輯權限 (jamesyang / admin)</span>
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              掌握個人指派之核心培訓進度、即時檢核待辦、整理研習心得筆記與成果附件。
+              可手動調整學習進度、打勾待辦檢核、整理心得筆記與上傳實作成果。
             </p>
           </div>
         </div>
 
-        {/* 人員切換下拉選單 */}
-        <div className="flex items-center gap-2 self-stretch md:self-auto bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-          <UserIcon className="h-4 w-4 text-slate-500 ml-1.5" />
-          <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">切換成員:</span>
-          <select
-            value={activeMember?.uid}
-            onChange={(e) => onActiveUserIdChange(e.target.value)}
-            className="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        {/* 右側操作群：切換成員 + 個人自行新增課程按鈕 */}
+        <div className="flex flex-wrap items-center gap-2.5 self-stretch md:self-auto">
+          {/* 人員切換下拉選單 */}
+          <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+            <UserIcon className="h-4 w-4 text-slate-500 ml-1.5" />
+            <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">切換成員:</span>
+            <select
+              value={activeMember?.uid}
+              onChange={(e) => onActiveUserIdChange(e.target.value)}
+              className="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {pmoMembers.map((m) => (
+                <option key={m.uid} value={m.uid}>
+                  {m.displayName || m.email} (億威 · {m.department || 'PM'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 個人自行新增課程按鈕 */}
+          <Button
+            type="button"
+            onClick={() => onOpenCreateDialog(activeMember?.uid)}
+            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1.5 shadow-2xs"
+            title="個人可自行新增自選學習課程，並自動納入個人工作區與團隊學習地圖"
           >
-            {pmoMembers.map((m) => (
-              <option key={m.uid} value={m.uid}>
-                {m.displayName || m.email} (億威 · {m.department || 'PM'})
-              </option>
-            ))}
-          </select>
+            <Plus className="h-4 w-4" />
+            <span>+ 自行新增學習課程</span>
+          </Button>
         </div>
       </div>
 
@@ -153,14 +204,22 @@ export function MyLearningView({
 
       {/* 無課程提示 */}
       {myCourses.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200">
-          <BookOpen className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
+          <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
           <h3 className="text-sm font-semibold text-slate-700">
             目前尚未指派課程給 {activeMember?.displayName || activeMember?.email}
           </h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            可切換至「主管 / 團隊視角 (Team View)」進行培訓課程指派。
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            您可以點擊上方「+ 自行新增學習課程」建立專屬進修項目，或切換至「主管 / 團隊視角 (Team View)」進行指派。
           </p>
+          <Button
+            type="button"
+            onClick={() => onOpenCreateDialog(activeMember?.uid)}
+            className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            建立第一門自選學習課程
+          </Button>
         </div>
       )}
 
@@ -171,7 +230,10 @@ export function MyLearningView({
             key={course.id}
             course={course}
             userId={activeMember.uid}
+            currentUser={currentUser}
             onUpdateCourse={onCourseUpdated}
+            onEditCourse={onEditCourse}
+            onDeleteCourse={handleDeleteCourse}
           />
         ))}
       </div>
@@ -183,11 +245,17 @@ export function MyLearningView({
 function PersonalCourseCard({
   course,
   userId,
+  currentUser,
   onUpdateCourse,
+  onEditCourse,
+  onDeleteCourse,
 }: {
   course: PMLearningCourse;
   userId: string;
+  currentUser?: CurrentUser | null;
   onUpdateCourse: (course: PMLearningCourse) => void;
+  onEditCourse: (course: PMLearningCourse) => void;
+  onDeleteCourse: (courseId: string, title: string) => void;
 }) {
   const { toast } = useToast();
   const memberProgress: PMLearningMemberProgress = course.memberProgress[userId] || {
@@ -216,6 +284,9 @@ function PersonalCourseCard({
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程的建立者)
+  const canEdit = canUserEditCourse(currentUser, course.createdBy);
 
   // 同步外部變更
   React.useEffect(() => {
@@ -374,7 +445,7 @@ function PersonalCourseCard({
           <div className="space-y-2 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-slate-900 text-lg">{course.title}</span>
-              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200 font-medium">
                 {course.category}
               </Badge>
               <Badge
@@ -404,6 +475,12 @@ function PersonalCourseCard({
                   </span>
                 </div>
               )}
+
+              {course.createdBy && (
+                <div className="text-[11px] text-slate-400">
+                  {course.createdBy === 'system' ? '（系統內建）' : '（成員自訂）'}
+                </div>
+              )}
             </div>
 
             {course.description && (
@@ -413,14 +490,15 @@ function PersonalCourseCard({
             )}
           </div>
 
-          {/* 外部傳送門按鈕 (External Portal Button) */}
-          <div className="shrink-0 flex items-center gap-2 self-start lg:self-center">
+          {/* 右上操作區：傳送門按鈕 + 課程內容編輯按鈕 */}
+          <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-center">
+            {/* 外部傳送門按鈕 */}
             {course.externalUrl ? (
               <a
                 href={course.externalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95"
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95"
               >
                 <span>🚀 開啟課程傳送門</span>
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -428,6 +506,34 @@ function PersonalCourseCard({
             ) : (
               <div className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg">
                 無外部連結
+              </div>
+            )}
+
+            {/* 課程編輯與刪除權限 (主管理員 jamesyang, admin，或建立者可編輯修改課程資訊) */}
+            {canEdit && (
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEditCourse(course)}
+                  className="h-8 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
+                  title="主管理員 / 建立者：可調整此課程名稱、講師平台、傳送門與起訖日"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>編輯課程</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDeleteCourse(course.id, course.title)}
+                  className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  title="刪除此課程"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             )}
           </div>

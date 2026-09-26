@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { PMLearningCourse, PMTeamDisplayMode } from '@/types/pm-learning';
-import { User } from '@/types';
+import { User, CurrentUser } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,14 +27,17 @@ import {
   AlertCircle,
   FileText,
   Paperclip,
+  ShieldCheck,
 } from 'lucide-react';
 import { deletePMLearningCourse } from '@/lib/pm-learning-actions';
+import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
 
 interface TeamViewProps {
   courses: PMLearningCourse[];
   pmoMembers: User[];
+  currentUser?: CurrentUser | null;
   onOpenCreateDialog: () => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onCourseDeleted: (courseId: string) => void;
@@ -44,6 +47,7 @@ interface TeamViewProps {
 export function TeamView({
   courses,
   pmoMembers,
+  currentUser,
   onOpenCreateDialog,
   onEditCourse,
   onCourseDeleted,
@@ -277,6 +281,14 @@ export function TeamView({
             </button>
           </div>
 
+          {/* 主管理員權限提示 */}
+          {isCourseManager(currentUser) && (
+            <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold hidden sm:flex">
+              <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+              <span>主管理員編輯權限 (jamesyang / admin)</span>
+            </Badge>
+          )}
+
           {/* 新增課程按鈕 */}
           <Button
             type="button"
@@ -412,26 +424,30 @@ export function TeamView({
 
                   {/* 操作與展開按鈕 */}
                   <div className="flex items-center gap-1 self-end lg:self-center">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEditCourse(course)}
-                      className="h-8 px-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
-                      title="編輯課程資訊"
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(course.id, course.title)}
-                      className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                      title="刪除課程"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canUserEditCourse(currentUser, course.createdBy) && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onEditCourse(course)}
+                          className="h-8 px-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
+                          title="編輯課程資訊 (主管理員/建立者可修改內容)"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(course.id, course.title)}
+                          className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                          title="刪除課程"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
@@ -560,6 +576,7 @@ export function TeamView({
                     key={course.id}
                     course={course}
                     stats={getCourseTeamStats(course)}
+                    canEdit={canUserEditCourse(currentUser, course.createdBy)}
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
@@ -594,6 +611,7 @@ export function TeamView({
                     key={course.id}
                     course={course}
                     stats={getCourseTeamStats(course)}
+                    canEdit={canUserEditCourse(currentUser, course.createdBy)}
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
@@ -622,6 +640,7 @@ export function TeamView({
                     key={course.id}
                     course={course}
                     stats={getCourseTeamStats(course)}
+                    canEdit={canUserEditCourse(currentUser, course.createdBy)}
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
@@ -639,12 +658,14 @@ export function TeamView({
 function KanbanCourseCard({
   course,
   stats,
+  canEdit,
   onEdit,
   onDelete,
   onSelectMember,
 }: {
   course: PMLearningCourse;
   stats: { avgPercent: number; completedCount: number; totalCount: number };
+  canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onSelectMember: (uid: string) => void;
@@ -655,22 +676,26 @@ function KanbanCourseCard({
         <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
           {course.category || '專案管理'}
         </Badge>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="text-slate-400 hover:text-indigo-600 p-1 rounded"
-          >
-            <Edit3 className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            className="text-slate-400 hover:text-rose-600 p-1 rounded"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="text-slate-400 hover:text-indigo-600 p-1 rounded"
+              title="編輯課程"
+            >
+              <Edit3 className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-slate-400 hover:text-rose-600 p-1 rounded"
+              title="刪除課程"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        )}
       </div>
 
       <h4 className="font-bold text-xs text-slate-900 leading-snug line-clamp-2">

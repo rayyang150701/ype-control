@@ -35,6 +35,14 @@ export function PMLearningClient({
   const [viewMode, setViewMode] = useState<PMLearningViewMode>('team');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [courseToEdit, setCourseToEdit] = useState<PMLearningCourse | null>(null);
+  const [defaultAssignedUserId, setDefaultAssignedUserId] = useState<string | undefined>(undefined);
+
+  // 開啟建立對話框，可指定預設受訓成員 (如個人工作區點選時預設指派自己)
+  const handleOpenCreateDialog = (targetUserId?: string) => {
+    setDefaultAssignedUserId(targetUserId);
+    setCourseToEdit(null);
+    setIsCreateDialogOpen(true);
+  };
 
   // 篩選限定「億威電子 · PMO / PM 部門」人員清單
   const pmoMembers = useMemo(() => {
@@ -167,10 +175,8 @@ export function PMLearningClient({
         <TeamView
           courses={courses}
           pmoMembers={pmoMembers}
-          onOpenCreateDialog={() => {
-            setCourseToEdit(null);
-            setIsCreateDialogOpen(true);
-          }}
+          currentUser={currentUser}
+          onOpenCreateDialog={() => handleOpenCreateDialog()}
           onEditCourse={(c) => {
             setCourseToEdit(c);
             setIsCreateDialogOpen(true);
@@ -189,6 +195,12 @@ export function PMLearningClient({
           onActiveUserIdChange={setActiveUserId}
           currentUser={currentUser}
           onCourseUpdated={handleCourseUpdated}
+          onOpenCreateDialog={(uid) => handleOpenCreateDialog(uid)}
+          onEditCourse={(c) => {
+            setCourseToEdit(c);
+            setIsCreateDialogOpen(true);
+          }}
+          onCourseDeleted={handleCourseDeleted}
         />
       )}
 
@@ -198,9 +210,12 @@ export function PMLearningClient({
         onClose={() => {
           setIsCreateDialogOpen(false);
           setCourseToEdit(null);
+          setDefaultAssignedUserId(undefined);
         }}
         pmoMembers={pmoMembers}
         courseToEdit={courseToEdit}
+        currentUserId={currentUser?.uid}
+        defaultAssignedUserId={defaultAssignedUserId}
         onSuccess={handleCourseSaved}
       />
     </div>
