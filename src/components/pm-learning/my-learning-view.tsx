@@ -33,6 +33,7 @@ import {
   Layers,
   Link as LinkIcon,
   ShieldCheck,
+  Tag,
 } from 'lucide-react';
 import { updatePMMemberProgress, deletePMLearningCourse } from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
@@ -45,6 +46,8 @@ interface MyLearningViewProps {
   activeUserId: string;
   onActiveUserIdChange: (userId: string) => void;
   currentUser?: CurrentUser | null;
+  categories?: string[];
+  onOpenCategoryManager?: () => void;
   onCourseUpdated: (course: PMLearningCourse) => void;
   onOpenCreateDialog: (defaultUserId?: string) => void;
   onEditCourse: (course: PMLearningCourse) => void;
@@ -57,6 +60,8 @@ export function MyLearningView({
   activeUserId,
   onActiveUserIdChange,
   currentUser,
+  categories,
+  onOpenCategoryManager,
   onCourseUpdated,
   onOpenCreateDialog,
   onEditCourse,
@@ -165,6 +170,20 @@ export function MyLearningView({
               ))}
             </select>
           </div>
+
+          {/* 維護領域類別按鈕 */}
+          {onOpenCategoryManager && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onOpenCategoryManager}
+              className="h-9 px-3 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1.5 shadow-2xs"
+              title="維護、新增、編輯或重新命名課程領域清單"
+            >
+              <Tag className="h-3.5 w-3.5 text-indigo-600" />
+              <span>維護領域類別</span>
+            </Button>
+          )}
 
           {/* 個人自行新增課程按鈕 */}
           <Button

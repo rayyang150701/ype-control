@@ -1,5 +1,5 @@
 import { getUsers, getClients } from '@/lib/actions';
-import { getPMLearningCourses } from '@/lib/pm-learning-actions';
+import { getPMLearningCourses, getPMLearningCategories } from '@/lib/pm-learning-actions';
 import { PMLearningClient } from '@/components/pm-learning/pm-learning-client';
 import { Suspense } from 'react';
 
@@ -7,10 +7,11 @@ export const revalidate = 15;
 export const maxDuration = 60;
 
 export default async function PMLearningPage() {
-  const [courses, users, clients] = await Promise.all([
+  const [courses, users, clients, categories] = await Promise.all([
     getPMLearningCourses(),
     getUsers(),
     getClients(),
+    getPMLearningCategories(),
   ]);
 
   return (
@@ -20,6 +21,7 @@ export default async function PMLearningPage() {
           initialCourses={courses}
           users={users}
           clients={clients}
+          initialCategories={categories}
         />
       </Suspense>
     </div>

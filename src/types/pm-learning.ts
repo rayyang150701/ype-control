@@ -46,3 +46,13 @@ export interface PMLearningCourse {
 
 export type PMLearningViewMode = 'team' | 'personal';
 export type PMTeamDisplayMode = 'list' | 'kanban';
+
+export const DEFAULT_PM_CATEGORIES: string[] = [
+  '專案管理與治理',
+  '智慧製造與技術',
+  '敏捷方法與協同',
+  '跨部門溝通與談判',
+  '合約架構與成本管控',
+  '品質工程與驗收規範',
+];
+

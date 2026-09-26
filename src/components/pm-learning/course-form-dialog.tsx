@@ -15,10 +15,24 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, BookOpen, ExternalLink, Calendar, Users, Layers } from 'lucide-react';
-import { PMLearningCourse } from '@/types/pm-learning';
+import {
+  Plus,
+  Trash2,
+  BookOpen,
+  ExternalLink,
+  Calendar,
+  Users,
+  Layers,
+  Settings,
+  Tag,
+} from 'lucide-react';
+import { PMLearningCourse, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
 import { User } from '@/types';
-import { createPMLearningCourse, updatePMLearningCourse } from '@/lib/pm-learning-actions';
+import {
+  createPMLearningCourse,
+  updatePMLearningCourse,
+  savePMLearningCategories,
+} from '@/lib/pm-learning-actions';
 import { useToast } from '@/hooks/use-toast';
 
 interface CourseFormDialogProps {
@@ -29,16 +43,9 @@ interface CourseFormDialogProps {
   onSuccess: (course: PMLearningCourse) => void;
   currentUserId?: string;
   defaultAssignedUserId?: string;
+  availableCategories?: string[];
+  onOpenCategoryManager?: () => void;
 }
-
-const CATEGORY_OPTIONS = [
-  '專案管理與治理',
-  '智慧製造與技術',
-  '敏捷方法與協同',
-  '跨部門溝通與談判',
-  '合約架構與成本管控',
-  '品質工程與驗收規範',
-];
 
 export function CourseFormDialog({
   isOpen,
@@ -48,12 +55,16 @@ export function CourseFormDialog({
   onSuccess,
   currentUserId,
   defaultAssignedUserId,
+  availableCategories = DEFAULT_PM_CATEGORIES,
+  onOpenCategoryManager,
 }: CourseFormDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [title, setTitle] = useState('');
   const [instructorOrPlatform, setInstructorOrPlatform] = useState('');
-  const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
+  const [category, setCategory] = useState(availableCategories[0] || '專案管理與治理');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -66,12 +77,24 @@ export function CourseFormDialog({
   ]);
   const [newChecklistText, setNewChecklistText] = useState('');
 
+  // 整理所有可用分類
+  const categoryOptions = React.useMemo(() => {
+    const set = new Set([...availableCategories]);
+    if (category && category !== '__CUSTOM__') {
+      set.add(category);
+    }
+    return Array.from(set);
+  }, [availableCategories, category]);
+
   // 初始化欄位
   useEffect(() => {
     if (courseToEdit) {
       setTitle(courseToEdit.title);
       setInstructorOrPlatform(courseToEdit.instructorOrPlatform);
-      setCategory(courseToEdit.category || CATEGORY_OPTIONS[0]);
+      const existingCat = courseToEdit.category || availableCategories[0] || '專案管理與治理';
+      setCategory(existingCat);
+      setIsCustomCategory(false);
+      setCustomCategoryInput('');
       setExternalUrl(courseToEdit.externalUrl || '');
       setStartDate(courseToEdit.startDate || '');
       setEndDate(courseToEdit.endDate || '');
@@ -85,7 +108,9 @@ export function CourseFormDialog({
     } else {
       setTitle('');
       setInstructorOrPlatform('');
-      setCategory(CATEGORY_OPTIONS[0]);
+      setCategory(availableCategories[0] || '專案管理與治理');
+      setIsCustomCategory(false);
+      setCustomCategoryInput('');
       setExternalUrl('');
       const today = new Date().toISOString().slice(0, 10);
       setStartDate(today);
@@ -105,7 +130,7 @@ export function CourseFormDialog({
         '實機測試或專案應用驗收',
       ]);
     }
-  }, [courseToEdit, isOpen, pmoMembers, defaultAssignedUserId]);
+  }, [courseToEdit, isOpen, pmoMembers, defaultAssignedUserId, availableCategories]);
 
   const handleToggleMember = (uid: string) => {
     setAssignedUserIds((prev) =>
@@ -138,8 +163,20 @@ export function CourseFormDialog({
       return;
     }
 
+    const finalCategory = isCustomCategory
+      ? customCategoryInput.trim() || '其他領域'
+      : category.trim() || '專案管理與治理';
+
     setIsSubmitting(true);
     try {
+      // 若為自訂新領域，自動同步至系統領域清單
+      if (isCustomCategory && customCategoryInput.trim()) {
+        const newCat = customCategoryInput.trim();
+        if (!availableCategories.includes(newCat)) {
+          savePMLearningCategories([...availableCategories, newCat]);
+        }
+      }
+
       const assignedNames = assignedUserIds.map((uid) => {
         const found = pmoMembers.find((m) => m.uid === uid);
         return found?.displayName || found?.email || '成員';
@@ -149,7 +186,7 @@ export function CourseFormDialog({
         const res = await updatePMLearningCourse(courseToEdit.id, {
           title: title.trim(),
           instructorOrPlatform: instructorOrPlatform.trim(),
-          category,
+          category: finalCategory,
           externalUrl: externalUrl.trim(),
           startDate,
           endDate,
@@ -170,7 +207,7 @@ export function CourseFormDialog({
         const res = await createPMLearningCourse({
           title: title.trim(),
           instructorOrPlatform: instructorOrPlatform.trim(),
-          category,
+          category: finalCategory,
           externalUrl: externalUrl.trim(),
           startDate,
           endDate,
@@ -210,7 +247,7 @@ export function CourseFormDialog({
                 {courseToEdit ? '編輯 PM 培訓課程' : '建立新 PM 培訓課程與指派'}
               </DialogTitle>
               <DialogDescription className="text-xs">
-                設定課程核心目標、傳送門連結、排定期程，並指派億威電子 PMO 部門成員。
+                設定課程核心目標、領域類別、傳送門連結、排定期程，並指派億威電子 PMO 部門成員。
               </DialogDescription>
             </div>
           </div>
@@ -244,21 +281,69 @@ export function CourseFormDialog({
               />
             </div>
 
+            {/* 課程領域類別 (支援選單、自訂輸入與直接維護) */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1">
-                課程領域類別
-              </Label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {CATEGORY_OPTIONS.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold flex items-center gap-1">
+                  <Tag className="h-3.5 w-3.5 text-indigo-600" />
+                  課程領域類別
+                </Label>
+                {onOpenCategoryManager && (
+                  <button
+                    type="button"
+                    onClick={onOpenCategoryManager}
+                    className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline"
+                    title="開啟課程領域管理面板，可重新命名或刪除領域"
+                  >
+                    <Settings className="h-3 w-3" />
+                    <span>維護領域類別</span>
+                  </button>
+                )}
+              </div>
+
+              {!isCustomCategory ? (
+                <select
+                  value={category}
+                  onChange={(e) => {
+                    if (e.target.value === '__CUSTOM__') {
+                      setIsCustomCategory(true);
+                      setCustomCategoryInput('');
+                    } else {
+                      setCategory(e.target.value);
+                    }
+                  }}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring font-medium"
+                >
+                  {categoryOptions.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                  <option value="__CUSTOM__">➕ 自訂新領域類別...</option>
+                </select>
+              ) : (
+                <div className="flex gap-1.5">
+                  <Input
+                    value={customCategoryInput}
+                    onChange={(e) => setCustomCategoryInput(e.target.value)}
+                    placeholder="輸入新領域名稱，例如：工廠通訊與資安"
+                    className="h-10 text-xs flex-1"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsCustomCategory(false);
+                      setCategory(categoryOptions[0] || '專案管理與治理');
+                    }}
+                    className="h-10 text-xs shrink-0"
+                  >
+                    選單選擇
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

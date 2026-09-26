@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { PMLearningCourse, PMLearningViewMode } from '@/types/pm-learning';
+import { PMLearningCourse, PMLearningViewMode, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
 import { User, Client } from '@/types';
 import { useAdmin } from '@/components/admin-context';
 import { TeamView } from './team-view';
 import { MyLearningView } from './my-learning-view';
 import { CourseFormDialog } from './course-form-dialog';
+import { CategoryManagerDialog } from './category-manager-dialog';
+import { getPMLearningCourses } from '@/lib/pm-learning-actions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -23,15 +25,19 @@ interface PMLearningClientProps {
   initialCourses: PMLearningCourse[];
   users: User[];
   clients: Client[];
+  initialCategories?: string[];
 }
 
 export function PMLearningClient({
   initialCourses,
   users,
   clients,
+  initialCategories = DEFAULT_PM_CATEGORIES,
 }: PMLearningClientProps) {
   const { currentUser, isEditor, isAdmin } = useAdmin();
   const [courses, setCourses] = useState<PMLearningCourse[]>(initialCourses);
+  const [categories, setCategories] = useState<string[]>(initialCategories);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<PMLearningViewMode>('team');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [courseToEdit, setCourseToEdit] = useState<PMLearningCourse | null>(null);
@@ -94,6 +100,14 @@ export function PMLearningClient({
       }
       return [savedCourse, ...prev];
     });
+
+    // 若為新填寫之自訂領域，自動加入即時 categories 狀態中
+    if (savedCourse.category?.trim()) {
+      setCategories((prev) => {
+        const cat = savedCourse.category.trim();
+        return prev.includes(cat) ? prev : [...prev, cat];
+      });
+    }
   };
 
   // 刪除課程回調
@@ -176,6 +190,8 @@ export function PMLearningClient({
           courses={courses}
           pmoMembers={pmoMembers}
           currentUser={currentUser}
+          categories={categories}
+          onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
           onOpenCreateDialog={() => handleOpenCreateDialog()}
           onEditCourse={(c) => {
             setCourseToEdit(c);
@@ -194,6 +210,8 @@ export function PMLearningClient({
           activeUserId={activeUserId}
           onActiveUserIdChange={setActiveUserId}
           currentUser={currentUser}
+          categories={categories}
+          onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
           onCourseUpdated={handleCourseUpdated}
           onOpenCreateDialog={(uid) => handleOpenCreateDialog(uid)}
           onEditCourse={(c) => {
@@ -216,7 +234,22 @@ export function PMLearningClient({
         courseToEdit={courseToEdit}
         currentUserId={currentUser?.uid}
         defaultAssignedUserId={defaultAssignedUserId}
+        availableCategories={categories}
+        onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
         onSuccess={handleCourseSaved}
+      />
+
+      {/* 課程領域管理維護對話框 */}
+      <CategoryManagerDialog
+        isOpen={isCategoryDialogOpen}
+        onClose={() => setIsCategoryDialogOpen(false)}
+        categories={categories}
+        courses={courses}
+        onCategoriesChange={setCategories}
+        onCoursesUpdated={async () => {
+          const fresh = await getPMLearningCourses();
+          setCourses(fresh);
+        }}
       />
     </div>
   );

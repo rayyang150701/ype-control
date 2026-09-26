@@ -28,6 +28,7 @@ import {
   FileText,
   Paperclip,
   ShieldCheck,
+  Tag,
 } from 'lucide-react';
 import { deletePMLearningCourse } from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
@@ -38,6 +39,8 @@ interface TeamViewProps {
   courses: PMLearningCourse[];
   pmoMembers: User[];
   currentUser?: CurrentUser | null;
+  categories?: string[];
+  onOpenCategoryManager?: () => void;
   onOpenCreateDialog: () => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onCourseDeleted: (courseId: string) => void;
@@ -48,6 +51,8 @@ export function TeamView({
   courses,
   pmoMembers,
   currentUser,
+  categories,
+  onOpenCategoryManager,
   onOpenCreateDialog,
   onEditCourse,
   onCourseDeleted,
@@ -116,12 +121,12 @@ export function TeamView({
 
   // 所有分類選項
   const allCategories = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(categories || []);
     courses.forEach((c) => {
-      if (c.category) set.add(c.category);
+      if (c.category?.trim()) set.add(c.category.trim());
     });
     return ['全部', ...Array.from(set)];
-  }, [courses]);
+  }, [courses, categories]);
 
   // 篩選後課程清單
   const filteredCourses = useMemo(() => {
@@ -287,6 +292,21 @@ export function TeamView({
               <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
               <span>主管理員編輯權限 (jamesyang / admin)</span>
             </Badge>
+          )}
+
+          {/* 維護課程領域按鈕 */}
+          {onOpenCategoryManager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onOpenCategoryManager}
+              className="h-9 px-3 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1.5 shadow-2xs"
+              title="維護、新增、編輯或重新命名課程領域清單"
+            >
+              <Tag className="h-3.5 w-3.5 text-indigo-600" />
+              <span>維護課程領域</span>
+            </Button>
           )}
 
           {/* 新增課程按鈕 */}

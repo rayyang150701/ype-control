@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
 import { User, CurrentUser } from '@/types';
-import { PMLearningCourse, PMLearningMemberProgress } from '@/types/pm-learning';
+import { PMLearningCourse, PMLearningMemberProgress, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
 
 const SYSTEM_RECORD_KEY = '__SYSTEM_PM_LEARNING__';
 
@@ -581,3 +581,138 @@ export async function updatePMMemberProgress(
     return { success: false, message: err?.message || '更新個人進度失敗' };
   }
 }
+
+// ==============================================================================
+// 課程領域類別 (Course Categories / Domains) 自訂維護與編輯
+// ==============================================================================
+
+const CATEGORIES_RECORD_KEY = '__SYSTEM_PM_LEARNING_CATEGORIES__';
+
+/**
+ * 取得課程領域類別清單
+ */
+export async function getPMLearningCategories(): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  try {
+    const { data: sysRecord } = await supabase
+      .from('clients')
+      .select('notes')
+      .eq('name', CATEGORIES_RECORD_KEY)
+      .maybeSingle();
+
+    if (sysRecord && sysRecord.notes) {
+      try {
+        const parsed = JSON.parse(sysRecord.notes);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error('解析課程領域失敗:', e);
+      }
+    }
+
+    // 若尚未儲存過，整合現有課程中出現的所有 category 與預設值
+    const courses = await getPMLearningCourses();
+    const existingCats = new Set<string>(DEFAULT_PM_CATEGORIES);
+    courses.forEach((c) => {
+      if (c.category?.trim()) existingCats.add(c.category.trim());
+    });
+
+    return Array.from(existingCats);
+  } catch (err) {
+    console.error('取得課程領域失敗:', err);
+    return DEFAULT_PM_CATEGORIES;
+  }
+}
+
+/**
+ * 儲存課程領域清單
+ */
+export async function savePMLearningCategories(categories: string[]) {
+  const supabase = getSupabaseClient();
+  const nowIso = new Date().toISOString();
+  try {
+    const cleanList = Array.from(new Set(categories.map((c) => c.trim()).filter(Boolean)));
+    const { error } = await supabase.from('clients').upsert(
+      {
+        name: CATEGORIES_RECORD_KEY,
+        code: 'PM_CATS',
+        notes: JSON.stringify(cleanList),
+        updated_at: nowIso,
+      },
+      { onConflict: 'name' }
+    );
+
+    if (error) throw error;
+    revalidatePath('/pm-learning');
+    return { success: true, message: '課程領域已成功更新儲存！', data: cleanList };
+  } catch (err: any) {
+    console.error('儲存課程領域失敗:', err);
+    return { success: false, message: err?.message || '儲存失敗', data: categories };
+  }
+}
+
+/**
+ * 重新命名特定領域名稱，並同步連動更新所有屬於該領域的課程
+ */
+export async function renamePMLearningCategory(oldName: string, newName: string) {
+  try {
+    const oldTrimmed = oldName.trim();
+    const newTrimmed = newName.trim();
+    if (!newTrimmed) return { success: false, message: '領域名稱不可為空' };
+    if (oldTrimmed === newTrimmed) return { success: true, message: '領域名稱未變更' };
+
+    // 1. 更新領域清單
+    const categories = await getPMLearningCategories();
+    const updatedCats = categories.map((c) => (c === oldTrimmed ? newTrimmed : c));
+    if (!updatedCats.includes(newTrimmed)) {
+      updatedCats.push(newTrimmed);
+    }
+    await savePMLearningCategories(updatedCats);
+
+    // 2. 智慧連動更新所有屬於舊領域名稱的課程
+    const courses = await getPMLearningCourses();
+    let updatedCourseCount = 0;
+    const updatedCourses = courses.map((course) => {
+      if (course.category === oldTrimmed) {
+        updatedCourseCount++;
+        return { ...course, category: newTrimmed, updatedAt: new Date().toISOString() };
+      }
+      return course;
+    });
+
+    if (updatedCourseCount > 0) {
+      await syncCoursesToDatabase(updatedCourses);
+    }
+
+    revalidatePath('/pm-learning');
+    return {
+      success: true,
+      message: `已將「${oldTrimmed}」重新命名為「${newTrimmed}」${
+        updatedCourseCount > 0 ? `，並同步更新 ${updatedCourseCount} 門關聯課程` : ''
+      }！`,
+    };
+  } catch (err: any) {
+    console.error('重新命名課程領域失敗:', err);
+    return { success: false, message: err?.message || '重新命名失敗' };
+  }
+}
+
+/**
+ * 刪除特定領域
+ */
+export async function deletePMLearningCategory(categoryToDelete: string) {
+  try {
+    const target = categoryToDelete.trim();
+    const categories = await getPMLearningCategories();
+    const updatedCats = categories.filter((c) => c !== target);
+    await savePMLearningCategories(updatedCats);
+
+    revalidatePath('/pm-learning');
+    return { success: true, message: `已移除「${target}」領域類別！` };
+  } catch (err: any) {
+    console.error('刪除課程領域失敗:', err);
+    return { success: false, message: err?.message || '刪除失敗' };
+  }
+}
+
