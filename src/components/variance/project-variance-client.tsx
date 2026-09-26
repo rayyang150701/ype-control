@@ -483,7 +483,11 @@ export function ProjectVarianceClient({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-5 h-2.5 bg-blue-600 rounded-xs inline-block" />
-            <span className="font-medium text-blue-800">下方藍 Bar：待辦事項實際期程 (Actual)</span>
+            <span className="font-medium text-blue-800">下方藍 Bar：實際期程 (正常 / 如期進行)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-5 h-2.5 bg-red-600 rounded-xs inline-block" />
+            <span className="font-medium text-red-700 font-bold">下方紅 Bar：實際超過原規劃 (延誤 / 逾期)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3.5 h-0.5 bg-emerald-500 inline-block border-t-2 border-emerald-500" />
@@ -811,40 +815,59 @@ export function ProjectVarianceClient({
                               </TooltipProvider>
                             )}
 
-                            {/* 下方 Bar：實際期程 (鮮豔藍色 Bar，若有待辦) */}
+                            {/* 下方 Bar：實際期程 (正常為藍色，超過原規劃時以紅色顯示) */}
                             {actualStartX !== null && actualWidth > 0 ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      style={{
-                                        left: `${actualStartX}px`,
-                                        width: `${actualWidth}px`,
-                                        bottom: '10px',
-                                      }}
-                                      className="absolute h-4 bg-blue-600 rounded-xs shadow-2xs flex items-center px-1.5 cursor-pointer hover:bg-blue-700 transition-all z-10"
-                                    >
-                                      <span className="text-[9px] font-bold text-white truncate">
-                                        實際：{phase.actual.actualStart} ~ {phase.actual.isCompleted ? phase.actual.actualEnd : '進行中'}
-                                      </span>
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="text-xs bg-blue-950 text-white p-2.5 border border-blue-800">
-                                    <p className="font-bold text-blue-200">🟦 {phase.fullName} (待辦實際執行)</p>
-                                    <p>實際起始：{phase.actual.actualStart}</p>
-                                    <p>
-                                      實際截止：
-                                      {phase.actual.isCompleted
-                                        ? `${phase.actual.actualEnd} (全數結案)`
-                                        : `${phase.actual.actualEnd} (進行中)`}
-                                    </p>
-                                    <p>待辦完成度：{phase.actual.completedCount} / {phase.actual.totalCount} 項</p>
-                                    <p className="font-semibold text-emerald-300 mt-1">
-                                      差異分析：{phase.statusText}
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              (() => {
+                                const isDelayed =
+                                  phase.statusVariant === 'destructive' ||
+                                  (phase.varianceDays !== null && phase.varianceDays > 0);
+
+                                return (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div
+                                          style={{
+                                            left: `${actualStartX}px`,
+                                            width: `${actualWidth}px`,
+                                            bottom: '10px',
+                                          }}
+                                          className={`absolute h-4 rounded-xs shadow-2xs flex items-center px-1.5 cursor-pointer transition-all z-10 ${
+                                            isDelayed
+                                              ? 'bg-red-600 hover:bg-red-700 shadow-red-200 ring-1 ring-red-400'
+                                              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                                          }`}
+                                        >
+                                          <span className="text-[9px] font-bold text-white truncate">
+                                            實際：{phase.actual.actualStart} ~ {phase.actual.isCompleted ? phase.actual.actualEnd : '進行中'}
+                                            {isDelayed ? ' ⚠️ (逾期)' : ''}
+                                          </span>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent className={`text-xs p-2.5 border ${
+                                        isDelayed
+                                          ? 'bg-red-950 text-white border-red-800'
+                                          : 'bg-blue-950 text-white border-blue-800'
+                                      }`}>
+                                        <p className={`font-bold ${isDelayed ? 'text-red-200' : 'text-blue-200'}`}>
+                                          {isDelayed ? '🟥' : '🟦'} {phase.fullName} (待辦實際執行 - {isDelayed ? '超過原規劃' : '正常進行'})
+                                        </p>
+                                        <p>實際起始：{phase.actual.actualStart}</p>
+                                        <p>
+                                          實際截止：
+                                          {phase.actual.isCompleted
+                                            ? `${phase.actual.actualEnd} (全數結案)`
+                                            : `${phase.actual.actualEnd} (進行中)`}
+                                        </p>
+                                        <p>待辦完成度：{phase.actual.completedCount} / {phase.actual.totalCount} 項</p>
+                                        <p className={`font-semibold mt-1 ${isDelayed ? 'text-red-300 font-bold' : 'text-emerald-300'}`}>
+                                          差異分析：{phase.statusText}
+                                        </p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })()
                             ) : (
                               /* 尚無待辦實際時，顯示虛線引導 */
                               <div
@@ -871,6 +894,10 @@ export function ProjectVarianceClient({
                                   ? Math.max(iEndX - iStartX, 6)
                                   : 0;
 
+                              const isItemDelayed =
+                                (item.status !== 'completed' && item.dueDate && isAfter(today, parseISO(item.dueDate))) ||
+                                (phase.plan.endDate && itemEnd && isAfter(parseISO(itemEnd), parseISO(phase.plan.endDate)));
+
                               return (
                                 <div
                                   key={item.id}
@@ -888,15 +915,17 @@ export function ProjectVarianceClient({
                                             className={`absolute h-2.5 rounded-xs shadow-2xs cursor-pointer transition-all ${
                                               item.status === 'completed'
                                                 ? 'bg-emerald-500 hover:bg-emerald-600'
+                                                : isItemDelayed
+                                                ? 'bg-red-500 hover:bg-red-600'
                                                 : item.status === 'blocked'
-                                                ? 'bg-rose-500 hover:bg-rose-600'
+                                                ? 'bg-amber-500 hover:bg-amber-600'
                                                 : 'bg-blue-400 hover:bg-blue-500'
                                             }`}
                                           />
                                         </TooltipTrigger>
                                         <TooltipContent className="text-xs">
                                           <p className="font-bold">{item.title}</p>
-                                          <p>狀態：{item.status}</p>
+                                          <p>狀態：{item.status}{isItemDelayed ? ' (超過規劃期程)' : ''}</p>
                                           <p>負責/等候：{item.owner} / {item.waitingOn || '無'}</p>
                                           <p>期間：{itemStart ? itemStart.slice(0, 10) : ''} ~ {itemEnd ? itemEnd.slice(0, 10) : ''}</p>
                                         </TooltipContent>
@@ -949,14 +978,24 @@ export function ProjectVarianceClient({
                       {phase.plan.startDate.slice(5)} ~ {phase.plan.endDate.slice(5)}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">🟦 實際執行：</span>
-                    <span className="font-semibold text-blue-700">
-                      {phase.actual.actualStart
-                        ? `${phase.actual.actualStart.slice(5)} ~ ${phase.actual.isCompleted ? phase.actual.actualEnd?.slice(5) : '進行中'}`
-                        : '尚無待辦'}
-                    </span>
-                  </div>
+                  {(() => {
+                    const isDelayed =
+                      phase.statusVariant === 'destructive' ||
+                      (phase.varianceDays !== null && phase.varianceDays > 0);
+                    return (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          {isDelayed ? '🟥 實際執行：' : '🟦 實際執行：'}
+                        </span>
+                        <span className={`font-semibold ${isDelayed ? 'text-red-600 font-bold' : 'text-blue-700'}`}>
+                          {phase.actual.actualStart
+                            ? `${phase.actual.actualStart.slice(5)} ~ ${phase.actual.isCompleted ? phase.actual.actualEnd?.slice(5) : '進行中'}`
+                            : '尚無待辦'}
+                          {isDelayed ? ' ⚠️ (逾期)' : ''}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
