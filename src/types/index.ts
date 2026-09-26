@@ -76,6 +76,19 @@ export interface Project {
   onHoldStartDate?: Timestamp | Date | string;
   onHoldEndDate?: Timestamp | Date | string;
   onHoldNotes?: string;
+  phaseSchedules?: ProjectPhaseSchedules;
+}
+
+export interface PhaseSchedule {
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface ProjectPhaseSchedules {
+  design?: PhaseSchedule;       // 1.1 設計階段
+  construction?: PhaseSchedule; // 1.2 施工階段
+  verification?: PhaseSchedule; // 1.3 驗證階段
+  acceptance?: PhaseSchedule;   // 1.4 驗收階段
 }
 
 export interface InternalProjectOption {
@@ -142,12 +155,23 @@ export interface FullProject extends Project {
 }
 
 export type ActionItemPhase = 
+  | '1.1 設計階段'
+  | '1.1.1 評估'
+  | '1.1.2 報價'
+  | '1.1.3 簽呈'
+  | '1.2 施工階段'
+  | '1.3 驗證階段'
+  | '1.4 驗收階段'
+  | '1.4.1 教育訓練'
+  | '1.4.2 驗收結案'
+  // 舊制向下相容
   | '評估階段' 
   | '報價/設計' 
   | '簽呈核決' 
   | '開發/施工' 
   | '驗證測試' 
-  | '驗收結案';
+  | '驗收結案'
+  | string;
 
 export type ActionItemStatus = 'pending' | 'in_progress' | 'blocked' | 'completed';
 

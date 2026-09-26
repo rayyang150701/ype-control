@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday, ProjectPhaseSchedules } from '@/types';
 import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 import { DEFAULT_TAIWAN_HOLIDAYS } from '@/lib/calendar-helper';
@@ -66,6 +66,7 @@ export interface ProjectMeta {
     linkedInternalProjectId?: string;
     linkedCustomerProjectId?: string;
     onHoldNotes?: string;
+    phaseSchedules?: ProjectPhaseSchedules;
 }
 
 function parseProjectMeta(onHoldNotesRaw: string | null | undefined): ProjectMeta {
@@ -1257,6 +1258,7 @@ async function getOptimizedProjectData() {
                 tpmOfficeContact,
                 egigaContact,
                 isOnHold: !!doc.is_on_hold,
+                phaseSchedules: meta.phaseSchedules || undefined,
                 createdAt: formatISO(doc.created_at),
                 subProjects: [],
             } as any;
@@ -1948,6 +1950,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             tpmOfficeContact: responsiblePm,
             egigaContact: doc.egiga_contact || '',
             isOnHold: !!doc.is_on_hold,
+            phaseSchedules: meta.phaseSchedules || undefined,
             createdAt: formatISO(doc.created_at),
             createdBy: doc.created_by || '',
             subProjects: [],
@@ -3017,5 +3020,52 @@ export async function deleteHoliday(idOrDate: string) {
         return { success: false, message: err?.message || '刪除假日失敗' };
     }
 }
+
+/**
+ * 專案差異分析：更新專案四大階段 (設計/施工/驗證/驗收) 的預定規劃期程 (起訖日期)
+ */
+export async function updateProjectPhaseSchedules(
+    projectId: string,
+    phaseSchedules: ProjectPhaseSchedules
+): Promise<{ success: boolean; message: string; data?: ProjectPhaseSchedules }> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects')
+            .select('on_hold_notes')
+            .eq('id', projectId)
+            .single();
+
+        if (fetchErr || !proj) {
+            return { success: false, message: '找不到對應專案主檔' };
+        }
+
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        meta.phaseSchedules = phaseSchedules;
+
+        const { error: updateErr } = await supabase
+            .from('projects')
+            .update({
+                on_hold_notes: serializeProjectMeta(meta),
+            })
+            .eq('id', projectId);
+
+        if (updateErr) throw updateErr;
+
+        revalidatePath('/project-variance');
+        revalidatePath('/dashboard');
+        revalidatePath('/internal-tasks');
+
+        return {
+            success: true,
+            message: '四大階段規劃時程儲存成功！',
+            data: phaseSchedules,
+        };
+    } catch (err: any) {
+        console.error('更新四大階段規劃時程失敗:', err);
+        return { success: false, message: err?.message || '更新規劃時程失敗' };
+    }
+}
+
 
 

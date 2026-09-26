@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
 import { Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
@@ -27,12 +27,15 @@ interface ActionItemDialogProps {
 }
 
 const PHASES: ActionItemPhase[] = [
-  '評估階段',
-  '報價/設計',
-  '簽呈核決',
-  '開發/施工',
-  '驗證測試',
-  '驗收結案',
+  '1.1 設計階段',
+  '1.1.1 評估',
+  '1.1.2 報價',
+  '1.1.3 簽呈',
+  '1.2 施工階段',
+  '1.3 驗證階段',
+  '1.4 驗收階段',
+  '1.4.1 教育訓練',
+  '1.4.2 驗收結案',
 ];
 
 export function ActionItemDialog({
@@ -74,7 +77,7 @@ export function ActionItemDialog({
   const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const [title, setTitle] = useState(item?.title || '');
-  const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '開發/施工');
+  const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '1.2 施工階段');
   const [status, setStatus] = useState<ActionItemStatus>(item?.status || 'pending');
   const [owner, setOwner] = useState(item?.owner || '');
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
@@ -502,12 +505,51 @@ export function ActionItemDialog({
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  {PHASES.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
+                <SelectContent className="max-h-80">
+                  <SelectGroup>
+                    <SelectLabel className="font-bold text-slate-900 bg-slate-100/90 py-1 px-2 text-xs">
+                      1.1 設計階段
+                    </SelectLabel>
+                    <SelectItem value="1.1 設計階段">1.1 設計階段</SelectItem>
+                    <SelectItem value="1.1.1 評估">　↳ 1.1.1 評估</SelectItem>
+                    <SelectItem value="1.1.2 報價">　↳ 1.1.2 報價</SelectItem>
+                    <SelectItem value="1.1.3 簽呈">　↳ 1.1.3 簽呈</SelectItem>
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectItem value="1.2 施工階段" className="font-semibold text-slate-900">
+                      1.2 施工階段
                     </SelectItem>
-                  ))}
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectItem value="1.3 驗證階段" className="font-semibold text-slate-900">
+                      1.3 驗證階段
+                    </SelectItem>
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel className="font-bold text-slate-900 bg-slate-100/90 py-1 px-2 text-xs">
+                      1.4 驗收階段
+                    </SelectLabel>
+                    <SelectItem value="1.4 驗收階段">1.4 驗收階段</SelectItem>
+                    <SelectItem value="1.4.1 教育訓練">　↳ 1.4.1 教育訓練</SelectItem>
+                    <SelectItem value="1.4.2 驗收結案">　↳ 1.4.2 驗收結案</SelectItem>
+                  </SelectGroup>
+                  {/* 若既有舊資料屬於舊階段名詞，動態保留供顯示/選擇 */}
+                  {item?.phase && ![
+                    '1.1 設計階段', '1.1.1 評估', '1.1.2 報價', '1.1.3 簽呈',
+                    '1.2 施工階段', '1.3 驗證階段',
+                    '1.4 驗收階段', '1.4.1 教育訓練', '1.4.2 驗收結案'
+                  ].includes(item.phase) && (
+                    <>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel className="text-xs text-amber-700 bg-amber-50 py-1 px-2">歷史舊階段標籤</SelectLabel>
+                        <SelectItem value={item.phase}>{item.phase}</SelectItem>
+                      </SelectGroup>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>

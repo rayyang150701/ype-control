@@ -284,10 +284,10 @@ export function Header() {
         </div>
       </div>
 
-      {/* 雙視圖切換分頁列：燁輝進度管制 vs 內部專案待辦追蹤 vs AI診斷 */}
+      {/* 導覽列分頁：燁輝進度管制表 vs 待辦事項 vs 行程管理 vs 專案差異分析 vs AI分析 */}
       <div className="w-full bg-slate-50/90 border-t border-b border-slate-200/80 px-4 py-2 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          {/* 1. 燁輝進度管制總表 (對外週報) - 所有人皆可點擊 */}
+          {/* 1. 燁輝進度管制表 - 所有人皆可點擊 */}
           <Link
             href="/dashboard"
             prefetch={true}
@@ -297,10 +297,10 @@ export function Header() {
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
             }`}
           >
-            <span>📊 燁輝進度管制總表 (對外週報)</span>
+            <span>📊 燁輝進度管制表</span>
           </Link>
 
-          {/* 2. 內部專案與待辦追蹤 - 管理者與編輯者開放 (編輯者檢視)，訪客反灰禁用 */}
+          {/* 2. 待辦事項 - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/internal-tasks"
@@ -311,7 +311,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📋 內部專案與待辦追蹤 (對內跟催 & 歷程)</span>
+              <span>📋 待辦事項</span>
             </Link>
           ) : (
             <button
@@ -319,7 +319,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「內部專案與待辦追蹤」僅限登入成員檢視，請先登入帳號。',
+                  description: '「待辦事項」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -327,11 +327,11 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📋 內部專案與待辦追蹤 (登入後檢視)</span>
+              <span>📋 待辦事項 (登入後檢視)</span>
             </button>
           )}
 
-          {/* 3. 出差行程行事曆 - 管理者與編輯者開放，訪客提示登入 */}
+          {/* 3. 行程管理 - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/schedules"
@@ -342,7 +342,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📅 出差行程行事曆</span>
+              <span>📅 行程管理</span>
             </Link>
           ) : (
             <button
@@ -350,7 +350,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「出差行程行事曆」僅限登入成員檢視，請先登入帳號。',
+                  description: '「行程管理」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -358,11 +358,42 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📅 出差行程行事曆 (登入後檢視)</span>
+              <span>📅 行程管理 (登入後檢視)</span>
             </button>
           )}
 
-          {/* 4. AI 智慧診斷 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
+          {/* 4. 專案差異分析 - 管理者與編輯者開放，訪客提示登入 */}
+          {isEditor ? (
+            <Link
+              href="/project-variance"
+              prefetch={true}
+              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
+                pathname.startsWith('/project-variance')
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+              }`}
+            >
+              <span>📊 專案差異分析</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                toast({
+                  title: '需要登入權限',
+                  description: '「專案差異分析」僅限登入成員檢視，請先登入帳號。',
+                });
+                setIsLoginDialogOpen(true);
+              }}
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
+              title="僅限登入成員存取 (未開放未登入訪客)"
+            >
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              <span>📊 專案差異分析 (登入後檢視)</span>
+            </button>
+          )}
+
+          {/* 5. AI分析 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
           {isAdmin ? (
             <button
               type="button"
@@ -377,7 +408,7 @@ export function Header() {
               title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
             >
               <Bot className="h-4 w-4 text-indigo-600" />
-              <span>🤖 AI 智慧診斷</span>
+              <span>🤖 AI分析</span>
             </button>
           ) : (
             <button
@@ -386,13 +417,13 @@ export function Header() {
                 if (isGuest) {
                   toast({
                     title: '需要管理者權限',
-                    description: '「AI 智慧診斷」僅限管理員以上使用，請先登入帳號。',
+                    description: '「AI分析」僅限管理員以上使用，請先登入帳號。',
                   });
                   setIsLoginDialogOpen(true);
                 } else {
                   toast({
                     title: '權限不足',
-                    description: 'AI 智慧診斷功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
+                    description: 'AI分析功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
                     variant: 'destructive',
                   });
                 }
@@ -401,7 +432,7 @@ export function Header() {
               title="僅限管理員與主管理員使用"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>🤖 AI 智慧診斷 (管理員專屬)</span>
+              <span>🤖 AI分析 (管理員專屬)</span>
             </button>
           )}
         </div>
@@ -411,7 +442,9 @@ export function Header() {
             : pathname.startsWith('/users')
             ? '👥 成員管理：維護系統使用者、所屬客戶與部門'
             : pathname.startsWith('/schedules')
-            ? '📅 出差行程行事曆：跨廠調校、會議與國定假日行事曆'
+            ? '📅 行程管理：跨廠調校、會議與國定假日行事曆'
+            : pathname.startsWith('/project-variance')
+            ? '📊 專案差異分析：四大階段預定規劃期程 vs 待辦事項實際進度比較'
             : pathname.startsWith('/internal-tasks')
             ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}

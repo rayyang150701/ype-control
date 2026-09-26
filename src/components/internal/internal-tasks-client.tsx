@@ -323,7 +323,12 @@ export function InternalTasksClient({
         (item.projectName && item.projectName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (item.projectCaseNumber && item.projectCaseNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchesPhase = selectedPhase === 'all' || item.phase === selectedPhase;
+      const matchesPhase = selectedPhase === 'all' ||
+        item.phase === selectedPhase ||
+        (selectedPhase === '1.1 設計階段' && (item.phase.startsWith('1.1') || item.phase.includes('設計') || item.phase.includes('評估') || item.phase.includes('報價') || item.phase.includes('簽呈'))) ||
+        (selectedPhase === '1.2 施工階段' && (item.phase.startsWith('1.2') || item.phase.includes('施工') || item.phase.includes('開發'))) ||
+        (selectedPhase === '1.3 驗證階段' && (item.phase.startsWith('1.3') || item.phase.includes('驗證') || item.phase.includes('測試'))) ||
+        (selectedPhase === '1.4 驗收階段' && (item.phase.startsWith('1.4') || item.phase.includes('驗收') || item.phase.includes('教育訓練') || item.phase.includes('結案')));
       const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
       
       // 需求1: 等候處理篩選時，過濾已完成的待辦與已結案專案
@@ -759,18 +764,34 @@ export function InternalTasksClient({
   // 輔助取得階段顏色
   const getPhaseBadge = (phase: string) => {
     switch (phase) {
-      case '評估階段':
-        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">評估階段</Badge>;
+      // 1.1 設計階段
+      case '1.1 設計階段':
       case '報價/設計':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">報價/設計</Badge>;
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">1.1 設計階段</Badge>;
+      case '1.1.1 評估':
+      case '評估階段':
+        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">1.1.1 評估</Badge>;
+      case '1.1.2 報價':
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">1.1.2 報價</Badge>;
+      case '1.1.3 簽呈':
       case '簽呈核決':
-        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">簽呈核決</Badge>;
+        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">1.1.3 簽呈</Badge>;
+      // 1.2 施工階段
+      case '1.2 施工階段':
       case '開發/施工':
-        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300">開發/施工</Badge>;
+        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300">1.2 施工階段</Badge>;
+      // 1.3 驗證階段
+      case '1.3 驗證階段':
       case '驗證測試':
-        return <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-300">驗證測試</Badge>;
+        return <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-300">1.3 驗證階段</Badge>;
+      // 1.4 驗收階段
+      case '1.4 驗收階段':
+        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300">1.4 驗收階段</Badge>;
+      case '1.4.1 教育訓練':
+        return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">1.4.1 教育訓練</Badge>;
+      case '1.4.2 驗收結案':
       case '驗收結案':
-        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300">驗收結案</Badge>;
+        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300">1.4.2 驗收結案</Badge>;
       default:
         return <Badge variant="outline">{phase}</Badge>;
     }
@@ -1652,14 +1673,17 @@ export function InternalTasksClient({
             <SelectTrigger className="w-[130px] h-9 text-xs">
               <SelectValue placeholder="階段篩選" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-80">
               <SelectItem value="all">全部階段</SelectItem>
-              <SelectItem value="評估階段">評估階段</SelectItem>
-              <SelectItem value="報價/設計">報價/設計</SelectItem>
-              <SelectItem value="簽呈核決">簽呈核決</SelectItem>
-              <SelectItem value="開發/施工">開發/施工</SelectItem>
-              <SelectItem value="驗證測試">驗證測試</SelectItem>
-              <SelectItem value="驗收結案">驗收結案</SelectItem>
+              <SelectItem value="1.1 設計階段">1.1 設計階段 (全部設計)</SelectItem>
+              <SelectItem value="1.1.1 評估">　↳ 1.1.1 評估</SelectItem>
+              <SelectItem value="1.1.2 報價">　↳ 1.1.2 報價</SelectItem>
+              <SelectItem value="1.1.3 簽呈">　↳ 1.1.3 簽呈</SelectItem>
+              <SelectItem value="1.2 施工階段">1.2 施工階段</SelectItem>
+              <SelectItem value="1.3 驗證階段">1.3 驗證階段</SelectItem>
+              <SelectItem value="1.4 驗收階段">1.4 驗收階段 (全部驗收)</SelectItem>
+              <SelectItem value="1.4.1 教育訓練">　↳ 1.4.1 教育訓練</SelectItem>
+              <SelectItem value="1.4.2 驗收結案">　↳ 1.4.2 驗收結案</SelectItem>
             </SelectContent>
           </Select>
 

@@ -241,18 +241,34 @@ export function LinkedInternalProgressDialog({
 
   const getPhaseBadge = (phase: string) => {
     switch (phase) {
-      case '評估階段':
-        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">評估階段</Badge>;
+      // 1.1 設計階段
+      case '1.1 設計階段':
       case '報價/設計':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">報價/設計</Badge>;
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">1.1 設計階段</Badge>;
+      case '1.1.1 評估':
+      case '評估階段':
+        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">1.1.1 評估</Badge>;
+      case '1.1.2 報價':
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">1.1.2 報價</Badge>;
+      case '1.1.3 簽呈':
       case '簽呈核決':
-        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">簽呈核決</Badge>;
+        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">1.1.3 簽呈</Badge>;
+      // 1.2 施工階段
+      case '1.2 施工階段':
       case '開發/施工':
-        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs">開發/施工</Badge>;
+        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs">1.2 施工階段</Badge>;
+      // 1.3 驗證階段
+      case '1.3 驗證階段':
       case '驗證測試':
-        return <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-300 text-xs">驗證測試</Badge>;
+        return <Badge variant="outline" className="bg-cyan-50 text-cyan-700 border-cyan-300 text-xs">1.3 驗證階段</Badge>;
+      // 1.4 驗收階段
+      case '1.4 驗收階段':
+        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs">1.4 驗收階段</Badge>;
+      case '1.4.1 教育訓練':
+        return <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs">1.4.1 教育訓練</Badge>;
+      case '1.4.2 驗收結案':
       case '驗收結案':
-        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs">驗收結案</Badge>;
+        return <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-300 text-xs">1.4.2 驗收結案</Badge>;
       default:
         return <Badge variant="outline" className="text-xs">{phase}</Badge>;
     }
