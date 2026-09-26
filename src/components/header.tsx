@@ -466,6 +466,37 @@ export function Header() {
               <span>🤖 AI分析 (管理員專屬)</span>
             </button>
           )}
+
+          {/* 7. PM學習地圖 - 億威電子 PMO 培訓與個人工作區 */}
+          {isEditor ? (
+            <Link
+              href="/pm-learning"
+              prefetch={true}
+              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
+                pathname.startsWith('/pm-learning')
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+              }`}
+            >
+              <span>🎯 PM學習地圖</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                toast({
+                  title: '需要登入權限',
+                  description: '「PM學習地圖」僅限登入成員檢視，請先登入帳號。',
+                });
+                setIsLoginDialogOpen(true);
+              }}
+              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
+              title="僅限登入成員存取 (未開放未登入訪客)"
+            >
+              <Lock className="h-3.5 w-3.5 text-slate-400" />
+              <span>🎯 PM學習地圖 (登入後檢視)</span>
+            </button>
+          )}
         </div>
         <div className="text-xs text-slate-500 font-medium hidden lg:block">
           {pathname.startsWith('/clients')
@@ -478,6 +509,8 @@ export function Header() {
             ? '📚 專案KM：跨專案關鍵文件、教育訓練教材與驗收資料即時檢索'
             : pathname.startsWith('/project-variance')
             ? '📊 專案差異分析：四大階段預定規劃期程 vs 待辦事項實際進度比較'
+            : pathname.startsWith('/pm-learning')
+            ? '🎯 PM學習地圖：億威電子 PMO 團隊培訓、職能發展與個人工作區'
             : pathname.startsWith('/internal-tasks')
             ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}

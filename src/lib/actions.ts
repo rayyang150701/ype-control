@@ -509,7 +509,9 @@ export async function getClients(): Promise<Client[]> {
             return [defaultClient];
         }
 
-        const clientList: Client[] = data.map((doc: any) => ({
+        const clientList: Client[] = data
+            .filter((doc: any) => !doc.name?.startsWith('__SYSTEM_'))
+            .map((doc: any) => ({
             id: doc.id,
             name: doc.name,
             code: doc.code || '',
