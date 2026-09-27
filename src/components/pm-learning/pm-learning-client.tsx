@@ -71,23 +71,41 @@ export function PMLearningClient({
     return list;
   }, [users]);
 
-  // 個人視角目前選中的受訓成員 UID
+  // 尋找名字/帳號/Email 含有 james 的 PMO 成員
+  const findJamesMember = (members: User[]): User | undefined => {
+    return members.find((m) => {
+      const d = (m.displayName || '').toLowerCase();
+      const u = (m.username || '').toLowerCase();
+      const e = (m.email || '').toLowerCase();
+      return d.includes('james') || u.includes('james') || e.includes('james');
+    });
+  };
+
+  // 個人視角目前選中的受訓成員 UID：預設為 James
   const [activeUserId, setActiveUserId] = useState<string>(() => {
-    // 優先預設選中當前登入者 (若其屬於 PMO 成員)
+    const james = findJamesMember(pmoMembers);
+    if (james) return james.uid;
     if (currentUser && pmoMembers.some((m) => m.uid === currentUser.uid)) {
       return currentUser.uid;
     }
     return pmoMembers[0]?.uid || '';
   });
 
-  // 當 currentUser 載入完成且為 PMO 成員時自動同步
+  const [isManualSelection, setIsManualSelection] = useState<boolean>(false);
+
+  // 當 pmoMembers 載入或更新時，若尚未手動指定，優先鎖定預設為 James
   useEffect(() => {
-    if (currentUser && pmoMembers.some((m) => m.uid === currentUser.uid)) {
-      setActiveUserId(currentUser.uid);
-    } else if (!activeUserId && pmoMembers.length > 0) {
-      setActiveUserId(pmoMembers[0].uid);
+    if (!isManualSelection) {
+      const james = findJamesMember(pmoMembers);
+      if (james) {
+        setActiveUserId(james.uid);
+      } else if (currentUser && pmoMembers.some((m) => m.uid === currentUser.uid)) {
+        setActiveUserId(currentUser.uid);
+      } else if (pmoMembers.length > 0 && !activeUserId) {
+        setActiveUserId(pmoMembers[0].uid);
+      }
     }
-  }, [currentUser, pmoMembers]);
+  }, [currentUser, pmoMembers, isManualSelection, activeUserId]);
 
   // 新增或更新課程回調
   const handleCourseSaved = (savedCourse: PMLearningCourse) => {
@@ -124,6 +142,7 @@ export function PMLearningClient({
 
   // 從團隊視角點選某成員直接跳轉個人視角
   const handleSelectMemberInPersonalView = (userId: string) => {
+    setIsManualSelection(true);
     setActiveUserId(userId);
     setViewMode('personal');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -208,7 +227,10 @@ export function PMLearningClient({
           courses={courses}
           pmoMembers={pmoMembers}
           activeUserId={activeUserId}
-          onActiveUserIdChange={setActiveUserId}
+          onActiveUserIdChange={(id) => {
+            setIsManualSelection(true);
+            setActiveUserId(id);
+          }}
           currentUser={currentUser}
           categories={categories}
           onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}

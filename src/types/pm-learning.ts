@@ -21,7 +21,7 @@ export interface PMLearningMemberProgress {
   isCompleted: boolean;
   completedAt?: string;
   notes?: string; // Markdown 或簡易富文本內容
-  checklist: PMLearningChecklistItem[];
+  checklist: PMLearningChecklistItem[]; // 課程章節單元檢核清單
   attachments: PMLearningAttachment[];
   updatedAt?: string;
 }
@@ -37,7 +37,7 @@ export interface PMLearningCourse {
   endDate?: string; // 預計訖日 (YYYY-MM-DD)
   assignedUserIds: string[]; // 指派受訓成員 User IDs
   assignedUserNames: string[]; // 指派受訓成員姓名清單
-  defaultChecklist?: string[]; // 建立課程時設定的預設待辦檢核清單
+  defaultChecklist?: string[]; // 建立課程時設定的預設課程章節單元清單
   memberProgress: Record<string, PMLearningMemberProgress>; // 每位指派成員的個人學習進度，以 userId 為 key
   createdBy?: string;
   createdAt: string;

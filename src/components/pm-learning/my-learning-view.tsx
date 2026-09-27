@@ -30,6 +30,7 @@ import {
   CheckSquare,
   Calculator,
   ChevronDown,
+  ChevronUp,
   Layers,
   Link as LinkIcon,
   ShieldCheck,
@@ -303,6 +304,8 @@ function PersonalCourseCard({
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  // 控制章節單元是否展開（預設收合縮成一項，避免佔用版面）
+  const [isChaptersExpanded, setIsChaptersExpanded] = useState<boolean>(false);
 
   // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程的建立者)
   const canEdit = canUserEditCourse(currentUser, course.createdBy);
@@ -372,7 +375,7 @@ function PersonalCourseCard({
     });
   };
 
-  // 依待辦檢核項自動換算 %
+  // 依課程章節單元自動換算 %
   const handleAutoCalcFromChecklist = () => {
     if (checklist.length === 0) return;
     const completedCount = checklist.filter((c) => c.completed).length;
@@ -383,8 +386,8 @@ function PersonalCourseCard({
       isCompleted: calcPercent >= 100,
     });
     toast({
-      title: '已依檢核項換算進度',
-      description: `檢核完成 ${completedCount}/${checklist.length} 項，達成率換算為 ${calcPercent}%`,
+      title: '已依章節單元換算進度',
+      description: `章節單元已完成 ${completedCount}/${checklist.length} 項，達成率換算為 ${calcPercent}%`,
     });
   };
 
@@ -583,10 +586,10 @@ function PersonalCourseCard({
                 size="sm"
                 onClick={handleAutoCalcFromChecklist}
                 className="h-7 text-[11px] text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
-                title="根據待辦檢核勾選比率自動算出百分比"
+                title="根據課程章節單元勾選比率自動算出百分比"
               >
                 <Calculator className="h-3 w-3" />
-                <span>依檢核項換算</span>
+                <span>依章節單元換算</span>
               </Button>
 
               <Button
@@ -637,76 +640,137 @@ function PersonalCourseCard({
           </div>
         </div>
 
-        {/* 2. 待辦檢核 (Checklist) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm font-bold text-slate-800">
-                待辦檢核清單 (Checklist)
+        {/* 2. 課程章節單元 (學習進度檢核，支援展開/收合為一項) */}
+        <div className="border border-slate-200/90 rounded-xl overflow-hidden bg-white shadow-2xs transition-all">
+          {/* 標題列：可收合與展開，縮成一項 */}
+          <div
+            onClick={() => setIsChaptersExpanded((prev) => !prev)}
+            className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50/80 hover:bg-slate-100 cursor-pointer select-none transition-colors"
+          >
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                <Layers className="h-4 w-4" />
+              </div>
+              <span className="text-xs sm:text-sm font-bold text-slate-800">
+                課程章節單元
               </span>
-              <Badge variant="outline" className="text-[10px]">
-                {checklist.filter((c) => c.completed).length} / {checklist.length} 已達成
-              </Badge>
-            </div>
-          </div>
-
-          <div className="space-y-2 bg-slate-50/50 p-3 rounded-xl border border-slate-200">
-            {checklist.map((item) => (
-              <div
-                key={item.id}
-                className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
-                  item.completed
-                    ? 'bg-emerald-50/50 border-emerald-200 text-slate-500'
-                    : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300'
+              <Badge
+                variant="outline"
+                className={`text-[11px] font-semibold ${
+                  checklist.filter((c) => c.completed).length === checklist.length && checklist.length > 0
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : 'bg-white text-slate-600 border-slate-200'
                 }`}
               >
-                <label className="flex items-center gap-2.5 flex-1 cursor-pointer">
-                  <Checkbox
-                    checked={item.completed}
-                    onCheckedChange={() => handleToggleCheck(item.id)}
-                  />
-                  <span className={item.completed ? 'line-through text-slate-400' : 'font-medium'}>
-                    {item.title}
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteCheckItem(item.id)}
-                  className="text-slate-300 hover:text-rose-500 transition-colors p-1"
-                  title="刪除檢核項"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                {checklist.filter((c) => c.completed).length} / {checklist.length} 單元已達成
+              </Badge>
+              {checklist.length > 0 && (
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                  (進度 {Math.round((checklist.filter((c) => c.completed).length / checklist.length) * 100)}%)
+                </span>
+              )}
+            </div>
 
-            {/* 新增個人檢核項輸入框 */}
-            <div className="flex gap-2 pt-1">
-              <Input
-                value={newCheckText}
-                onChange={(e) => setNewCheckText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddCheckItem();
-                  }
-                }}
-                placeholder="新增個人待辦檢核，例如：「看完章節 1~3」、「繳交心得作業」、「實機測試」..."
-                className="h-8 text-xs bg-white"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddCheckItem}
-                className="h-8 text-xs shrink-0 text-slate-700 gap-1"
-              >
-                <Plus className="h-3 w-3" />
-                <span>新增</span>
-              </Button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                {isChaptersExpanded ? '收合章節單元' : '展開章節單元'}
+              </span>
+              <div className="p-1 rounded-md bg-white border border-slate-200 text-slate-500 shadow-2xs">
+                {isChaptersExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </div>
             </div>
           </div>
+
+          {/* 展開時才顯示完整的章節單元清單 (保留核取方格) */}
+          {isChaptersExpanded && (
+            <div className="p-3.5 space-y-2.5 bg-slate-50/40 border-t border-slate-200">
+              <div className="flex items-center justify-between pb-1 text-xs text-slate-500">
+                <span>點選核取方格標記已修習完成之章節單元：</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAutoCalcFromChecklist();
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-white px-2 py-1 rounded border border-indigo-100 shadow-2xs hover:bg-indigo-50 transition-colors"
+                  title="根據章節單元完成比例自動換算上方進度百分比"
+                >
+                  <Calculator className="h-3 w-3" />
+                  <span>依章節換算進度</span>
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                {checklist.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
+                      item.completed
+                        ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
+                        : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
+                    }`}
+                  >
+                    <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
+                      <Checkbox
+                        checked={item.completed}
+                        onCheckedChange={() => handleToggleCheck(item.id)}
+                      />
+                      <span className="text-[11px] font-mono text-slate-400 font-medium">
+                        {idx + 1}.
+                      </span>
+                      <span
+                        className={
+                          item.completed
+                            ? 'line-through text-slate-400'
+                            : 'font-semibold text-slate-800'
+                        }
+                      >
+                        {item.title}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCheckItem(item.id)}
+                      className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                      title="刪除此章節單元"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 新增個人章節單元輸入框 */}
+              <div className="flex gap-2 pt-1.5">
+                <Input
+                  value={newCheckText}
+                  onChange={(e) => setNewCheckText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCheckItem();
+                    }
+                  }}
+                  placeholder="新增章節單元，例如：「章節 1：基礎環境建置」、「實機測試與驗收」..."
+                  className="h-8 text-xs bg-white"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddCheckItem}
+                  className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>新增單元</span>
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 3. 個人心得與筆記 (支援 Markdown 與富文本工具) */}

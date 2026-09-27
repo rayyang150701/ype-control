@@ -533,7 +533,7 @@ export function TeamView({
                             <div className="flex items-center justify-between text-[11px] text-slate-500">
                               <span className="flex items-center gap-1">
                                 <CheckCircle2 className="h-3 w-3 text-slate-400" />
-                                檢核項: {completedChecks}/{checklist.length}
+                                章節單元: {completedChecks}/{checklist.length}
                               </span>
                               {prog?.attachments && prog.attachments.length > 0 && (
                                 <span className="flex items-center gap-1 text-indigo-600">

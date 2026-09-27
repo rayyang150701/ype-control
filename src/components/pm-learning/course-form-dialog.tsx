@@ -125,9 +125,9 @@ export function CourseFormDialog({
         setAssignedUserIds(pmoMembers.map((m) => m.uid));
       }
       setChecklistItems([
-        '觀看完成核心課程章節 1~3',
-        '繳交學習重點心得筆記',
-        '實機測試或專案應用驗收',
+        '第一單元：核心概念與知識研讀',
+        '第二單元：實務案例操作與演練',
+        '第三單元：心得產出與應用驗收',
       ]);
     }
   }, [courseToEdit, isOpen, pmoMembers, defaultAssignedUserId, availableCategories]);
@@ -442,11 +442,11 @@ export function CourseFormDialog({
             </div>
           </div>
 
-          {/* 預設待辦檢核清單 (Checklist) */}
+          {/* 課程章節單元 (Checklist) */}
           <div className="space-y-2 p-3 bg-slate-50 border rounded-lg">
             <Label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <Layers className="h-4 w-4 text-emerald-600" />
-              預設待辦檢核項目 (成員工作區將自動帶出此清單)
+              課程章節單元 (成員工作區將依此作為學習檢核進度)
             </Label>
             
             <div className="space-y-1.5">
@@ -475,7 +475,7 @@ export function CourseFormDialog({
                     handleAddChecklist();
                   }
                 }}
-                placeholder="新增檢核項，例如：「看完第4~6章」、「繳交心得與實作成果」"
+                placeholder="新增章節單元，例如：「章節 1：核心概念」、「實務演練與驗收」..."
                 className="text-xs h-8"
               />
               <Button
@@ -483,10 +483,10 @@ export function CourseFormDialog({
                 variant="outline"
                 size="sm"
                 onClick={handleAddChecklist}
-                className="h-8 text-xs shrink-0"
+                className="h-8 text-xs shrink-0 font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50"
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />
-                新增項目
+                新增單元
               </Button>
             </div>
           </div>
