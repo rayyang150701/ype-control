@@ -25,6 +25,7 @@ import {
   Layers,
   Settings,
   Tag,
+  Clock,
 } from 'lucide-react';
 import { PMLearningCourse, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
 import { User } from '@/types';
@@ -66,6 +67,7 @@ export function CourseFormDialog({
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
+  const [hours, setHours] = useState<number>(16);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
@@ -96,6 +98,7 @@ export function CourseFormDialog({
       setIsCustomCategory(false);
       setCustomCategoryInput('');
       setExternalUrl(courseToEdit.externalUrl || '');
+      setHours(courseToEdit.hours !== undefined ? Number(courseToEdit.hours) : 16);
       setStartDate(courseToEdit.startDate || '');
       setEndDate(courseToEdit.endDate || '');
       setDescription(courseToEdit.description || '');
@@ -112,6 +115,7 @@ export function CourseFormDialog({
       setIsCustomCategory(false);
       setCustomCategoryInput('');
       setExternalUrl('');
+      setHours(16);
       const today = new Date().toISOString().slice(0, 10);
       setStartDate(today);
       const nextMonth = new Date();
@@ -188,6 +192,7 @@ export function CourseFormDialog({
           instructorOrPlatform: instructorOrPlatform.trim(),
           category: finalCategory,
           externalUrl: externalUrl.trim(),
+          hours: Math.max(0, Number(hours) || 0),
           startDate,
           endDate,
           description: description.trim(),
@@ -209,6 +214,7 @@ export function CourseFormDialog({
           instructorOrPlatform: instructorOrPlatform.trim(),
           category: finalCategory,
           externalUrl: externalUrl.trim(),
+          hours: Math.max(0, Number(hours) || 0),
           startDate,
           endDate,
           description: description.trim(),
@@ -361,8 +367,22 @@ export function CourseFormDialog({
             />
           </div>
 
-          {/* 預計起訖日 */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* 課程培訓時數與起訖日 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5 text-indigo-600" />
+                課程培訓時數 (小時)
+              </Label>
+              <Input
+                type="number"
+                min={0}
+                step={0.5}
+                value={hours}
+                onChange={(e) => setHours(Number(e.target.value))}
+                placeholder="例如：16"
+              />
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold flex items-center gap-1">
                 <Calendar className="h-3.5 w-3.5 text-slate-500" />

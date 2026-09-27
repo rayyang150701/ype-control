@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PMLearningCourse, PMLearningMemberProgress, PMLearningAttachment } from '@/types/pm-learning';
 import { User, CurrentUser } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -35,8 +35,17 @@ import {
   Link as LinkIcon,
   ShieldCheck,
   Tag,
+  ArrowUp,
+  ArrowDown,
+  Check,
+  X,
 } from 'lucide-react';
-import { updatePMMemberProgress, deletePMLearningCourse } from '@/lib/pm-learning-actions';
+import {
+  updatePMMemberProgress,
+  deletePMLearningCourse,
+  saveUserCourseOrder,
+  updateCourseHours,
+} from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
@@ -76,33 +85,118 @@ export function MyLearningView({
   // 篩選指派給該成員的課程清單
   const myCourses = courses.filter((c) => c.assignedUserIds.includes(activeMember?.uid || ''));
 
-  // 計算該成員個人的整體學習數據
-  const personalStats = React.useMemo(() => {
+  // 計算該成員個人的整體學習與時數數據
+  const personalStats = useMemo(() => {
     if (myCourses.length === 0) {
-      return { total: 0, completed: 0, inProgress: 0, avgPercent: 0 };
+      return {
+        total: 0,
+        completed: 0,
+        inProgress: 0,
+        avgPercent: 0,
+        totalHours: 0,
+        completedHours: 0,
+        hoursPercent: 0,
+      };
     }
     let totalP = 0;
     let completedC = 0;
     let inProgressC = 0;
+    let totalH = 0;
+    let completedH = 0;
 
     myCourses.forEach((c) => {
+      const h = Number(c.hours) || 0;
+      totalH += h;
+
       const prog = c.memberProgress[activeMember.uid];
       const p = prog?.progressPercent ?? 0;
       totalP += p;
       if (prog?.isCompleted || p >= 100) {
         completedC++;
+        completedH += h;
       } else if (p > 0) {
         inProgressC++;
       }
     });
+
+    const hoursPct = totalH > 0 ? Math.round((completedH / totalH) * 100) : 0;
 
     return {
       total: myCourses.length,
       completed: completedC,
       inProgress: inProgressC,
       avgPercent: Math.round(totalP / myCourses.length),
+      totalHours: totalH,
+      completedHours: completedH,
+      hoursPercent: hoursPct,
     };
   }, [myCourses, activeMember]);
+
+  // 依該成員個人自訂順序 (sortOrder) 排序課程
+  const sortedMyCourses = useMemo(() => {
+    return [...myCourses].sort((a, b) => {
+      const orderA = a.memberProgress[activeMember?.uid || '']?.sortOrder;
+      const orderB = b.memberProgress[activeMember?.uid || '']?.sortOrder;
+      if (orderA !== undefined && orderB !== undefined) {
+        return orderA - orderB;
+      }
+      if (orderA !== undefined) return -1;
+      if (orderB !== undefined) return 1;
+      return 0;
+    });
+  }, [myCourses, activeMember?.uid]);
+
+  // 全域展開/收合控制
+  const [expandAllState, setExpandAllState] = useState<boolean>(false);
+
+  // 個人視角：上下移動調整課程順序並儲存
+  const handleMoveCourse = async (courseId: string, direction: 'up' | 'down') => {
+    const currentIndex = sortedMyCourses.findIndex((c) => c.id === courseId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= sortedMyCourses.length) return;
+
+    const newOrdered = [...sortedMyCourses];
+    const temp = newOrdered[currentIndex];
+    newOrdered[currentIndex] = newOrdered[targetIndex];
+    newOrdered[targetIndex] = temp;
+
+    const orderedIds = newOrdered.map((c) => c.id);
+
+    // 立即更新前端各課程的 sortOrder 狀態
+    newOrdered.forEach((c, idx) => {
+      const existingProg = c.memberProgress[activeMember.uid] || {
+        userId: activeMember.uid,
+        userName: activeMember.displayName || '',
+        progressPercent: 0,
+        isCompleted: false,
+        checklist: [],
+        attachments: [],
+      };
+      onCourseUpdated({
+        ...c,
+        memberProgress: {
+          ...c.memberProgress,
+          [activeMember.uid]: {
+            ...existingProg,
+            sortOrder: idx,
+          },
+        },
+      });
+    });
+
+    toast({
+      title: '已調整課程順序',
+      description: `已將課程向${direction === 'up' ? '上' : '下'}移動並儲存`,
+    });
+
+    try {
+      await saveUserCourseOrder(activeMember.uid, orderedIds);
+    } catch (e: any) {
+      console.error('儲存排序異常:', e);
+      toast({ title: '排序雲端同步異常', description: e?.message, variant: 'destructive' });
+    }
+  };
 
   // 刪除課程處理
   const handleDeleteCourse = async (courseId: string, title: string) => {
@@ -148,7 +242,7 @@ export function MyLearningView({
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              可手動調整學習進度、打勾待辦檢核、整理心得筆記與上傳實作成果。
+              可點擊課程標題旁展開詳情、手動調整學習進度、維護時數、自訂上下移動排序。
             </p>
           </div>
         </div>
@@ -199,11 +293,14 @@ export function MyLearningView({
         </div>
       </div>
 
-      {/* 個人成果指標列 (Personal KPI Bar) */}
+      {/* 個人成果與時數指標列 (Personal KPI Bar) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
           <span className="text-[11px] font-semibold text-slate-500">已指派課程</span>
-          <div className="text-xl font-bold text-slate-800 mt-0.5">{personalStats.total} 堂</div>
+          <div className="text-xl font-bold text-slate-800 mt-0.5">
+            {personalStats.total} 堂{' '}
+            <span className="text-xs font-normal text-slate-400">({personalStats.totalHours} 小時)</span>
+          </div>
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
           <span className="text-[11px] font-semibold text-blue-600">積極進行中</span>
@@ -211,19 +308,27 @@ export function MyLearningView({
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
           <span className="text-[11px] font-semibold text-emerald-600">已完訓結業</span>
-          <div className="text-xl font-bold text-emerald-600 mt-0.5">{personalStats.completed} 堂</div>
+          <div className="text-xl font-bold text-emerald-600 mt-0.5">
+            {personalStats.completed} 堂{' '}
+            <span className="text-xs font-normal text-emerald-600/80">({personalStats.completedHours}h)</span>
+          </div>
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-indigo-600">個人總完訓率</span>
-            <span className="text-xs font-bold text-indigo-700">{personalStats.avgPercent}%</span>
+            <span className="text-xs font-bold text-indigo-700">
+              {personalStats.avgPercent}%{' '}
+              <span className="text-[10px] text-slate-400 font-normal">
+                (時數 {personalStats.hoursPercent}%)
+              </span>
+            </span>
           </div>
           <Progress value={personalStats.avgPercent} className="h-2 mt-2 bg-indigo-100" />
         </div>
       </div>
 
       {/* 無課程提示 */}
-      {myCourses.length === 0 && (
+      {sortedMyCourses.length === 0 && (
         <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
           <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
           <h3 className="text-sm font-semibold text-slate-700">
@@ -243,14 +348,50 @@ export function MyLearningView({
         </div>
       )}
 
-      {/* 個人課程卡片式呈現 (Card View) */}
-      <div className="space-y-6">
-        {myCourses.map((course) => (
+      {/* 課程列表頂部工具列：說明與全部展開/收合開關 */}
+      {sortedMyCourses.length > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+            <span>已排定學習課程清單 ({sortedMyCourses.length} 門)</span>
+            <span className="text-slate-400 font-normal hidden sm:inline">
+              · 可使用 ▲ ▼ 調整個人上下排列順序，點選「展開詳情」編輯細節
+            </span>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setExpandAllState((prev) => !prev)}
+            className="h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+          >
+            {expandAllState ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                <span>全部收合 ▴</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                <span>全部展開 ▾</span>
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* 個人課程卡片式呈現 (Card View，預設收起下層詳細內容，進度%與日期置於標題旁) */}
+      <div className="space-y-4">
+        {sortedMyCourses.map((course, idx) => (
           <PersonalCourseCard
             key={course.id}
             course={course}
             userId={activeMember.uid}
             currentUser={currentUser}
+            isFirst={idx === 0}
+            isLast={idx === sortedMyCourses.length - 1}
+            defaultExpanded={expandAllState}
+            onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
             onUpdateCourse={onCourseUpdated}
             onEditCourse={onEditCourse}
             onDeleteCourse={handleDeleteCourse}
@@ -261,11 +402,15 @@ export function MyLearningView({
   );
 }
 
-// 單堂課程的個人專屬卡片元件
+// 單堂課程的個人專屬卡片元件 (支援折疊收合，進度%、日期、時數明確放於名稱旁)
 function PersonalCourseCard({
   course,
   userId,
   currentUser,
+  isFirst,
+  isLast,
+  defaultExpanded = false,
+  onMoveCourse,
   onUpdateCourse,
   onEditCourse,
   onDeleteCourse,
@@ -273,6 +418,10 @@ function PersonalCourseCard({
   course: PMLearningCourse;
   userId: string;
   currentUser?: CurrentUser | null;
+  isFirst: boolean;
+  isLast: boolean;
+  defaultExpanded?: boolean;
+  onMoveCourse: (direction: 'up' | 'down') => void;
   onUpdateCourse: (course: PMLearningCourse) => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onDeleteCourse: (courseId: string, title: string) => void;
@@ -292,6 +441,13 @@ function PersonalCourseCard({
     attachments: [],
   };
 
+  // 控制整張卡片下半部是否展開（使用者要求紅框下預設收起）
+  const [isCardExpanded, setIsCardExpanded] = useState<boolean>(defaultExpanded);
+
+  useEffect(() => {
+    setIsCardExpanded(defaultExpanded);
+  }, [defaultExpanded]);
+
   const [progressVal, setProgressVal] = useState<number>(memberProgress.progressPercent || 0);
   const [isNotesEditing, setIsNotesEditing] = useState<boolean>(false);
   const [notesText, setNotesText] = useState<string>(memberProgress.notes || '');
@@ -304,19 +460,45 @@ function PersonalCourseCard({
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  // 控制章節單元是否展開（預設收合縮成一項，避免佔用版面）
+
+  // 章節單元折疊狀態 (預設收合為一項)
   const [isChaptersExpanded, setIsChaptersExpanded] = useState<boolean>(false);
 
-  // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程的建立者)
+  // 課程時數即時編輯狀態
+  const [isEditingHours, setIsEditingHours] = useState<boolean>(false);
+  const [tempHours, setTempHours] = useState<number>(course.hours || 0);
+
+  useEffect(() => {
+    setTempHours(course.hours || 0);
+  }, [course.hours]);
+
+  // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程建立者)
   const canEdit = canUserEditCourse(currentUser, course.createdBy);
 
   // 同步外部變更
-  React.useEffect(() => {
+  useEffect(() => {
     setProgressVal(memberProgress.progressPercent || 0);
     setNotesText(memberProgress.notes || '');
     setChecklist(memberProgress.checklist || []);
     setAttachments(memberProgress.attachments || []);
   }, [memberProgress]);
+
+  // 儲存快速時數修改
+  const handleSaveHours = async () => {
+    const clean = Math.max(0, Number(tempHours) || 0);
+    setIsEditingHours(false);
+    onUpdateCourse({ ...course, hours: clean });
+    try {
+      const res = await updateCourseHours(course.id, clean);
+      if (res.success) {
+        toast({ title: '已更新時數', description: `「${course.title}」已設定為 ${clean} 小時` });
+      } else {
+        toast({ title: '時數儲存失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: '更新時數錯誤', description: err.message, variant: 'destructive' });
+    }
+  };
 
   // 更新個人進度至伺服器
   const saveProgressPatch = async (patch: Partial<PMLearningMemberProgress>) => {
@@ -355,7 +537,6 @@ function PersonalCourseCard({
   // 一鍵標記已完成 (100%)
   const handleMarkComplete = () => {
     setProgressVal(100);
-    // 自動將所有待辦檢核打勾
     const allChecked = checklist.map((c) => ({ ...c, completed: true }));
     setChecklist(allChecked);
     saveProgressPatch({
@@ -460,78 +641,156 @@ function PersonalCourseCard({
   const isFinished = progressVal >= 100 || memberProgress.isCompleted;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all hover:border-slate-300">
-      {/* 卡片頂部條 (Header) */}
-      <div className="p-5 border-b border-slate-100 bg-linear-to-r from-white via-slate-50/50 to-indigo-50/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-2 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-slate-900 text-lg">{course.title}</span>
-              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200 font-medium">
-                {course.category}
-              </Badge>
-              <Badge
-                className={`text-xs ${
-                  isFinished
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                    : progressVal > 0
-                    ? 'bg-blue-100 text-blue-800 border-blue-200'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
-                }`}
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all hover:border-slate-300">
+      {/* 卡片頂部條 (Header：包含上下排序、名稱、領域、狀態、進度%、日期、時數與展開按鈕) */}
+      <div className="p-4 sm:p-5 bg-linear-to-r from-white via-slate-50/50 to-indigo-50/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+          {/* 左側：排序控制 + 課程標題 + 分類 + 狀態 + 進度% + 日期 + 時數 */}
+          <div className="flex items-start gap-2.5 sm:gap-3.5 flex-1 min-w-0">
+            {/* 上下移動箭頭 (個人自訂排序) */}
+            <div className="flex flex-col gap-0.5 shrink-0 pt-0.5" title="個人自訂課程呈現順序">
+              <button
+                type="button"
+                disabled={isFirst}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveCourse('up');
+                }}
+                className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                title="向上移動"
               >
-                {isFinished ? '✅ 已完訓結業' : progressVal > 0 ? `⚡ 修習中 (${progressVal}%)` : '📌 待啟動'}
-              </Badge>
+                <ArrowUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={isLast}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveCourse('down');
+                }}
+                className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                title="向下移動"
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-500">
-              <div>
-                <span className="font-medium text-slate-700">培訓平台 / 講師：</span>
-                <span className="text-indigo-600 font-semibold">{course.instructorOrPlatform}</span>
-              </div>
+            <div className="space-y-2 flex-1 min-w-0">
+              {/* 第一行：標題 + 分類 + 狀態 + 進度% + 日期 + 時數 */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-slate-900 text-base sm:text-lg leading-snug">
+                  {course.title}
+                </span>
 
-              {(course.startDate || course.endDate) && (
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  <span>
-                    {course.startDate || '未定'} ~ {course.endDate || '未定'}
+                <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200 font-medium shrink-0">
+                  {course.category}
+                </Badge>
+
+                {/* 狀態 Badge */}
+                <Badge
+                  className={`text-xs shrink-0 ${
+                    isFinished
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                      : progressVal > 0
+                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {isFinished ? '✅ 已完訓' : progressVal > 0 ? `⚡ 修習中` : '📌 待啟動'}
+                </Badge>
+
+                {/* 進度 % (明確放在課程名稱旁邊) */}
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border shrink-0 ${
+                    isFinished
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : progressVal > 0
+                      ? 'bg-blue-50 text-blue-700 border-blue-300'
+                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  進度: {progressVal}%
+                </span>
+
+                {/* 起訖日期 (明確放在課程名稱旁邊) */}
+                {(course.startDate || course.endDate) && (
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-600 font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                    <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                    <span>
+                      {course.startDate || '未定'} ~ {course.endDate || '未定'}
+                    </span>
                   </span>
-                </div>
-              )}
+                )}
 
-              {course.createdBy && (
-                <div className="text-[11px] text-slate-400">
-                  {course.createdBy === 'system' ? '（系統內建）' : '（成員自訂）'}
+                {/* 培訓時數 (明確放在名稱旁邊，並支援直接填寫/修改時數) */}
+                <div className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-200 shrink-0">
+                  <Clock className="h-3.5 w-3.5 text-amber-600" />
+                  {isEditingHours ? (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={tempHours}
+                        onChange={(e) => setTempHours(Number(e.target.value))}
+                        className="w-14 h-5 px-1 text-xs border rounded bg-white font-bold"
+                        autoFocus
+                      />
+                      <span className="text-[11px]">小時</span>
+                      <button
+                        type="button"
+                        onClick={handleSaveHours}
+                        className="p-0.5 text-emerald-600 hover:bg-emerald-100 rounded"
+                        title="確認儲存時數"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingHours(false)}
+                        className="p-0.5 text-slate-400 hover:bg-slate-200 rounded"
+                        title="取消"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <span className="font-semibold">{course.hours || 0} 小時</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTempHours(course.hours || 0);
+                          setIsEditingHours(true);
+                        }}
+                        className="p-0.5 text-amber-600 hover:text-amber-800 hover:bg-amber-100 rounded transition-colors"
+                        title="點擊修改這門課程的培訓時數"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-
-            {course.description && (
-              <p className="text-xs text-slate-600 bg-white/70 p-2.5 rounded-lg border border-slate-100 leading-relaxed">
-                {course.description}
-              </p>
-            )}
           </div>
 
-          {/* 右上操作區：傳送門按鈕 + 課程內容編輯按鈕 */}
-          <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-center">
+          {/* 右側操作群：傳送門 + 編輯 + 展開/收合切換按鈕 */}
+          <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-center pl-7 lg:pl-0">
             {/* 外部傳送門按鈕 */}
-            {course.externalUrl ? (
+            {course.externalUrl && (
               <a
                 href={course.externalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
               >
-                <span>🚀 開啟課程傳送門</span>
+                <span>🚀 外部傳送門</span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
-            ) : (
-              <div className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg">
-                無外部連結
-              </div>
             )}
 
-            {/* 課程編輯與刪除權限 (主管理員 jamesyang, admin，或建立者可編輯修改課程資訊) */}
+            {/* 課程編輯與刪除權限 (主管理員 jamesyang, admin，或建立者可編輯) */}
             {canEdit && (
               <div className="flex items-center gap-1">
                 <Button
@@ -543,7 +802,7 @@ function PersonalCourseCard({
                   title="主管理員 / 建立者：可調整此課程名稱、講師平台、傳送門與起訖日"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
-                  <span>編輯課程</span>
+                  <span className="hidden sm:inline">編輯</span>
                 </Button>
 
                 <Button
@@ -558,423 +817,467 @@ function PersonalCourseCard({
                 </Button>
               </div>
             )}
-          </div>
-        </div>
-      </div>
 
-      <div className="p-5 space-y-6">
-        {/* 1. 進度條（手動拉 % 或一鍵勾選完成） */}
-        <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-800">個人學習進度：</span>
-              <span
-                className={`text-lg font-extrabold ${
-                  isFinished ? 'text-emerald-600' : progressVal > 0 ? 'text-blue-600' : 'text-slate-500'
-                }`}
-              >
-                {progressVal}%
-              </span>
-              {isSaving && <span className="text-[10px] text-indigo-500 animate-pulse">雲端儲存中...</span>}
-            </div>
-
-            {/* 進度快捷按鈕 */}
-            <div className="flex items-center gap-1.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAutoCalcFromChecklist}
-                className="h-7 text-[11px] text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
-                title="根據課程章節單元勾選比率自動算出百分比"
-              >
-                <Calculator className="h-3 w-3" />
-                <span>依章節單元換算</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleResetProgress}
-                className="h-7 text-[11px] text-slate-500 hover:bg-slate-100 gap-1"
-              >
-                <RotateCcw className="h-3 w-3" />
-                <span>重設0%</span>
-              </Button>
-
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleMarkComplete}
-                className={`h-7 text-[11px] font-bold gap-1 transition-all ${
-                  isFinished
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                }`}
-              >
-                <CheckCircle2 className="h-3 w-3" />
-                <span>標記為已完成 (100%)</span>
-              </Button>
-            </div>
-          </div>
-
-          {/* 互動式 Slider 手動滑動拉 % */}
-          <div className="pt-2 px-1">
-            <Slider
-              value={[progressVal]}
-              min={0}
-              max={100}
-              step={5}
-              onValueChange={(val) => setProgressVal(val[0])}
-              onValueCommit={handleSliderChangeCommit}
-              className="cursor-pointer"
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-400 px-1">
-            <span>0% 待開始</span>
-            <span>25% 研讀中</span>
-            <span>50% 半數完成</span>
-            <span>75% 演練驗收</span>
-            <span>100% 完訓結案</span>
-          </div>
-        </div>
-
-        {/* 2. 課程章節單元 (學習進度檢核，支援展開/收合為一項) */}
-        <div className="border border-slate-200/90 rounded-xl overflow-hidden bg-white shadow-2xs transition-all">
-          {/* 標題列：可收合與展開，縮成一項 */}
-          <div
-            onClick={() => setIsChaptersExpanded((prev) => !prev)}
-            className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50/80 hover:bg-slate-100 cursor-pointer select-none transition-colors"
-          >
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
-                <Layers className="h-4 w-4" />
-              </div>
-              <span className="text-xs sm:text-sm font-bold text-slate-800">
-                課程章節單元
-              </span>
-              <Badge
-                variant="outline"
-                className={`text-[11px] font-semibold ${
-                  checklist.filter((c) => c.completed).length === checklist.length && checklist.length > 0
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-white text-slate-600 border-slate-200'
-                }`}
-              >
-                {checklist.filter((c) => c.completed).length} / {checklist.length} 單元已達成
-              </Badge>
-              {checklist.length > 0 && (
-                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
-                  (進度 {Math.round((checklist.filter((c) => c.completed).length / checklist.length) * 100)}%)
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                {isChaptersExpanded ? '收合章節單元' : '展開章節單元'}
-              </span>
-              <div className="p-1 rounded-md bg-white border border-slate-200 text-slate-500 shadow-2xs">
-                {isChaptersExpanded ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* 展開時才顯示完整的章節單元清單 (保留核取方格) */}
-          {isChaptersExpanded && (
-            <div className="p-3.5 space-y-2.5 bg-slate-50/40 border-t border-slate-200">
-              <div className="flex items-center justify-between pb-1 text-xs text-slate-500">
-                <span>點選核取方格標記已修習完成之章節單元：</span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAutoCalcFromChecklist();
-                  }}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-white px-2 py-1 rounded border border-indigo-100 shadow-2xs hover:bg-indigo-50 transition-colors"
-                  title="根據章節單元完成比例自動換算上方進度百分比"
-                >
-                  <Calculator className="h-3 w-3" />
-                  <span>依章節換算進度</span>
-                </button>
-              </div>
-
-              <div className="space-y-1.5">
-                {checklist.map((item, idx) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
-                      item.completed
-                        ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
-                        : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
-                    }`}
-                  >
-                    <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
-                      <Checkbox
-                        checked={item.completed}
-                        onCheckedChange={() => handleToggleCheck(item.id)}
-                      />
-                      <span className="text-[11px] font-mono text-slate-400 font-medium">
-                        {idx + 1}.
-                      </span>
-                      <span
-                        className={
-                          item.completed
-                            ? 'line-through text-slate-400'
-                            : 'font-semibold text-slate-800'
-                        }
-                      >
-                        {item.title}
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCheckItem(item.id)}
-                      className="text-slate-300 hover:text-rose-500 transition-colors p-1"
-                      title="刪除此章節單元"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* 新增個人章節單元輸入框 */}
-              <div className="flex gap-2 pt-1.5">
-                <Input
-                  value={newCheckText}
-                  onChange={(e) => setNewCheckText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCheckItem();
-                    }
-                  }}
-                  placeholder="新增章節單元，例如：「章節 1：基礎環境建置」、「實機測試與驗收」..."
-                  className="h-8 text-xs bg-white"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddCheckItem}
-                  className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>新增單元</span>
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 3. 個人心得與筆記 (支援 Markdown 與富文本工具) */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-indigo-600" />
-              <span className="text-sm font-bold text-slate-800">
-                個人心得與筆記 (支援 Markdown 語法)
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {isNotesEditing ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsNotesEditing(false)}
-                    className="h-7 text-xs text-slate-500"
-                  >
-                    取消編輯
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleSaveNotes}
-                    className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-semibold"
-                  >
-                    <Save className="h-3 w-3" />
-                    <span>儲存心得</span>
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsNotesEditing(true)}
-                  className="h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
-                >
-                  <span>編輯筆記</span>
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {isNotesEditing ? (
-            <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
-              {/* Markdown 快捷工具列 */}
-              <div className="flex flex-wrap items-center gap-1 pb-2 border-b border-slate-100 text-[11px] text-slate-600">
-                <span className="text-[10px] text-slate-400 mr-1">快捷工具:</span>
-                <button
-                  type="button"
-                  onClick={() => setNotesText((prev) => prev + '\n### 章節重點\n')}
-                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-mono"
-                >
-                  H3標題
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNotesText((prev) => prev + '**重點字** ')}
-                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold"
-                >
-                  粗體
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNotesText((prev) => prev + '\n- 條列要點一\n- 條列要點二\n')}
-                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200"
-                >
-                  條列
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNotesText((prev) => prev + '\n> 重要觀念摘錄\n')}
-                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 italic"
-                >
-                  引言
-                </button>
-              </div>
-
-              <Textarea
-                rows={6}
-                value={notesText}
-                onChange={(e) => setNotesText(e.target.value)}
-                placeholder="紀錄這堂課的學習重點、對燁輝專案或億威內部落地之思考、疑難問題點..."
-                className="text-xs font-mono leading-relaxed"
-              />
-              <div className="text-[11px] text-slate-400 text-right">
-                支援 Markdown 格式（# 標題、**粗體**、- 列表、&gt; 引言）
-              </div>
-            </div>
-          ) : (
-            <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200">
-              <MarkdownPreview content={notesText} />
-            </div>
-          )}
-        </div>
-
-        {/* 4. 相關附件 / 雲端連結 (串聯個人整理的重點簡報或實作成果) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Paperclip className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-bold text-slate-800">
-                相關附件與成果雲端連結 ({attachments.length})
-              </span>
-            </div>
+            {/* 展開 / 收合詳情按鈕 (紅框下預設收起) */}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsAddingLink(!isAddingLink)}
-              className="h-7 text-xs text-blue-700 border-blue-200 hover:bg-blue-50 gap-1 font-semibold"
+              onClick={() => setIsCardExpanded((prev) => !prev)}
+              className="h-8 px-3 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 gap-1 shadow-2xs"
             >
-              <Plus className="h-3 w-3" />
-              <span>新增成果連結</span>
+              {isCardExpanded ? (
+                <>
+                  <ChevronUp className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>收合詳情 ▴</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>展開詳情 ▾</span>
+                </>
+              )}
             </Button>
           </div>
-
-          {/* 新增連結表單 */}
-          {isAddingLink && (
-            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 space-y-2">
-              <div className="text-xs font-bold text-blue-900">
-                新增雲端教材、重點簡報或成果連結：
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <Input
-                  value={newLinkTitle}
-                  onChange={(e) => setNewLinkTitle(e.target.value)}
-                  placeholder="檔案/連結標題，例如：專案四大階段甘特圖範本.pdf"
-                  className="h-8 text-xs bg-white"
-                />
-                <Input
-                  type="url"
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  placeholder="https://drive.google.com/... 或 GitHub 連結"
-                  className="h-8 text-xs bg-white"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsAddingLink(false)}
-                  className="h-7 text-xs"
-                >
-                  取消
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleAddAttachment}
-                  className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                >
-                  確認新增
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 附件清單 */}
-          {attachments.length === 0 && !isAddingLink && (
-            <div className="text-xs text-slate-400 italic py-2 bg-slate-50/50 rounded-lg text-center border border-dashed border-slate-200">
-              尚未綁定相關簡報或雲端實作成果連結，點擊上方按鈕即可加入。
-            </div>
-          )}
-
-          {attachments.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {attachments.map((att) => (
-                <div
-                  key={att.id}
-                  className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-slate-200 shadow-2xs hover:border-blue-300 transition-colors"
-                >
-                  <a
-                    href={att.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 flex-1 min-w-0 text-xs font-semibold text-blue-700 hover:underline"
-                  >
-                    <LinkIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-                    <span className="truncate">{att.title}</span>
-                    <ExternalLink className="h-3 w-3 shrink-0 text-slate-400" />
-                  </a>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteAttachment(att.id)}
-                    className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition-colors"
-                    title="移除此連結"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* 展開時才顯示詳細資訊與操作項目 (進度滑桿、章節檢核、心得筆記、成果連結) */}
+      {isCardExpanded && (
+        <div className="p-5 space-y-6 border-t border-slate-100 bg-white">
+          {/* 講師與課程簡介 */}
+          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-600">
+              <div>
+                <span className="font-semibold text-slate-700">培訓平台 / 講師：</span>
+                <span className="text-indigo-600 font-bold">{course.instructorOrPlatform}</span>
+              </div>
+              {course.createdBy && (
+                <div className="text-[11px] text-slate-400">
+                  {course.createdBy === 'system' ? '（系統內建課程）' : '（成員自訂課程）'}
+                </div>
+              )}
+            </div>
+            {course.description && (
+              <p className="text-xs text-slate-600 leading-relaxed pt-1">
+                {course.description}
+              </p>
+            )}
+          </div>
+
+          {/* 1. 進度條（手動拉 % 或一鍵勾選完成） */}
+          <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">個人學習進度：</span>
+                <span
+                  className={`text-lg font-extrabold ${
+                    isFinished ? 'text-emerald-600' : progressVal > 0 ? 'text-blue-600' : 'text-slate-500'
+                  }`}
+                >
+                  {progressVal}%
+                </span>
+                {isSaving && <span className="text-[10px] text-indigo-500 animate-pulse">雲端儲存中...</span>}
+              </div>
+
+              {/* 進度快捷按鈕 */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutoCalcFromChecklist}
+                  className="h-7 text-[11px] text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
+                  title="根據課程章節單元勾選比率自動算出百分比"
+                >
+                  <Calculator className="h-3 w-3" />
+                  <span>依章節單元換算</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetProgress}
+                  className="h-7 text-[11px] text-slate-500 hover:bg-slate-100 gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>重設0%</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleMarkComplete}
+                  className={`h-7 text-[11px] font-bold gap-1 transition-all ${
+                    isFinished
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                  }`}
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span>標記為已完成 (100%)</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* 互動式 Slider 手動滑動拉 % */}
+            <div className="pt-2 px-1">
+              <Slider
+                value={[progressVal]}
+                min={0}
+                max={100}
+                step={5}
+                onValueChange={(val) => setProgressVal(val[0])}
+                onValueCommit={handleSliderChangeCommit}
+                className="cursor-pointer"
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 px-1">
+              <span>0% 待開始</span>
+              <span>25% 研讀中</span>
+              <span>50% 半數完成</span>
+              <span>75% 演練驗收</span>
+              <span>100% 完訓結案</span>
+            </div>
+          </div>
+
+          {/* 2. 課程章節單元 (學習進度檢核，支援展開/收合為一項) */}
+          <div className="border border-slate-200/90 rounded-xl overflow-hidden bg-white shadow-2xs transition-all">
+            {/* 標題列：可收合與展開，縮成一項 */}
+            <div
+              onClick={() => setIsChaptersExpanded((prev) => !prev)}
+              className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50/80 hover:bg-slate-100 cursor-pointer select-none transition-colors"
+            >
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                  <Layers className="h-4 w-4" />
+                </div>
+                <span className="text-xs sm:text-sm font-bold text-slate-800">
+                  課程章節單元
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[11px] font-semibold ${
+                    checklist.filter((c) => c.completed).length === checklist.length && checklist.length > 0
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : 'bg-white text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {checklist.filter((c) => c.completed).length} / {checklist.length} 單元已達成
+                </Badge>
+                {checklist.length > 0 && (
+                  <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                    (進度 {Math.round((checklist.filter((c) => c.completed).length / checklist.length) * 100)}%)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                  {isChaptersExpanded ? '收合章節單元' : '展開章節單元'}
+                </span>
+                <div className="p-1 rounded-md bg-white border border-slate-200 text-slate-500 shadow-2xs">
+                  {isChaptersExpanded ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 展開時才顯示完整的章節單元清單 (保留核取方格) */}
+            {isChaptersExpanded && (
+              <div className="p-3.5 space-y-2.5 bg-slate-50/40 border-t border-slate-200">
+                <div className="flex items-center justify-between pb-1 text-xs text-slate-500">
+                  <span>點選核取方格標記已修習完成之章節單元：</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAutoCalcFromChecklist();
+                    }}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-white px-2 py-1 rounded border border-indigo-100 shadow-2xs hover:bg-indigo-50 transition-colors"
+                    title="根據章節單元完成比例自動換算上方進度百分比"
+                  >
+                    <Calculator className="h-3 w-3" />
+                    <span>依章節換算進度</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  {checklist.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
+                        item.completed
+                          ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
+                          : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
+                      }`}
+                    >
+                      <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
+                        <Checkbox
+                          checked={item.completed}
+                          onCheckedChange={() => handleToggleCheck(item.id)}
+                        />
+                        <span className="text-[11px] font-mono text-slate-400 font-medium">
+                          {idx + 1}.
+                        </span>
+                        <span
+                          className={
+                            item.completed
+                              ? 'line-through text-slate-400'
+                              : 'font-semibold text-slate-800'
+                          }
+                        >
+                          {item.title}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCheckItem(item.id)}
+                        className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                        title="刪除此章節單元"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 新增個人章節單元輸入框 */}
+                <div className="flex gap-2 pt-1.5">
+                  <Input
+                    value={newCheckText}
+                    onChange={(e) => setNewCheckText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCheckItem();
+                      }
+                    }}
+                    placeholder="新增章節單元，例如：「章節 1：基礎環境建置」、「實機測試與驗收」..."
+                    className="h-8 text-xs bg-white"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddCheckItem}
+                    className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>新增單元</span>
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. 個人心得與筆記 (支援 Markdown 與富文本工具) */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-600" />
+                <span className="text-sm font-bold text-slate-800">
+                  個人心得與筆記 (支援 Markdown 語法)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isNotesEditing ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsNotesEditing(false)}
+                      className="h-7 text-xs text-slate-500"
+                    >
+                      取消編輯
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveNotes}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-semibold"
+                    >
+                      <Save className="h-3 w-3" />
+                      <span>儲存心得</span>
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsNotesEditing(true)}
+                    className="h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+                  >
+                    <span>編輯筆記</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {isNotesEditing ? (
+              <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+                {/* Markdown 快捷工具列 */}
+                <div className="flex flex-wrap items-center gap-1 pb-2 border-b border-slate-100 text-[11px] text-slate-600">
+                  <span className="text-[10px] text-slate-400 mr-1">快捷工具:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNotesText((prev) => prev + '\n### 章節重點\n')}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-mono"
+                  >
+                    H3標題
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotesText((prev) => prev + '**重點字** ')}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold"
+                  >
+                    粗體
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotesText((prev) => prev + '\n- 條列要點一\n- 條列要點二\n')}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200"
+                  >
+                    條列
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotesText((prev) => prev + '\n> 重要觀念摘錄\n')}
+                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 italic"
+                  >
+                    引言
+                  </button>
+                </div>
+
+                <Textarea
+                  rows={6}
+                  value={notesText}
+                  onChange={(e) => setNotesText(e.target.value)}
+                  placeholder="紀錄這堂課的學習重點、對燁輝專案或億威內部落地之思考、疑難問題點..."
+                  className="text-xs font-mono leading-relaxed"
+                />
+                <div className="text-[11px] text-slate-400 text-right">
+                  支援 Markdown 格式（# 標題、**粗體**、- 列表、&gt; 引言）
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200">
+                <MarkdownPreview content={notesText} />
+              </div>
+            )}
+          </div>
+
+          {/* 4. 相關附件 / 雲端連結 (串聯個人整理的重點簡報或實作成果) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-bold text-slate-800">
+                  相關附件與成果雲端連結 ({attachments.length})
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAddingLink(!isAddingLink)}
+                className="h-7 text-xs text-blue-700 border-blue-200 hover:bg-blue-50 gap-1 font-semibold"
+              >
+                <Plus className="h-3 w-3" />
+                <span>新增成果連結</span>
+              </Button>
+            </div>
+
+            {/* 新增連結表單 */}
+            {isAddingLink && (
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 space-y-2">
+                <div className="text-xs font-bold text-blue-900">
+                  新增雲端教材、重點簡報或成果連結：
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Input
+                    value={newLinkTitle}
+                    onChange={(e) => setNewLinkTitle(e.target.value)}
+                    placeholder="檔案/連結標題，例如：專案四大階段甘特圖範本.pdf"
+                    className="h-8 text-xs bg-white"
+                  />
+                  <Input
+                    type="url"
+                    value={newLinkUrl}
+                    onChange={(e) => setNewLinkUrl(e.target.value)}
+                    placeholder="https://drive.google.com/... 或 GitHub 連結"
+                    className="h-8 text-xs bg-white"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsAddingLink(false)}
+                    className="h-7 text-xs"
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddAttachment}
+                    className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    確認新增
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* 附件清單 */}
+            {attachments.length === 0 && !isAddingLink && (
+              <div className="text-xs text-slate-400 italic py-2 bg-slate-50/50 rounded-lg text-center border border-dashed border-slate-200">
+                尚未綁定相關簡報或雲端實作成果連結，點擊上方按鈕即可加入。
+              </div>
+            )}
+
+            {attachments.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-slate-200 shadow-2xs hover:border-blue-300 transition-colors"
+                  >
+                    <a
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 flex-1 min-w-0 text-xs font-semibold text-blue-700 hover:underline"
+                    >
+                      <LinkIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                      <span className="truncate">{att.title}</span>
+                      <ExternalLink className="h-3 w-3 shrink-0 text-slate-400" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAttachment(att.id)}
+                      className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition-colors"
+                      title="移除此連結"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -224,6 +224,10 @@ function getDefaultSeedCourses(): PMLearningCourse[] {
 }
 
 function toDbPayload(c: PMLearningCourse) {
+  const mp: Record<string, any> = { ...(c.memberProgress || {}) };
+  if (c.hours !== undefined && c.hours !== null) {
+    mp._courseHours = Number(c.hours);
+  }
   return {
     id: c.id,
     title: c.title,
@@ -236,7 +240,7 @@ function toDbPayload(c: PMLearningCourse) {
     assigned_user_ids: c.assignedUserIds || [],
     assigned_user_names: c.assignedUserNames || [],
     default_checklist: c.defaultChecklist || [],
-    member_progress: c.memberProgress || {},
+    member_progress: mp,
     created_by: c.createdBy || '',
     created_at: c.createdAt || new Date().toISOString(),
     updated_at: c.updatedAt || new Date().toISOString(),
@@ -244,6 +248,14 @@ function toDbPayload(c: PMLearningCourse) {
 }
 
 function fromDbRecord(c: any): PMLearningCourse {
+  const memberProgress =
+    typeof c.member_progress === 'object' && c.member_progress ? { ...c.member_progress } : {};
+  let hours = 0;
+  if (c.hours !== undefined && c.hours !== null) {
+    hours = Number(c.hours);
+  } else if (memberProgress._courseHours !== undefined && memberProgress._courseHours !== null) {
+    hours = Number(memberProgress._courseHours);
+  }
   return {
     id: c.id,
     title: c.title || '',
@@ -251,13 +263,13 @@ function fromDbRecord(c: any): PMLearningCourse {
     category: c.category || '專案管理與治理',
     description: c.description || '',
     externalUrl: c.external_url || '',
+    hours: hours || 0,
     startDate: c.start_date ? String(c.start_date).slice(0, 10) : '',
     endDate: c.end_date ? String(c.end_date).slice(0, 10) : '',
     assignedUserIds: Array.isArray(c.assigned_user_ids) ? c.assigned_user_ids : [],
     assignedUserNames: Array.isArray(c.assigned_user_names) ? c.assigned_user_names : [],
     defaultChecklist: Array.isArray(c.default_checklist) ? c.default_checklist : [],
-    memberProgress:
-      typeof c.member_progress === 'object' && c.member_progress ? c.member_progress : {},
+    memberProgress,
     createdBy: c.created_by || '',
     createdAt: c.created_at || new Date().toISOString(),
     updatedAt: c.updated_at || new Date().toISOString(),
@@ -380,6 +392,7 @@ export async function createPMLearningCourse(
       category: courseData.category || '專案管理與治理',
       description: courseData.description?.trim() || '',
       externalUrl: courseData.externalUrl?.trim() || '',
+      hours: courseData.hours !== undefined ? Number(courseData.hours) : 0,
       startDate: courseData.startDate || '',
       endDate: courseData.endDate || '',
       assignedUserIds: courseData.assignedUserIds,
@@ -545,10 +558,16 @@ export async function updatePMMemberProgress(
         ? progressPatch.isCompleted
         : newProgressPercent >= 100;
 
+    const updatedHoursSpent =
+      progressPatch.hoursSpent !== undefined
+        ? progressPatch.hoursSpent
+        : (currentProgress.hoursSpent ?? (isCompleted ? targetCourse.hours || 0 : 0));
+
     const updatedProgress: PMLearningMemberProgress = {
       ...currentProgress,
       ...progressPatch,
       progressPercent: newProgressPercent,
+      hoursSpent: updatedHoursSpent,
       isCompleted,
       completedAt: isCompleted ? currentProgress.completedAt || nowIso : undefined,
       updatedAt: nowIso,
@@ -579,6 +598,70 @@ export async function updatePMMemberProgress(
   } catch (err: any) {
     console.error('更新個人進度失敗:', err);
     return { success: false, message: err?.message || '更新個人進度失敗' };
+  }
+}
+
+/**
+ * 儲存特定成員的課程呈現先後排序 (上下移動編輯)
+ */
+export async function saveUserCourseOrder(userId: string, orderedCourseIds: string[]) {
+  try {
+    const courses = await getPMLearningCourses();
+    const updatedCourses = courses.map((course) => {
+      const orderIdx = orderedCourseIds.indexOf(course.id);
+      if (orderIdx >= 0) {
+        const existingProg = course.memberProgress[userId] || {
+          userId,
+          userName: '',
+          progressPercent: 0,
+          isCompleted: false,
+          checklist: [],
+          attachments: [],
+        };
+        return {
+          ...course,
+          memberProgress: {
+            ...course.memberProgress,
+            [userId]: {
+              ...existingProg,
+              sortOrder: orderIdx,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        };
+      }
+      return course;
+    });
+
+    await syncCoursesToDatabase(updatedCourses);
+    revalidatePath('/pm-learning');
+    return { success: true, message: '課程呈現順序已成功儲存！' };
+  } catch (err: any) {
+    console.error('儲存個人課程順序失敗:', err);
+    return { success: false, message: err?.message || '儲存順序失敗' };
+  }
+}
+
+/**
+ * 快速更新單堂課程之培訓時數 (小時)
+ */
+export async function updateCourseHours(courseId: string, hours: number) {
+  try {
+    const courses = await getPMLearningCourses();
+    const target = courses.find((c) => c.id === courseId);
+    if (!target) return { success: false, message: '找不到指定課程' };
+
+    const cleanHours = Math.max(0, Number(hours) || 0);
+    const updatedCourses = courses.map((c) =>
+      c.id === courseId ? { ...c, hours: cleanHours, updatedAt: new Date().toISOString() } : c
+    );
+
+    await syncCoursesToDatabase(updatedCourses);
+    revalidatePath('/pm-learning');
+    return { success: true, message: `已將「${target.title}」時數設定為 ${cleanHours} 小時！` };
+  } catch (err: any) {
+    console.error('更新課程時數失敗:', err);
+    return { success: false, message: err?.message || '更新時數失敗' };
   }
 }
 

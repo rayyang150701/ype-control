@@ -6,6 +6,7 @@ import { User, Client } from '@/types';
 import { useAdmin } from '@/components/admin-context';
 import { TeamView } from './team-view';
 import { MyLearningView } from './my-learning-view';
+import { WeeklyKPIView } from './weekly-kpi-view';
 import { CourseFormDialog } from './course-form-dialog';
 import { CategoryManagerDialog } from './category-manager-dialog';
 import { getPMLearningCourses } from '@/lib/pm-learning-actions';
@@ -19,6 +20,7 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
+  BarChart3,
 } from 'lucide-react';
 
 interface PMLearningClientProps {
@@ -173,12 +175,12 @@ export function PMLearningClient({
           </div>
         </div>
 
-        {/* 雙視角 Toggle 切換器 */}
-        <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 self-stretch md:self-auto shrink-0">
+        {/* 三視角 Toggle 切換器 */}
+        <div className="flex flex-wrap items-center p-1 bg-slate-100 rounded-xl border border-slate-200 self-stretch md:self-auto shrink-0 gap-1">
           <button
             type="button"
             onClick={() => setViewMode('team')}
-            className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'team'
                 ? 'bg-white text-indigo-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -191,7 +193,7 @@ export function PMLearningClient({
           <button
             type="button"
             onClick={() => setViewMode('personal')}
-            className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
               viewMode === 'personal'
                 ? 'bg-white text-indigo-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -199,6 +201,19 @@ export function PMLearningClient({
           >
             <UserIcon className="h-4 w-4" />
             <span>個人工作區 (My Learning)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('weekly')}
+            className={`flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'weekly'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>週完成與時數 (Weekly & Hours)</span>
           </button>
         </div>
       </div>
@@ -241,6 +256,17 @@ export function PMLearningClient({
             setIsCreateDialogOpen(true);
           }}
           onCourseDeleted={handleCourseDeleted}
+        />
+      )}
+
+      {/* 視角三：週完成與時數 KPI 管制 (Weekly & Hours) */}
+      {viewMode === 'weekly' && (
+        <WeeklyKPIView
+          courses={courses}
+          pmoMembers={pmoMembers}
+          currentUser={currentUser}
+          onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
+          onCourseUpdated={handleCourseUpdated}
         />
       )}
 
