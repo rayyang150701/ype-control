@@ -39,6 +39,8 @@ import {
   ArrowDown,
   Check,
   X,
+  Search,
+  Filter,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -148,6 +150,89 @@ export function MyLearningView({
 
   // 全域展開/收合控制
   const [expandAllState, setExpandAllState] = useState<boolean>(false);
+
+  // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態)
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
+  const [selectedStatus, setSelectedStatus] = useState<string>('全部');
+
+  // 所有可用領域選項
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(categories || []);
+    myCourses.forEach((c) => {
+      if (c.category?.trim()) set.add(c.category.trim());
+    });
+    return ['全部', ...Array.from(set)];
+  }, [myCourses, categories]);
+
+  // 所有可用平台 / 講師選項
+  const allPlatforms = useMemo(() => {
+    const set = new Set<string>();
+    myCourses.forEach((c) => {
+      if (c.instructorOrPlatform?.trim()) {
+        set.add(c.instructorOrPlatform.trim());
+      }
+    });
+    return ['全部', ...Array.from(set)];
+  }, [myCourses]);
+
+  const isFiltered =
+    searchQuery.trim() !== '' ||
+    selectedCategory !== '全部' ||
+    selectedPlatform !== '全部' ||
+    selectedStatus !== '全部';
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('全部');
+    setSelectedPlatform('全部');
+    setSelectedStatus('全部');
+  };
+
+  // 篩選後課程清單 (同時保留自訂排序)
+  const filteredCourses = useMemo(() => {
+    return sortedMyCourses.filter((course) => {
+      // 1. 關鍵字比對 (搜尋名稱、平台/講師、說明、筆記、章節單元)
+      const q = searchQuery.toLowerCase().trim();
+      if (q) {
+        const prog = course.memberProgress[activeMember?.uid || ''];
+        const matchTitle = course.title.toLowerCase().includes(q);
+        const matchPlatform = (course.instructorOrPlatform || '').toLowerCase().includes(q);
+        const matchDesc = (course.description || '').toLowerCase().includes(q);
+        const matchCategory = (course.category || '').toLowerCase().includes(q);
+        const matchNotes = (prog?.notes || '').toLowerCase().includes(q);
+        const matchChecklist = (prog?.checklist || []).some((item) =>
+          item.title.toLowerCase().includes(q)
+        );
+        if (!matchTitle && !matchPlatform && !matchDesc && !matchCategory && !matchNotes && !matchChecklist) {
+          return false;
+        }
+      }
+
+      // 2. 課程領域篩選
+      if (selectedCategory !== '全部' && course.category !== selectedCategory) {
+        return false;
+      }
+
+      // 3. 平台 / 講師篩選
+      if (selectedPlatform !== '全部' && course.instructorOrPlatform !== selectedPlatform) {
+        return false;
+      }
+
+      // 4. 學習狀態篩選
+      if (selectedStatus !== '全部') {
+        const prog = course.memberProgress[activeMember?.uid || ''];
+        const p = prog?.progressPercent ?? 0;
+        const isDone = prog?.isCompleted || p >= 100;
+        if (selectedStatus === '已完訓' && !isDone) return false;
+        if (selectedStatus === '進行中' && (isDone || p === 0)) return false;
+        if (selectedStatus === '待開始' && (isDone || p > 0)) return false;
+      }
+
+      return true;
+    });
+  }, [sortedMyCourses, searchQuery, selectedCategory, selectedPlatform, selectedStatus, activeMember?.uid]);
 
   // 個人視角：上下移動調整課程順序並儲存
   const handleMoveCourse = async (courseId: string, direction: 'up' | 'down') => {
@@ -348,55 +433,194 @@ export function MyLearningView({
         </div>
       )}
 
-      {/* 課程列表頂部工具列：說明與全部展開/收合開關 */}
+      {/* 搜尋與篩選工具列 (依照課程領域、平台、狀態進行篩選，保留關鍵字查詢) */}
+      {sortedMyCourses.length > 0 && (
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            {/* 關鍵字搜尋 */}
+            <div className="relative min-w-[200px] max-w-sm flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜尋課程名稱、平台、筆記或關鍵字..."
+                className="pl-9 pr-7 h-9 text-xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  title="清除關鍵字"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* 課程領域下拉篩選 */}
+            <div className="flex items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="全部">全部領域類別</option>
+                {allCategories
+                  .filter((c) => c !== '全部')
+                  .map((c) => (
+                    <option key={c} value={c}>
+                      領域: {c}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* 平台 / 講師下拉篩選 */}
+            <div className="flex items-center gap-1.5">
+              <BookOpen className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
+              <select
+                value={selectedPlatform}
+                onChange={(e) => setSelectedPlatform(e.target.value)}
+                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="全部">全部平台 / 講師</option>
+                {allPlatforms
+                  .filter((p) => p !== '全部')
+                  .map((p) => (
+                    <option key={p} value={p}>
+                      平台: {p}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* 學習狀態下拉篩選 */}
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="全部">全部修習狀態</option>
+              <option value="進行中">⚡ 積極進行中</option>
+              <option value="已完訓">✅ 已完訓結業</option>
+              <option value="待開始">📌 尚未開始 (0%)</option>
+            </select>
+
+            {/* 重設篩選按鈕 */}
+            {isFiltered && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleResetFilters}
+                className="h-9 px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 gap-1 font-semibold"
+                title="重設所有篩選條件"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>清除篩選</span>
+              </Button>
+            )}
+          </div>
+
+          {/* 右側：全部展開 / 全部收合按鈕 */}
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setExpandAllState((prev) => !prev)}
+              className="h-9 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold shadow-2xs"
+            >
+              {expandAllState ? (
+                <>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                  <span>全部收合 ▴</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  <span>全部展開 ▾</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 課程列表計數與排序提示 */}
       {sortedMyCourses.length > 0 && (
         <div className="flex items-center justify-between px-1">
           <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <span>已排定學習課程清單 ({sortedMyCourses.length} 門)</span>
+            <span>
+              已排定學習課程清單 (
+              {isFiltered ? (
+                <span className="text-indigo-600 font-extrabold">
+                  符合條件 {filteredCourses.length} / 全體 {sortedMyCourses.length} 門
+                </span>
+              ) : (
+                `${sortedMyCourses.length} 門`
+              )}
+              )
+            </span>
             <span className="text-slate-400 font-normal hidden sm:inline">
               · 可使用 ▲ ▼ 調整個人上下排列順序，點選「展開詳情」編輯細節
             </span>
           </div>
 
+          {isFiltered && (
+            <div className="text-xs text-slate-400">
+              已套用篩選條件
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 查無篩選結果提示 */}
+      {sortedMyCourses.length > 0 && filteredCourses.length === 0 && (
+        <div className="text-center py-14 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
+          <Filter className="h-9 w-9 text-slate-300 mx-auto" />
+          <h4 className="text-sm font-semibold text-slate-700">找不到符合篩選條件的學習課程</h4>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            目前設定的關鍵字、課程領域、平台或狀態無匹配課程，請嘗試調整條件或點擊下方按鈕清除篩選。
+          </p>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setExpandAllState((prev) => !prev)}
-            className="h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+            onClick={handleResetFilters}
+            className="h-8 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold"
           >
-            {expandAllState ? (
-              <>
-                <ChevronUp className="h-3 w-3" />
-                <span>全部收合 ▴</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3 w-3" />
-                <span>全部展開 ▾</span>
-              </>
-            )}
+            <RotateCcw className="h-3.5 w-3.5 mr-1" />
+            清除所有篩選條件
           </Button>
         </div>
       )}
 
       {/* 個人課程卡片式呈現 (Card View，預設收起下層詳細內容，進度%與日期置於標題旁) */}
       <div className="space-y-4">
-        {sortedMyCourses.map((course, idx) => (
-          <PersonalCourseCard
-            key={course.id}
-            course={course}
-            userId={activeMember.uid}
-            currentUser={currentUser}
-            isFirst={idx === 0}
-            isLast={idx === sortedMyCourses.length - 1}
-            defaultExpanded={expandAllState}
-            onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
-            onUpdateCourse={onCourseUpdated}
-            onEditCourse={onEditCourse}
-            onDeleteCourse={handleDeleteCourse}
-          />
-        ))}
+        {filteredCourses.map((course, idx) => {
+          const overallIndex = sortedMyCourses.findIndex((c) => c.id === course.id);
+          const isFirst = overallIndex === 0;
+          const isLast = overallIndex === sortedMyCourses.length - 1;
+
+          return (
+            <PersonalCourseCard
+              key={course.id}
+              course={course}
+              userId={activeMember.uid}
+              currentUser={currentUser}
+              isFirst={isFirst}
+              isLast={isLast}
+              defaultExpanded={expandAllState}
+              onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
+              onUpdateCourse={onCourseUpdated}
+              onEditCourse={onEditCourse}
+              onDeleteCourse={handleDeleteCourse}
+            />
+          );
+        })}
       </div>
     </div>
   );
