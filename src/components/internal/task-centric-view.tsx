@@ -107,10 +107,136 @@ export function TaskCentricView({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedPm, setSelectedPm] = useState<string>('all');
+  const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [sortBy, setSortBy] = useState<
     'newest' | 'dueDate' | 'projectCase' | 'statusPriority' | 'oldestUpdated' | 'recentlyUpdated'
   >('newest');
+
+  // 整理所有階段清單
+  const phaseList = useMemo(() => {
+    const defaultPhases = [
+      '1.1 設計階段',
+      '1.1.1 評估',
+      '1.1.2 報價',
+      '1.1.3 簽呈',
+      '1.2 施工階段',
+      '1.3 驗證階段',
+      '1.4 驗收階段',
+      '1.4.1 教育訓練',
+      '1.4.2 驗收結案',
+    ];
+    const set = new Set<string>(defaultPhases);
+    items.forEach((item) => {
+      if (item.phase && item.phase.trim()) {
+        set.add(item.phase.trim());
+      }
+    });
+    return Array.from(set);
+  }, [items]);
+
+  // 階段徽章配色與標籤渲染
+  const getPhaseBadge = (phase?: string) => {
+    if (!phase) return null;
+    switch (phase) {
+      case '1.1 設計階段':
+      case '報價/設計':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-blue-50 text-blue-700 border-blue-200"
+          >
+            {phase.includes('1.1') ? '1.1 設計階段' : phase}
+          </Badge>
+        );
+      case '1.1.1 評估':
+      case '評估階段':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-purple-50 text-purple-700 border-purple-200"
+          >
+            {phase.includes('1.1.1') ? '1.1.1 評估' : phase}
+          </Badge>
+        );
+      case '1.1.2 報價':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-sky-50 text-sky-700 border-sky-200"
+          >
+            1.1.2 報價
+          </Badge>
+        );
+      case '1.1.3 簽呈':
+      case '簽呈核決':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-amber-50 text-amber-700 border-amber-300"
+          >
+            {phase.includes('1.1.3') ? '1.1.3 簽呈' : phase}
+          </Badge>
+        );
+      case '1.2 施工階段':
+      case '開發/施工':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-emerald-50 text-emerald-700 border-emerald-300"
+          >
+            {phase.includes('1.2') ? '1.2 施工階段' : phase}
+          </Badge>
+        );
+      case '1.3 驗證階段':
+      case '驗證測試':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-cyan-50 text-cyan-700 border-cyan-300"
+          >
+            {phase.includes('1.3') ? '1.3 驗證階段' : phase}
+          </Badge>
+        );
+      case '1.4 驗收階段':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-slate-100 text-slate-700 border-slate-300"
+          >
+            1.4 驗收階段
+          </Badge>
+        );
+      case '1.4.1 教育訓練':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-indigo-50 text-indigo-700 border-indigo-200"
+          >
+            1.4.1 教育訓練
+          </Badge>
+        );
+      case '1.4.2 驗收結案':
+      case '驗收結案':
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-slate-100 text-slate-700 border-slate-300"
+          >
+            {phase.includes('1.4.2') ? '1.4.2 驗收結案' : phase}
+          </Badge>
+        );
+      default:
+        return (
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs px-2 py-0.5 font-medium bg-slate-50 text-slate-600 border-slate-200"
+          >
+            {phase}
+          </Badge>
+        );
+    }
+  };
 
   // 整理所有負責 PM 清單
   const pmList = useMemo(() => {
@@ -210,6 +336,7 @@ export function TaskCentricView({
           ((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').toLowerCase().includes(queryLower)) ||
           (item.waitingOn && item.waitingOn.toLowerCase().includes(queryLower)) ||
           (item.owner && item.owner.toLowerCase().includes(queryLower)) ||
+          (item.phase && item.phase.toLowerCase().includes(queryLower)) ||
           (item.projectName && item.projectName.toLowerCase().includes(queryLower)) ||
           (item.projectCaseNumber && item.projectCaseNumber.toLowerCase().includes(queryLower)) ||
           (proj && proj.name.toLowerCase().includes(queryLower)) ||
@@ -226,6 +353,7 @@ export function TaskCentricView({
         const pm = proj?.responsiblePm?.trim() || (proj as any)?.tpmOfficeContact?.trim() || '未指定';
         if (pm !== selectedPm) return false;
       }
+      if (selectedPhase !== 'all' && item.phase !== selectedPhase) return false;
       if (selectedWaitingOn !== 'all') {
         if (item.waitingOn !== selectedWaitingOn) return false;
         // 需求1: 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
@@ -283,7 +411,7 @@ export function TaskCentricView({
         if (infoA.timestamp !== infoB.timestamp) {
           return infoA.timestamp - infoB.timestamp; // 較舊的在前
         }
-        return String(a.id || '').localeCompare(String(b.id || ''));
+        return String(a.id || '').localeCompare(String(a.id || ''));
       }
 
       if (sortBy === 'recentlyUpdated') {
@@ -304,6 +432,7 @@ export function TaskCentricView({
     searchQuery,
     selectedProjectId,
     selectedPm,
+    selectedPhase,
     selectedWaitingOn,
     sortBy,
     projectMap,
@@ -313,6 +442,7 @@ export function TaskCentricView({
     searchQuery ||
     selectedProjectId !== 'all' ||
     selectedPm !== 'all' ||
+    selectedPhase !== 'all' ||
     selectedWaitingOn !== 'all' ||
     activeTab !== 'all';
 
@@ -321,6 +451,7 @@ export function TaskCentricView({
     setSearchQuery('');
     setSelectedProjectId('all');
     setSelectedPm('all');
+    setSelectedPhase('all');
     setSelectedWaitingOn('all');
     setSortBy('newest');
   };
@@ -381,6 +512,21 @@ export function TaskCentricView({
                 <SelectItem key={p.id} value={p.id}>
                   {p.caseNumber ? `[${p.caseNumber}] ` : ''}
                   {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* 目前階段下拉 */}
+          <Select value={selectedPhase} onValueChange={setSelectedPhase}>
+            <SelectTrigger className={`w-[135px] h-9 text-xs bg-white ${selectedPhase !== 'all' ? 'border-indigo-400 font-semibold text-indigo-900 bg-indigo-50/50' : ''}`}>
+              <SelectValue placeholder="目前階段" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">全部專案階段</SelectItem>
+              {phaseList.map((phase) => (
+                <SelectItem key={phase} value={phase}>
+                  {phase}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -616,6 +762,9 @@ export function TaskCentricView({
                         </span>
                         <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
                       </button>
+
+                      {/* 目前階段標籤 */}
+                      {getPhaseBadge(item.phase)}
 
                       {/* 附件數量標籤 */}
                       {item.attachments && item.attachments.length > 0 && (
