@@ -582,11 +582,14 @@ export function ActionItemDialog({
                   <SelectValue placeholder="選擇責任歸屬客戶" />
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
-                  {effectiveClientOptions.map((c: Client) => (
-                    <SelectItem key={c.id} value={c.name}>
-                      {c.name} {c.code ? `(${c.code})` : ''}
-                    </SelectItem>
-                  ))}
+                  {effectiveClientOptions.map((c: Client) => {
+                    const clean = c.name.replace(/（.*）|\(.*\)/g, '').trim();
+                    return (
+                      <SelectItem key={c.id} value={clean}>
+                        {clean}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

@@ -23,6 +23,9 @@ interface NewPocProjectDialogProps {
   onSuccess: (newProject?: any) => void;
 }
 
+// 移除客戶名稱後方括號註記 (如「燁輝 (王伯展)」->「燁輝」)，只顯示純客戶名稱
+const cleanClientName = (str?: string) => (str || '').replace(/（.*）|\(.*\)/g, '').trim();
+
 export function NewPocProjectDialog({
   open,
   onOpenChange,
@@ -38,7 +41,7 @@ export function NewPocProjectDialog({
 
   const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
   const [sourceType, setSourceType] = useState<ProjectSourceType>('億威內部自建專案');
-  const [clientName, setClientName] = useState(defaultClientName || '燁輝');
+  const [clientName, setClientName] = useState(() => cleanClientName(defaultClientName) || '燁輝');
   const [name, setName] = useState(defaultName || '');
   const [caseNumber, setCaseNumber] = useState('POC');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
@@ -52,7 +55,7 @@ export function NewPocProjectDialog({
   useEffect(() => {
     if (open) {
       if (defaultName) setName(defaultName);
-      if (defaultClientName) setClientName(defaultClientName);
+      if (defaultClientName) setClientName(cleanClientName(defaultClientName) || '燁輝');
     }
   }, [open, defaultName, defaultClientName]);
 
@@ -103,7 +106,7 @@ export function NewPocProjectDialog({
         name,
         category,
         sourceType,
-        clientName: clientName.trim() || '燁輝',
+        clientName: cleanClientName(clientName) || '燁輝',
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
         vendorOrSupplier: vendorOrSupplier.trim() || undefined,
@@ -228,7 +231,7 @@ export function NewPocProjectDialog({
     return false;
   });
   const clientUserContacts = matchedClientUsers.map((u) => u.displayName || u.email);
-  const clientMainContact = clientList.find((c) => c.name === clientName)?.contactPerson;
+  const clientMainContact = clientList.find((c) => cleanClientName(c.name) === cleanClientName(clientName))?.contactPerson;
 
   const contactOptions = useMemo(() => {
     const list: { value: string; label: string; hint?: string }[] = [];
@@ -272,6 +275,23 @@ export function NewPocProjectDialog({
 
     return list;
   }, [clientUserContacts, clientMainContact, clientName]);
+
+  // 整理純淨客戶選單 (移除後方括號註記，並去重)
+  const cleanClientList = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { id: string; name: string }[] = [];
+    clientList.forEach((c) => {
+      const clean = cleanClientName(c.name);
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        list.push({ id: c.id, name: clean });
+      }
+    });
+    if (!seen.has('燁輝')) {
+      list.unshift({ id: 'default-yiehphui', name: '燁輝' });
+    }
+    return list;
+  }, [clientList]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -365,22 +385,23 @@ export function NewPocProjectDialog({
                 <Building2 className="h-3.5 w-3.5 text-slate-500" />
                 客戶名稱 (下拉式) *
               </Label>
-              <Select value={clientName} onValueChange={setClientName}>
+              <Select value={cleanClientName(clientName) || '燁輝'} onValueChange={(val) => setClientName(cleanClientName(val))}>
                 <SelectTrigger className="mt-1 text-xs h-9">
                   <SelectValue placeholder="請選擇客戶" />
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
-                  {clientList.length > 0 ? (
-                    clientList.map((c) => {
-                      const contact = c.contactPerson?.trim() || users.find(u => u.clientName && isClientMatch(u.clientName, c.name))?.displayName;
-                      return (
-                        <SelectItem key={c.id} value={c.name}>
-                          {c.name} {contact ? `(${contact})` : (c.code ? `(${c.code})` : '')}
-                        </SelectItem>
-                      );
-                    })
+                  {cleanClientList.length > 0 ? (
+                    cleanClientList.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name}
+                      </SelectItem>
+                    ))
                   ) : (
-                    <SelectItem value="燁輝">燁輝 (預設)</SelectItem>
+                    <>
+                      <SelectItem value="燁輝">燁輝</SelectItem>
+                      <SelectItem value="億威電子">億威電子</SelectItem>
+                      <SelectItem value="其他">其他</SelectItem>
+                    </>
                   )}
                 </SelectContent>
               </Select>
