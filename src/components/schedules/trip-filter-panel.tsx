@@ -31,6 +31,15 @@ export function TripFilterPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState(filter.searchKeyword || '');
 
+  // 取得所有曾出現過或專案對應的負責 PM（去重）
+  const allPMs = Array.from(
+    new Set([
+      ...trips.map((t) => t.pm).filter(Boolean),
+      ...projects.map((p) => p.responsiblePm).filter(Boolean),
+      ...projects.map((p) => p.tpmOfficeContact).filter(Boolean),
+    ] as string[])
+  ).sort();
+
   // 取得所有曾出現過的 TPM 負責人（去重）
   const allTPMs = Array.from(
     new Set(trips.map((t) => t.tpm).filter(Boolean) as string[])
@@ -43,6 +52,7 @@ export function TripFilterPanel({
   const activeAdvancedCount = [
     filter.customerId,
     filter.projectId,
+    filter.pm,
     filter.category,
     filter.status,
     filter.week,
@@ -126,7 +136,7 @@ export function TripFilterPanel({
 
       {/* 進階篩選抽屜 */}
       {showAdvanced && (
-        <div className="pt-2 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+        <div className="pt-2 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 text-xs">
           {/* 客戶篩選 */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">客戶單位</label>
@@ -156,6 +166,23 @@ export function TripFilterPanel({
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 負責 PM 篩選 */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 mb-1">負責 PM</label>
+            <select
+              value={filter.pm || ''}
+              onChange={(e) => onFilterChange({ ...filter, pm: e.target.value || undefined })}
+              className="w-full h-8 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 focus:outline-hidden truncate"
+            >
+              <option value="">全部 PM</option>
+              {allPMs.map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
                 </option>
               ))}
             </select>

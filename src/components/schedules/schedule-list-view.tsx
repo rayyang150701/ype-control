@@ -96,7 +96,7 @@ export function ScheduleListView({
       <div className="hidden md:grid md:grid-cols-12 gap-4 px-6 py-3 bg-gray-100/80 border border-gray-200 rounded-t-xl text-xs font-semibold text-gray-600 tracking-wider">
         <div className="col-span-3">專案 / 客戶</div>
         <div className="col-span-3">行程主題</div>
-        <div className="col-span-2">人員 / TPM</div>
+        <div className="col-span-2">人員 / PM / TPM</div>
         <div className="col-span-2">狀態</div>
         <div className="col-span-2 text-right">操作</div>
       </div>
@@ -200,10 +200,14 @@ export function ScheduleListView({
                         </div>
                       )}
                     </div>
-                    {trip.tpm && (
-                      <div className="hidden lg:flex items-center gap-1 text-xs text-gray-500 min-w-0">
+                    {(trip.pm || trip.tpm) && (
+                      <div className="hidden lg:flex items-center gap-1 text-xs text-gray-500 min-w-0" title={`負責 PM: ${trip.pm || '未指定'} | TPM: ${trip.tpm || '未指定'}`}>
                         <Users className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{trip.tpm}</span>
+                        <span className="truncate">
+                          {trip.pm && <span>PM:{trip.pm}</span>}
+                          {trip.pm && trip.tpm && <span className="mx-0.5 text-gray-300">/</span>}
+                          {trip.tpm && <span>TPM:{trip.tpm}</span>}
+                        </span>
                       </div>
                     )}
                   </div>

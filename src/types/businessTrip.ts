@@ -20,6 +20,7 @@ export interface BusinessTrip {
   startTime: string; // 開始時間 (格式: "HH:mm")
   endTime: string; // 結束時間 (格式: "HH:mm")
   category: TripCategory; // 類別: 出差、會議、線上會議、其他
+  pm?: string; // 負責 PM (選填)
   tpm?: string; // TPM 負責人 / 窗口
   status: TripStatus; // 確認狀態: confirmed (已確認) | pending (待確認)
   lunchBoxes?: number; // 燁輝廠區便當代訂數量
@@ -80,6 +81,7 @@ export interface TripFilter {
   travelers?: string[]; // 出差人員
   customerId?: string; // 客戶 ID
   projectId?: string; // 專案 ID
+  pm?: string; // 負責 PM
   tpm?: string; // TPM
   week?: number; // 週別（例如：1-52）
   year?: number; // 年份

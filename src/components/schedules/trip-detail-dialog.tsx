@@ -93,6 +93,9 @@ export function TripDetailDialog({
     if (trip.projectName) {
       lines.push(`📁 關聯專案：${trip.projectName}`);
     }
+    if (trip.pm) {
+      lines.push(`👤 負責 PM：${trip.pm}`);
+    }
     if (trip.tpm) {
       lines.push(`👤 TPM 負責人：${trip.tpm}`);
     }
@@ -136,6 +139,7 @@ export function TripDetailDialog({
       trip.travelers && trip.travelers.length > 0 ? `【參與人員】\n${trip.travelers.join('、')}` : '',
       trip.customerName ? `【關聯客戶】\n${trip.customerName}` : '',
       trip.projectName ? `【關聯專案】\n${trip.projectName}` : '',
+      trip.pm ? `【負責 PM】\n${trip.pm}` : '',
       trip.tpm ? `【TPM 負責人】\n${trip.tpm}` : '',
       trip.notes ? `【出差/會議重點】\n${trip.notes}` : '',
     ].filter(Boolean).join('\n\n');
@@ -345,14 +349,27 @@ export function TripDetailDialog({
             )}
           </div>
 
-          {/* TPM */}
-          {trip.tpm && (
-            <div className="flex items-start gap-3 p-3.5 bg-gray-50/80 border border-gray-100 rounded-xl">
-              <Users className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <div className="text-xs text-gray-500 font-medium">TPM 負責人</div>
-                <div className="font-medium text-gray-800 text-sm mt-0.5">{trip.tpm}</div>
-              </div>
+          {/* 負責 PM 與 TPM */}
+          {(trip.pm || trip.tpm) && (
+            <div className={`grid grid-cols-1 ${trip.pm && trip.tpm ? 'sm:grid-cols-2' : ''} gap-3`}>
+              {trip.pm && (
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50/80 border border-gray-100 rounded-xl">
+                  <Users className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-gray-500 font-medium">負責 PM</div>
+                    <div className="font-medium text-gray-800 text-sm mt-0.5 truncate">{trip.pm}</div>
+                  </div>
+                </div>
+              )}
+              {trip.tpm && (
+                <div className="flex items-start gap-3 p-3.5 bg-gray-50/80 border border-gray-100 rounded-xl">
+                  <Users className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-gray-500 font-medium">TPM 負責人</div>
+                    <div className="font-medium text-gray-800 text-sm mt-0.5 truncate">{trip.tpm}</div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

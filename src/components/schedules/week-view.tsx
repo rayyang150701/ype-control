@@ -486,6 +486,17 @@ export function WeekView({
                             </div>
                           )}
 
+                          {(trip.pm || trip.tpm) && (
+                            <div className="flex items-center gap-1 truncate text-gray-500 text-[11px] print:text-[9.5px]" title={`負責 PM: ${trip.pm || '未指定'} | TPM: ${trip.tpm || '未指定'}`}>
+                              <span className="text-gray-400 shrink-0">👤</span>
+                              <span className="truncate">
+                                {trip.pm && <span>PM: {trip.pm}</span>}
+                                {trip.pm && trip.tpm && <span className="mx-0.5 text-gray-300">/</span>}
+                                {trip.tpm && <span>TPM: {trip.tpm}</span>}
+                              </span>
+                            </div>
+                          )}
+
                           {/* 🍱 便當數顯示 */}
                           {Boolean(trip.lunchBoxes && trip.lunchBoxes > 0) && (
                             <div className="flex items-center gap-1 text-amber-900 font-bold text-[10px] print:text-[9px] bg-amber-100/90 px-1.5 py-0.2 rounded border border-amber-300 w-fit mt-0.5">

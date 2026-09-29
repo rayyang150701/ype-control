@@ -118,7 +118,7 @@ export function SchedulesClient({
   // 前端過濾行程（支援統一關鍵字、客戶、專案、類別、狀態、TPM、週別）
   const filteredTrips = useMemo(() => {
     return trips.filter((trip) => {
-      // 關鍵字搜尋 (主題、人員、專案、地點、客戶)
+      // 關鍵字搜尋 (主題、人員、專案、地點、客戶、PM、TPM)
       if (filter.searchKeyword) {
         const kw = filter.searchKeyword.toLowerCase();
         const matchSubject = trip.subject?.toLowerCase().includes(kw);
@@ -126,7 +126,9 @@ export function SchedulesClient({
         const matchCustomer = trip.customerName?.toLowerCase().includes(kw);
         const matchLocation = trip.location?.toLowerCase().includes(kw);
         const matchTravelers = trip.travelers?.some((t) => t.toLowerCase().includes(kw));
-        if (!matchSubject && !matchProject && !matchCustomer && !matchLocation && !matchTravelers) {
+        const matchPm = trip.pm?.toLowerCase().includes(kw);
+        const matchTpm = trip.tpm?.toLowerCase().includes(kw);
+        if (!matchSubject && !matchProject && !matchCustomer && !matchLocation && !matchTravelers && !matchPm && !matchTpm) {
           return false;
         }
       }
@@ -147,6 +149,15 @@ export function SchedulesClient({
         return false;
       }
 
+      // 負責 PM 篩選 (支援行程本身填寫之 PM 或專案帶入之 PM)
+      if (filter.pm) {
+        const project = trip.projectId ? projects.find((p) => p.id === trip.projectId) : undefined;
+        const tripPm = trip.pm || project?.responsiblePm || (project as any)?.tpmOfficeContact;
+        if (tripPm !== filter.pm) {
+          return false;
+        }
+      }
+
       // 類別篩選
       if (filter.category && trip.category !== filter.category) {
         return false;
@@ -164,7 +175,7 @@ export function SchedulesClient({
 
       return true;
     });
-  }, [trips, filter, clients]);
+  }, [trips, filter, clients, projects]);
 
   // 週切換
   const handlePrevWeek = () => {
@@ -295,6 +306,7 @@ export function SchedulesClient({
         '結束時間',
         '出差人員',
         '類別',
+        '負責PM',
         'TPM',
         '確認狀態',
         '出差重點彙整',
@@ -311,6 +323,7 @@ export function SchedulesClient({
         trip.endTime || '',
         trip.travelers?.join('; ') || '',
         TRIP_CATEGORIES.find((c) => c.value === trip.category)?.label || trip.category || '',
+        trip.pm || '',
         trip.tpm || '',
         trip.status === 'confirmed' ? '已確認' : '待確認',
         trip.notes ? trip.notes.replace(/\r?\n/g, ' ') : '',

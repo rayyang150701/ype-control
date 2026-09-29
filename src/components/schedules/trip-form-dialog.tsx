@@ -492,6 +492,7 @@ export function TripFormDialog({
     startTime: '09:00',
     endTime: '17:00',
     category: 'business' as TripCategory,
+    pm: '',
     tpm: '',
     status: 'pending' as TripStatus,
     lunchBoxes: 0,
@@ -589,6 +590,24 @@ export function TripFormDialog({
     return Array.from(list).sort();
   }, [allPersonnelList]);
 
+  // 負責 PM 選項名單 (從專案負責 PM、窗口與成員名單提取)
+  const pmOptions = useMemo(() => {
+    const list = new Set<string>();
+    projectList.forEach((p) => {
+      if (p.responsiblePm?.trim()) list.add(p.responsiblePm.trim());
+      if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
+    });
+    allPersonnelList.forEach((p) => {
+      if (p.department?.toUpperCase().includes('PM')) {
+        list.add(p.name);
+      }
+    });
+    if (list.size === 0) {
+      allPersonnelList.forEach((p) => list.add(p.name));
+    }
+    return Array.from(list).sort();
+  }, [projectList, allPersonnelList]);
+
   // 依據傳入的 trip 或 selectedDate 初始化
   useEffect(() => {
     if (open) {
@@ -608,6 +627,7 @@ export function TripFormDialog({
           startTime: trip.startTime || '09:00',
           endTime: trip.endTime || '17:00',
           category: trip.category || 'business',
+          pm: trip.pm || '',
           tpm: trip.tpm || '',
           status: trip.status || 'pending',
           lunchBoxes: trip.lunchBoxes || 0,
@@ -641,6 +661,7 @@ export function TripFormDialog({
           startTime: '09:00',
           endTime: '17:00',
           category: 'business',
+          pm: '',
           tpm: '',
           status: 'pending',
           lunchBoxes: 0,
@@ -698,6 +719,7 @@ export function TripFormDialog({
         projectName: proj.name,
         customerId: matchedClientId,
         customerName: matchedClientName,
+        pm: prev.pm || proj.responsiblePm || proj.tpmOfficeContact || '',
         tpm: prev.tpm || proj.tpmOfficeContact || '',
       }));
 
@@ -782,6 +804,7 @@ export function TripFormDialog({
         startTime: formData.startTime,
         endTime: formData.endTime,
         category: formData.category,
+        pm: formData.pm ? formData.pm.trim() : undefined,
         tpm: formData.tpm ? formData.tpm.trim() : undefined,
         status: formData.status,
         lunchBoxes: isYiehPhui && formData.category !== 'online_meeting' ? Number(formData.lunchBoxes) || 0 : 0,
@@ -1120,29 +1143,73 @@ export function TripFormDialog({
             </div>
           </div>
 
-          {/* TPM 與 確認狀態 (支援燁輝自動過濾 TPM 部門與人員名單) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 負責 PM、TPM 與 確認狀態 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* 負責 PM */}
+            <div>
+              <Label className="text-sm font-semibold text-gray-700">
+                負責 PM (可選)
+              </Label>
+              <div className="flex items-center gap-1.5 mt-1">
+                {/* 手動輸入 + datalist 提示 */}
+                <div className="relative flex-1">
+                  <Input
+                    list="pm-options-list"
+                    value={formData.pm}
+                    onChange={(e) => setFormData({ ...formData, pm: e.target.value })}
+                    placeholder="輸入或選 PM"
+                    className="text-sm bg-white"
+                  />
+                  <datalist id="pm-options-list">
+                    {pmOptions.map((opt) => (
+                      <option key={opt} value={opt} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* 下拉式快速選單 */}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setFormData((prev) => ({ ...prev, pm: e.target.value }));
+                    }
+                  }}
+                  className="w-24 px-1.5 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
+                  title="從名單快速點選帶入 PM"
+                >
+                  <option value="">▼ 挑選...</option>
+                  {pmOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* TPM 負責人 */}
             <div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold text-gray-700">
                   TPM 負責人 (可選)
                 </Label>
                 {isYiehPhui && (
-                  <span className="text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 flex items-center gap-0.5">
-                    <Sparkles className="w-3 h-3" />
-                    已連動燁輝/TPM
+                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    燁輝/TPM
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-1.5 mt-1">
                 {/* 手動輸入 + datalist 提示 */}
                 <div className="relative flex-1">
                   <Input
                     list="tpm-options-list"
                     value={formData.tpm}
                     onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
-                    placeholder={isYiehPhui ? '輸入或選擇 TPM / 燁輝窗口' : '輸入或選擇 TPM 姓名'}
+                    placeholder={isYiehPhui ? '輸入或選 TPM/窗口' : '輸入或選 TPM'}
                     className="text-sm bg-white"
                   />
                   <datalist id="tpm-options-list">
@@ -1160,7 +1227,7 @@ export function TripFormDialog({
                       setFormData((prev) => ({ ...prev, tpm: e.target.value }));
                     }
                   }}
-                  className="w-28 px-2 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
+                  className="w-24 px-1.5 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
                   title="從名單快速點選帶入 TPM"
                 >
                   <option value="">▼ 挑選...</option>
@@ -1173,12 +1240,13 @@ export function TripFormDialog({
               </div>
 
               {isYiehPhui && (
-                <p className="text-[11px] text-amber-700 mt-1">
-                  💡 關聯客戶包含「燁輝」：下拉已自動優先列出 TPM 部門同仁與燁輝窗口。
+                <p className="text-[10px] text-amber-700 mt-1">
+                  💡 客戶含燁輝：已優先列出 TPM 部門同仁。
                 </p>
               )}
             </div>
 
+            {/* 行程確認狀態 */}
             <div>
               <Label className="text-sm font-semibold text-gray-700">行程確認狀態</Label>
               <select

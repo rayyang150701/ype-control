@@ -319,7 +319,7 @@ export function MonthView({
                         backgroundColor: `${getCategoryColor(trip.category)}18`,
                         borderLeft: `3px solid ${getCategoryColor(trip.category)}`,
                       }}
-                      title={`${trip.subject}\n${trip.travelers.join(', ')}\n${trip.startTime}-${trip.endTime}${isOverdue ? '\n⚠️ 出差報告逾期未填' : ''}`}
+                      title={`${trip.subject}${trip.pm ? `\n負責PM: ${trip.pm}` : ''}${trip.tpm ? `\nTPM: ${trip.tpm}` : ''}\n${trip.travelers.join(', ')}\n${trip.startTime}-${trip.endTime}${isOverdue ? '\n⚠️ 出差報告逾期未填' : ''}`}
                     >
                       {/* 主題與警示 */}
                       <div className="font-semibold text-gray-900 truncate flex items-center gap-1">
