@@ -233,7 +233,8 @@ export function SchedulesClient({
 
   // 儲存行程（新增或更新）
   const handleSaveTrip = async (
-    tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>
+    tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>,
+    batchDates?: string[]
   ) => {
     if (selectedTrip) {
       const res = await updateBusinessTrip(selectedTrip.id, tripData);
@@ -245,6 +246,40 @@ export function SchedulesClient({
       } else {
         toast({ variant: 'destructive', title: '更新失敗', description: res.message });
       }
+    } else if (batchDates && batchDates.length > 0) {
+      // 批次多日新增模式：逐筆建立相同內容的行程
+      let successCount = 0;
+      let failCount = 0;
+      for (const dateStr of batchDates) {
+        const res = await createBusinessTrip({
+          ...tripData,
+          startDate: dateStr,
+          endDate: dateStr,
+        });
+        if (res.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+      if (failCount === 0) {
+        toast({
+          title: `批次建立成功 🎉`,
+          description: `已成功建立 ${successCount} 筆行程（${batchDates.map((d) => {
+            const dt = new Date(d + 'T00:00:00');
+            return `${dt.getMonth() + 1}/${dt.getDate()}`;
+          }).join('、')}）`,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: `部分建立失敗`,
+          description: `成功 ${successCount} 筆，失敗 ${failCount} 筆，請確認後重試`,
+        });
+      }
+      setShowTripForm(false);
+      setSelectedDate(null);
+      await reloadData();
     } else {
       const res = await createBusinessTrip(tripData);
       if (res.success) {

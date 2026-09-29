@@ -435,7 +435,7 @@ interface TripFormDialogProps {
   projects: Project[];
   users: User[];
   defaultCustomerId?: string;
-  onSave: (tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  onSave: (tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>, batchDates?: string[]) => Promise<void>;
   onProjectCreated?: (newProject: Project) => void;
 }
 
@@ -505,6 +505,37 @@ export function TripFormDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCustomPm, setIsCustomPm] = useState(false);
+
+  // 批次多日新增模式
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchDates, setBatchDates] = useState<string[]>([]);
+  const [batchDateInput, setBatchDateInput] = useState<string>('');
+
+  const handleAddBatchDate = (dateStr: string) => {
+    if (!dateStr) return;
+    setBatchDates((prev) => {
+      if (prev.includes(dateStr)) return prev;
+      return [...prev, dateStr].sort();
+    });
+    setBatchDateInput('');
+  };
+
+  const handleRemoveBatchDate = (dateStr: string) => {
+    setBatchDates((prev) => prev.filter((d) => d !== dateStr));
+  };
+
+  const formatDisplayDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+    const weekday = weekdays[d.getDay()];
+    return `${year}/${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')} (${weekday})`;
+  };
+
+
 
   // 判斷關聯客戶是否為燁輝相關
   const isYiehPhui = useMemo(() => {
@@ -724,6 +755,9 @@ export function TripFormDialog({
       }
       setErrors({});
       setIsSubmitting(false);
+      setBatchMode(false);
+      setBatchDates([]);
+      setBatchDateInput('');
     }
   }, [open, trip, selectedDate, defaultCustomerId, clients, projectList, pmOptions]);
 
@@ -824,8 +858,14 @@ export function TripFormDialog({
     if (formData.category !== 'online_meeting' && !formData.location.trim()) {
       newErrors.location = '請輸入出差地點或廠區';
     }
-    if (formData.endDate < formData.startDate) {
-      newErrors.endDate = '結束日期不能早於開始日期';
+    if (batchMode) {
+      if (batchDates.length === 0) {
+        newErrors.batchDates = '請至少新增一個日期';
+      }
+    } else {
+      if (formData.endDate < formData.startDate) {
+        newErrors.endDate = '結束日期不能早於開始日期';
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -835,28 +875,35 @@ export function TripFormDialog({
     e.preventDefault();
     if (!validate()) return;
 
+    const tripData = {
+      subject: formData.subject.trim(),
+      projectId: formData.projectId || undefined,
+      projectName: formData.projectName || undefined,
+      customerId: formData.customerId || undefined,
+      customerName: formData.customerName || undefined,
+      travelers: formData.travelers.map((t) => t.trim()).filter(Boolean),
+      location: formData.location.trim() || (formData.category === 'online_meeting' ? '線上會議' : ''),
+      meetingUrl: formData.meetingUrl?.trim() || undefined,
+      startDate: formData.startDate,
+      endDate: formData.endDate,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
+      category: formData.category,
+      pm: formData.pm ? formData.pm.trim() : undefined,
+      tpm: formData.tpm ? formData.tpm.trim() : undefined,
+      status: formData.status,
+      lunchBoxes: isYiehPhui && formData.category !== 'online_meeting' ? Number(formData.lunchBoxes) || 0 : 0,
+      notes: formData.notes ? formData.notes.trim() : undefined,
+    };
+
     try {
       setIsSubmitting(true);
-      await onSave({
-        subject: formData.subject.trim(),
-        projectId: formData.projectId || undefined,
-        projectName: formData.projectName || undefined,
-        customerId: formData.customerId || undefined,
-        customerName: formData.customerName || undefined,
-        travelers: formData.travelers.map((t) => t.trim()).filter(Boolean),
-        location: formData.location.trim() || (formData.category === 'online_meeting' ? '線上會議' : ''),
-        meetingUrl: formData.meetingUrl?.trim() || undefined,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        category: formData.category,
-        pm: formData.pm ? formData.pm.trim() : undefined,
-        tpm: formData.tpm ? formData.tpm.trim() : undefined,
-        status: formData.status,
-        lunchBoxes: isYiehPhui && formData.category !== 'online_meeting' ? Number(formData.lunchBoxes) || 0 : 0,
-        notes: formData.notes ? formData.notes.trim() : undefined,
-      });
+      if (batchMode && batchDates.length > 0) {
+        // 批次模式：傳入多個日期，由呼叫端逐筆建立
+        await onSave(tripData, batchDates);
+      } else {
+        await onSave(tripData);
+      }
       onOpenChange(false);
     } catch (err) {
       console.error('儲存行程失敗:', err);
@@ -1129,65 +1176,171 @@ export function TripFormDialog({
             {errors.travelers && <p className="text-xs text-red-500 mt-1">{errors.travelers}</p>}
           </div>
 
-          {/* 日期與時間 (4 欄) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
-            <div>
-              <Label className="text-xs font-semibold text-gray-600">開始日期 *</Label>
-              <input
-                type="date"
-                value={formData.startDate}
-                onChange={(e) => {
-                  const newStart = e.target.value;
-                  setFormData((prev) => ({
-                    ...prev,
-                    startDate: newStart,
-                    endDate: prev.endDate < newStart ? newStart : prev.endDate,
-                  }));
-                }}
-                className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
-              />
-            </div>
+          {/* 日期與時間 */}
+          <div className="bg-gray-50/60 p-3.5 rounded-xl border border-gray-100 space-y-3">
+            {/* 批次模式切換按鈕 (僅限新增模式) */}
+            {!trip && (
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-gray-500" />
+                  日期與時間
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchMode(!batchMode);
+                    setBatchDates([]);
+                    setBatchDateInput('');
+                  }}
+                  className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-all cursor-pointer ${
+                    batchMode
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                      : 'bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-50'
+                  }`}
+                  title="切換為多日不連續日期批次新增模式"
+                >
+                  {batchMode ? '✓ 多日批次模式 (開啟)' : '＋ 新增多個不連續日期'}
+                </button>
+              </div>
+            )}
 
-            <div>
-              <Label className="text-xs font-semibold text-gray-600">開始時間 *</Label>
-              <select
-                value={formData.startTime}
-                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
-              >
-                {TIME_OPTIONS.map((time) => (
-                  <option key={time} value={time}>
-                    {time}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {batchMode && !trip ? (
+              /* 批次多日選取模式 */
+              <div className="space-y-2.5">
+                <p className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-3 py-2">
+                  💡 批次模式：點選選取多個不連續日期，系統將自動以相同行程內容分別建立每一天的行程記錄。
+                </p>
 
-            <div>
-              <Label className="text-xs font-semibold text-gray-600">結束日期 *</Label>
-              <input
-                type="date"
-                value={formData.endDate}
-                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
-              />
-              {errors.endDate && <p className="text-[11px] text-red-500 mt-0.5">{errors.endDate}</p>}
-            </div>
+                {/* 日期選取器 */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={batchDateInput}
+                    onChange={(e) => setBatchDateInput(e.target.value)}
+                    className="flex-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddBatchDate(batchDateInput)}
+                    disabled={!batchDateInput}
+                    className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    + 加入
+                  </button>
+                </div>
 
-            <div>
-              <Label className="text-xs font-semibold text-gray-600">結束時間 *</Label>
-              <select
-                value={formData.endTime}
-                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
-              >
-                {TIME_OPTIONS.map((time) => (
-                  <option key={time} value={time}>
-                    {time}
-                  </option>
-                ))}
-              </select>
-            </div>
+                {/* 已選日期列表 */}
+                {batchDates.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-gray-500 font-medium">已選取 {batchDates.length} 個日期：</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {batchDates.map((d) => (
+                        <span
+                          key={d}
+                          className="inline-flex items-center gap-1.5 text-xs bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-full font-medium"
+                        >
+                          {formatDisplayDate(d)}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBatchDate(d)}
+                            className="text-indigo-500 hover:text-red-600 transition cursor-pointer"
+                            title="移除此日期"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {errors.batchDates && <p className="text-[11px] text-red-500">{errors.batchDates}</p>}
+
+                {/* 時間欄位 (批次模式下保留) */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <Label className="text-xs font-semibold text-gray-600">開始時間 *</Label>
+                    <select
+                      value={formData.startTime}
+                      onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                      className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                    >
+                      {TIME_OPTIONS.map((time) => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-gray-600">結束時間 *</Label>
+                    <select
+                      value={formData.endTime}
+                      onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                      className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                    >
+                      {TIME_OPTIONS.map((time) => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 一般模式：單一日期區間 */
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-gray-600">開始日期 *</Label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        startDate: newStart,
+                        endDate: prev.endDate < newStart ? newStart : prev.endDate,
+                      }));
+                    }}
+                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-gray-600">開始時間 *</Label>
+                  <select
+                    value={formData.startTime}
+                    onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-gray-600">結束日期 *</Label>
+                  <input
+                    type="date"
+                    value={formData.endDate}
+                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                  />
+                  {errors.endDate && <p className="text-[11px] text-red-500 mt-0.5">{errors.endDate}</p>}
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-gray-600">結束時間 *</Label>
+                  <select
+                    value={formData.endTime}
+                    onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-white"
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 負責 PM、TPM 與 確認狀態 */}
@@ -1395,7 +1548,13 @@ export function TripFormDialog({
               disabled={isSubmitting}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {isSubmitting ? '儲存中...' : trip ? '更新行程' : '建立行程'}
+              {isSubmitting
+                ? '儲存中...'
+                : trip
+                ? '更新行程'
+                : batchMode && batchDates.length > 0
+                ? `批次建立 ${batchDates.length} 筆行程`
+                : '建立行程'}
             </Button>
           </DialogFooter>
         </form>
