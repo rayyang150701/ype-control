@@ -149,10 +149,10 @@ export function SchedulesClient({
         return false;
       }
 
-      // 負責 PM 篩選 (支援行程本身填寫之 PM 或專案帶入之 PM)
+      // 負責 PM 篩選 (支援行程本身填寫之 PM 或專案負責 PM，絕不混入 TPM 窗口)
       if (filter.pm) {
         const project = trip.projectId ? projects.find((p) => p.id === trip.projectId) : undefined;
-        const tripPm = trip.pm || project?.responsiblePm || (project as any)?.tpmOfficeContact;
+        const tripPm = trip.pm || project?.responsiblePm;
         if (tripPm !== filter.pm) {
           return false;
         }
@@ -168,9 +168,18 @@ export function SchedulesClient({
         return false;
       }
 
-      // TPM 篩選
-      if (filter.tpm && trip.tpm !== filter.tpm) {
-        return false;
+      // TPM 篩選 (支援全名或純姓名比對，排除外層多餘引號與分機號差異)
+      if (filter.tpm) {
+        const tripTpm = (trip.tpm || '').replace(/["'“”]/g, '').trim();
+        const selectedTpm = filter.tpm.replace(/["'“”]/g, '').trim();
+        const isMatch =
+          tripTpm === selectedTpm ||
+          tripTpm.includes(selectedTpm) ||
+          selectedTpm.includes(tripTpm) ||
+          ((selectedTpm.includes('陳家姷') || selectedTpm.includes('陳家炳')) && (tripTpm.includes('陳家姷') || tripTpm.includes('陳家炳')));
+        if (!isMatch) {
+          return false;
+        }
       }
 
       return true;
@@ -443,6 +452,7 @@ export function SchedulesClient({
             trips={trips}
             clients={clients}
             projects={projects}
+            users={users}
             currentYear={currentYear}
             filter={filter}
             onFilterChange={setFilter}

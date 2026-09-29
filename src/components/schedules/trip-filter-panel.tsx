@@ -5,14 +5,16 @@ import { Search, SlidersHorizontal, X, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import type { BusinessTrip, TripFilter, TripCategory, WeekInfo, Client, Project } from '@/types';
+import type { BusinessTrip, TripFilter, TripCategory, WeekInfo, Client, Project, User } from '@/types';
 import { TRIP_CATEGORIES } from '@/types/businessTrip';
 import { getYearWeeks } from '@/lib/calendar-helper';
+import { getYiehPhuiTpmNames, isTpmPerson } from '@/lib/tpm-helper';
 
 interface TripFilterPanelProps {
   trips: BusinessTrip[];
   clients: Client[];
   projects: Project[];
+  users?: User[];
   currentYear: number;
   filter: TripFilter;
   onFilterChange: (filter: TripFilter) => void;
@@ -23,6 +25,7 @@ export function TripFilterPanel({
   trips,
   clients,
   projects,
+  users,
   currentYear,
   filter,
   onFilterChange,
@@ -31,21 +34,18 @@ export function TripFilterPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState(filter.searchKeyword || '');
 
-  // 取得所有曾出現過或專案對應的負責 PM（去重）
+  // 取得所有曾出現過或專案對應的負責 PM（去重，嚴格排除 TPM 窗口）
   const allPMs = Array.from(
     new Set([
       ...trips.map((t) => t.pm).filter(Boolean),
       ...projects.map((p) => p.responsiblePm).filter(Boolean),
     ] as string[])
-  ).sort();
+  )
+    .filter((pm) => !isTpmPerson(pm))
+    .sort();
 
-  // 取得所有曾出現過的 TPM 負責人（去重）
-  const allTPMs = Array.from(
-    new Set([
-      ...trips.map((t) => t.tpm).filter(Boolean),
-      ...projects.map((p) => p.tpmOfficeContact).filter(Boolean),
-    ] as string[])
-  ).sort();
+  // 取得 TPM 窗口清單：僅針對「燁輝」部門為「TPM」的人員（絕不混入億威 PM/成員或非 TPM 人員）
+  const allTPMs = getYiehPhuiTpmNames(users || []);
 
   // 取得當前年份的所有週次資訊
   const weeks = getYearWeeks(currentYear);
@@ -247,7 +247,7 @@ export function TripFilterPanel({
 
           {/* TPM 篩選 */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">TPM 窗口</label>
+            <label className="block text-[11px] font-semibold text-slate-600 mb-1">TPM 窗口 (燁輝)</label>
             <select
               value={filter.tpm || ''}
               onChange={(e) => onFilterChange({ ...filter, tpm: e.target.value || undefined })}

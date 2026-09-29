@@ -38,6 +38,7 @@ import { formatDate } from '@/lib/calendar-helper';
 import { useAdmin } from '@/components/admin-context';
 import { useToast } from '@/hooks/use-toast';
 import { NewPocProjectDialog } from '@/components/internal/new-poc-project-dialog';
+import { getYiehPhuiTpmNames, isTpmPerson } from '@/lib/tpm-helper';
 
 // --- 關鍵字搜尋專案下拉選單 (含查無專案時手動建立專案) ---
 interface ProjectComboboxProps {
@@ -583,33 +584,8 @@ export function TripFormDialog({
 
   // TPM 負責人名單：僅嚴格取自「燁輝」且部門為「TPM」之同仁（絕不含億威 PM/成員、非 TPM 課室或燕巢同仁）
   const tpmOptions = useMemo(() => {
-    const list = new Set<string>();
-    allPersonnelList.forEach((p) => {
-      const pCompany = (p.clientName || '').trim();
-      const pDept = (p.department || '').trim().toUpperCase();
-
-      // 嚴格判定：公司為「燁輝」（排除燁輝燕巢等其他單位），且部門包含「TPM」
-      const isYiehPhuiExact = (pCompany === '燁輝' || pCompany === '燁輝企業') && !pCompany.includes('燕巢');
-      const isTpmDept = pDept.includes('TPM');
-
-      if (isYiehPhuiExact && isTpmDept) {
-        list.add(p.name);
-      }
-    });
-
-    // 備援：若無精確標註部門，但部門名稱明確含有 TPM 且不屬於億威或燕巢
-    if (list.size === 0) {
-      allPersonnelList.forEach((p) => {
-        const pCompany = (p.clientName || '').trim();
-        const pDept = (p.department || '').trim().toUpperCase();
-        if (pDept.includes('TPM') && pCompany !== '億威' && pCompany !== '億威電子' && !pCompany.includes('燕巢')) {
-          list.add(p.name);
-        }
-      });
-    }
-
-    return Array.from(list).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-  }, [allPersonnelList]);
+    return getYiehPhuiTpmNames(users);
+  }, [users]);
 
   // 負責 PM 選項名單 (從專案負責 PM 與 成員名單提取，僅限 PM 部門/人員，不混入 TPM 窗口)
   const pmOptions = useMemo(() => {
@@ -745,9 +721,8 @@ export function TripFormDialog({
         projectId: proj.id,
         projectName: proj.name,
         customerId: matchedClientId,
-        customerName: matchedClientName,
-        pm: proj.responsiblePm || prev.pm || '',
-        tpm: proj.tpmOfficeContact || prev.tpm || '',
+        pm: (proj.responsiblePm && !isTpmPerson(proj.responsiblePm)) ? proj.responsiblePm : prev.pm || '',
+        tpm: (proj.tpmOfficeContact && isTpmPerson(proj.tpmOfficeContact)) ? proj.tpmOfficeContact : (isTpmPerson(prev.tpm) ? prev.tpm : ''),
       }));
 
       if (matchedClientName) {
