@@ -38,7 +38,7 @@ import { formatDate } from '@/lib/calendar-helper';
 import { useAdmin } from '@/components/admin-context';
 import { useToast } from '@/hooks/use-toast';
 import { NewPocProjectDialog } from '@/components/internal/new-poc-project-dialog';
-import { getYiehPhuiTpmNames, isTpmPerson } from '@/lib/tpm-helper';
+import { getYiehPhuiTpmNames, isTpmPerson, NON_TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
 
 // --- 關鍵字搜尋專案下拉選單 (含查無專案時手動建立專案) ---
 interface ProjectComboboxProps {
@@ -504,6 +504,7 @@ export function TripFormDialog({
   const [travelerClientFilter, setTravelerClientFilter] = useState<string>('all');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCustomPm, setIsCustomPm] = useState(false);
 
   // 判斷關聯客戶是否為燁輝相關
   const isYiehPhui = useMemo(() => {
@@ -590,32 +591,72 @@ export function TripFormDialog({
   // 負責 PM 選項名單 (從專案負責 PM 與 成員名單提取，僅限 PM 部門/人員，不混入 TPM 窗口)
   const pmOptions = useMemo(() => {
     const list = new Set<string>();
-    allPersonnelList.forEach((p) => {
-      const pDept = (p.department || '').trim().toUpperCase();
-      // 部門為 PM 且不是 TPM
-      if (pDept === 'PM' || (pDept.includes('PM') && !pDept.includes('TPM'))) {
-        list.add(p.name);
+
+    // 1. 已知核心 PM 人員名單優先放入
+    NON_TPM_PERSONNEL_NAMES.forEach((name) => {
+      if (['James', 'Winona', 'AlbeeHsu', 'gary', 'bella'].includes(name)) {
+        list.add(name);
       }
     });
+
+    // 2. 成員名單中，部門為 PM 或億威同仁
+    allPersonnelList.forEach((p) => {
+      const pDept = (p.department || '').trim().toUpperCase();
+      const pComp = (p.clientName || '').trim();
+      if (pDept === 'PM' || (pDept.includes('PM') && !pDept.includes('TPM')) || pComp.includes('億威')) {
+        if (!isTpmPerson(p.name)) {
+          list.add(p.name);
+        }
+      }
+    });
+
+    // 3. 所有專案中登記之負責 PM
     projectList.forEach((p) => {
       if (p.responsiblePm?.trim()) {
         const name = p.responsiblePm.trim();
-        if (!tpmOptions.includes(name)) {
+        if (!tpmOptions.includes(name) && !isTpmPerson(name)) {
           list.add(name);
         }
       }
     });
-    if (list.size === 0) {
-      allPersonnelList.forEach((p) => list.add(p.name));
+
+    // 4. 使用者名單中屬於管理員或 PM 者
+    users.forEach((u) => {
+      const name = (u.displayName || u.username || u.email || '').trim();
+      const dept = (u.department || '').trim().toUpperCase();
+      const comp = (u.clientName || '').trim();
+      if (comp.includes('億威') || dept.includes('PM') || u.role === 'admin') {
+        if (!tpmOptions.includes(name) && !isTpmPerson(name)) {
+          list.add(name);
+        }
+      }
+    });
+
+    // 5. 若當前 trip 內有記錄 pm，一併加入
+    if (trip?.pm?.trim() && !isTpmPerson(trip.pm.trim())) {
+      list.add(trip.pm.trim());
     }
-    return Array.from(list).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-  }, [allPersonnelList, projectList, tpmOptions]);
+
+    if (list.size === 0) {
+      allPersonnelList.forEach((p) => {
+        if (!tpmOptions.includes(p.name) && !isTpmPerson(p.name)) {
+          list.add(p.name);
+        }
+      });
+    }
+
+    return Array.from(list).filter(Boolean).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  }, [allPersonnelList, projectList, tpmOptions, users, trip]);
 
   // 依據傳入的 trip 或 selectedDate 初始化
   useEffect(() => {
     if (open) {
       if (trip) {
         const trvs = trip.travelers && trip.travelers.length > 0 ? trip.travelers : [''];
+        const project = trip.projectId ? projectList.find((p) => p.id === trip.projectId) : undefined;
+        const initPm = trip.pm || (project?.responsiblePm && !isTpmPerson(project.responsiblePm) ? project.responsiblePm : '');
+        const initTpm = (trip.tpm && isTpmPerson(trip.tpm)) ? trip.tpm : (project?.tpmOfficeContact && isTpmPerson(project.tpmOfficeContact) ? project.tpmOfficeContact : '');
+
         setFormData({
           subject: trip.subject || '',
           projectId: trip.projectId || '',
@@ -630,12 +671,14 @@ export function TripFormDialog({
           startTime: trip.startTime || '09:00',
           endTime: trip.endTime || '17:00',
           category: trip.category || 'business',
-          pm: trip.pm || '',
-          tpm: trip.tpm || '',
+          pm: initPm,
+          tpm: initTpm,
           status: trip.status || 'pending',
           lunchBoxes: trip.lunchBoxes || 0,
           notes: trip.notes || '',
         });
+
+        setIsCustomPm(Boolean(initPm && !pmOptions.includes(initPm)));
 
         if (trip.customerName) {
           setTravelerClientFilter(trip.customerName);
@@ -671,6 +714,8 @@ export function TripFormDialog({
           notes: '',
         });
 
+        setIsCustomPm(false);
+
         if (initCustomerName) {
           setTravelerClientFilter(initCustomerName);
         } else {
@@ -680,7 +725,7 @@ export function TripFormDialog({
       setErrors({});
       setIsSubmitting(false);
     }
-  }, [open, trip, selectedDate, defaultCustomerId, clients]);
+  }, [open, trip, selectedDate, defaultCustomerId, clients, projectList, pmOptions]);
 
   const handleAddTraveler = () => {
     setFormData((prev) => ({
@@ -1149,45 +1194,43 @@ export function TripFormDialog({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* 負責 PM */}
             <div>
-              <Label className="text-sm font-semibold text-gray-700">
-                負責 PM (可選)
-              </Label>
-              <div className="flex items-center gap-1.5 mt-1">
-                {/* 手動輸入 + datalist 提示 */}
-                <div className="relative flex-1">
-                  <Input
-                    list="pm-options-list"
-                    value={formData.pm}
-                    onChange={(e) => setFormData({ ...formData, pm: e.target.value })}
-                    placeholder="輸入或選 PM"
-                    className="text-sm bg-white"
-                  />
-                  <datalist id="pm-options-list">
-                    {pmOptions.map((opt) => (
-                      <option key={opt} value={opt} />
-                    ))}
-                  </datalist>
-                </div>
-
-                {/* 下拉式快速選單 */}
-                <select
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setFormData((prev) => ({ ...prev, pm: e.target.value }));
-                    }
-                  }}
-                  className="w-24 px-1.5 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
-                  title="從名單快速點選帶入 PM"
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-gray-700">
+                  負責 PM (可選)
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomPm(!isCustomPm)}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                 >
-                  <option value="">▼ 挑選...</option>
+                  {isCustomPm ? '切換下拉選單' : '手動輸入'}
+                </button>
+              </div>
+
+              {isCustomPm ? (
+                <Input
+                  value={formData.pm}
+                  onChange={(e) => setFormData({ ...formData, pm: e.target.value })}
+                  placeholder="請輸入負責 PM 姓名"
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                />
+              ) : (
+                <select
+                  value={formData.pm}
+                  onChange={(e) => setFormData({ ...formData, pm: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- 請選擇負責 PM (未指定) --</option>
+                  {formData.pm && !pmOptions.includes(formData.pm) && (
+                    <option value={formData.pm}>{formData.pm}</option>
+                  )}
                   {pmOptions.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
                 </select>
-              </div>
+              )}
             </div>
 
             {/* TPM 負責人 */}
@@ -1202,42 +1245,21 @@ export function TripFormDialog({
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5 mt-1">
-                {/* 手動輸入 + datalist 提示 */}
-                <div className="relative flex-1">
-                  <Input
-                    list="tpm-options-list"
-                    value={formData.tpm}
-                    onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
-                    placeholder="輸入或選 TPM 窗口"
-                    className="text-sm bg-white"
-                  />
-                  <datalist id="tpm-options-list">
-                    {tpmOptions.map((opt) => (
-                      <option key={opt} value={opt} />
-                    ))}
-                  </datalist>
-                </div>
-
-                {/* 下拉式快速選單 */}
-                <select
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setFormData((prev) => ({ ...prev, tpm: e.target.value }));
-                    }
-                  }}
-                  className="w-24 px-1.5 py-2 border rounded-md text-xs bg-white text-slate-700 cursor-pointer shrink-0"
-                  title="從名單快速點選帶入 TPM"
-                >
-                  <option value="">▼ 挑選...</option>
-                  {tpmOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={formData.tpm}
+                onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
+                className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- 請選擇 TPM 窗口 (未指定) --</option>
+                {formData.tpm && !tpmOptions.includes(formData.tpm) && (
+                  <option value={formData.tpm}>{formData.tpm}</option>
+                )}
+                {tpmOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
 
               <p className="text-[10px] text-slate-500 mt-1">
                 💡 TPM 負責人僅列出燁輝 TPM 窗口同仁。

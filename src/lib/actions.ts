@@ -2726,8 +2726,12 @@ export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTri
             let list: BusinessTrip[] = data.map((doc: any) => {
                 const notesRaw = doc.notes || '';
                 const match = notesRaw.match(/<!--MEETING_URL:(.*?)-->/);
+                const pmMatch = notesRaw.match(/<!--PM:(.*?)-->/);
                 const meetingUrl = doc.meeting_url || (match ? match[1]?.trim() : undefined);
-                const cleanNotes = notesRaw.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+                const pm = doc.pm || (pmMatch ? pmMatch[1]?.trim() : '');
+                const cleanNotes = notesRaw
+                    .replace(/<!--MEETING_URL:.*?-->\n?/, '')
+                    .replace(/<!--PM:.*?-->\n?/, '');
 
                 return {
                     id: doc.id,
@@ -2746,6 +2750,7 @@ export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTri
                     startTime: doc.start_time || '09:00',
                     endTime: doc.end_time || '17:00',
                     category: doc.category || 'business',
+                    pm: pm || '',
                     tpm: doc.tpm || '',
                     status: doc.status || 'pending',
                     lunchBoxes: doc.lunch_boxes || 0,
@@ -2797,6 +2802,9 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
         if (tripData.meetingUrl?.trim()) {
             finalNotes = `<!--MEETING_URL:${tripData.meetingUrl.trim()}-->\n${finalNotes}`;
         }
+        if (tripData.pm?.trim()) {
+            finalNotes = `<!--PM:${tripData.pm.trim()}-->\n${finalNotes}`;
+        }
 
         const payload: any = {
             subject: tripData.subject,
@@ -2846,6 +2854,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
                     startTime: data.start_time || '09:00',
                     endTime: data.end_time || '17:00',
                     category: data.category || 'business',
+                    pm: tripData.pm || '',
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
                     lunchBoxes: data.lunch_boxes || 0,
@@ -2907,28 +2916,40 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
         if (tripData.status !== undefined) updatePayload.status = tripData.status;
         if (tripData.lunchBoxes !== undefined) updatePayload.lunch_boxes = tripData.lunchBoxes;
 
-        if (tripData.notes !== undefined || tripData.meetingUrl !== undefined) {
+        if (tripData.notes !== undefined || tripData.meetingUrl !== undefined || tripData.pm !== undefined) {
             let baseNotes = tripData.notes !== undefined ? tripData.notes : '';
-            if (tripData.notes === undefined || tripData.meetingUrl === undefined) {
+            if (tripData.notes === undefined || tripData.meetingUrl === undefined || tripData.pm === undefined) {
                 const { data: cur } = await supabase.from('business_trips').select('notes').eq('id', id).maybeSingle();
                 const curNotes = cur?.notes || '';
-                const match = curNotes.match(/<!--MEETING_URL:(.*?)-->/);
+                const matchMeeting = curNotes.match(/<!--MEETING_URL:(.*?)-->/);
+                const matchPm = curNotes.match(/<!--PM:(.*?)-->/);
                 if (tripData.notes === undefined) {
-                    baseNotes = curNotes.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+                    baseNotes = curNotes
+                        .replace(/<!--MEETING_URL:.*?-->\n?/, '')
+                        .replace(/<!--PM:.*?-->\n?/, '');
                 }
-                const targetUrl = tripData.meetingUrl !== undefined ? tripData.meetingUrl?.trim() : match?.[1]?.trim();
+                const targetUrl = tripData.meetingUrl !== undefined ? tripData.meetingUrl?.trim() : matchMeeting?.[1]?.trim();
+                const targetPm = tripData.pm !== undefined ? tripData.pm?.trim() : matchPm?.[1]?.trim();
+
+                let finalNotes = baseNotes;
+                if (targetPm) {
+                    finalNotes = `<!--PM:${targetPm}-->\n${finalNotes}`;
+                }
                 if (targetUrl) {
-                    updatePayload.notes = `<!--MEETING_URL:${targetUrl}-->\n${baseNotes}`;
-                } else {
-                    updatePayload.notes = baseNotes;
+                    finalNotes = `<!--MEETING_URL:${targetUrl}-->\n${finalNotes}`;
                 }
+                updatePayload.notes = finalNotes;
             } else {
                 const targetUrl = tripData.meetingUrl?.trim();
-                if (targetUrl) {
-                    updatePayload.notes = `<!--MEETING_URL:${targetUrl}-->\n${baseNotes}`;
-                } else {
-                    updatePayload.notes = baseNotes;
+                const targetPm = tripData.pm?.trim();
+                let finalNotes = baseNotes;
+                if (targetPm) {
+                    finalNotes = `<!--PM:${targetPm}-->\n${finalNotes}`;
                 }
+                if (targetUrl) {
+                    finalNotes = `<!--MEETING_URL:${targetUrl}-->\n${finalNotes}`;
+                }
+                updatePayload.notes = finalNotes;
             }
         }
 
@@ -2943,8 +2964,12 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
             revalidatePath('/schedules');
             const notesRaw = data.notes || '';
             const match = notesRaw.match(/<!--MEETING_URL:(.*?)-->/);
+            const pmMatch = notesRaw.match(/<!--PM:(.*?)-->/);
             const meetingUrl = data.meeting_url || (match ? match[1]?.trim() : undefined);
-            const cleanNotes = notesRaw.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+            const pm = data.pm || (pmMatch ? pmMatch[1]?.trim() : '');
+            const cleanNotes = notesRaw
+                .replace(/<!--MEETING_URL:.*?-->\n?/, '')
+                .replace(/<!--PM:.*?-->\n?/, '');
 
             return {
                 success: true,
@@ -2964,6 +2989,7 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
                     startTime: data.start_time || '09:00',
                     endTime: data.end_time || '17:00',
                     category: data.category || 'business',
+                    pm: pm || '',
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
                     lunchBoxes: data.lunch_boxes || 0,
