@@ -75,10 +75,11 @@ export function EditInternalProjectDialog({
   const activeProj = project || (cachedProject ? { ...cachedProject, sourceType, caseNumber, clientName } : null);
   const currentCaseNum = (caseNumber || activeProj?.caseNumber || '').trim();
   const isPocCase = !currentCaseNum || currentCaseNum.toUpperCase() === 'POC';
+  const isPurCase = currentCaseNum.toUpperCase() === 'PUR' || currentCaseNum.toUpperCase().startsWith('PUR');
   const isOfficialYiehPhui =
     sourceType === '燁輝列管專案' ||
     activeProj?.sourceType === '燁輝列管專案' ||
-    (!isPocCase && (clientName === '燁輝' || activeProj?.clientName === '燁輝'));
+    (!isPocCase && !isPurCase && sourceType !== '燁輝請購案' && (clientName === '燁輝' || activeProj?.clientName === '燁輝') && !(activeProj as any)?.isInternal);
 
   // 載入客戶名單
   useEffect(() => {
@@ -99,7 +100,8 @@ export function EditInternalProjectDialog({
       const st = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' ? 'terminated' : 'in_progress'));
       setInternalStatus(st);
       
-      const src = project.sourceType || (cat === '評估案' ? '億威內部自建專案' : '燁輝列管專案');
+      const isPur = (project.caseNumber || '').toUpperCase().startsWith('PUR');
+      const src = project.sourceType || (isPur ? '燁輝請購案' : (cat === '評估案' ? '億威內部自建專案' : '燁輝列管專案'));
       setSourceType(src);
       setClientName(cleanClientName(project.clientName) || '燁輝');
       
@@ -133,8 +135,12 @@ export function EditInternalProjectDialog({
 
   const handleCategoryChange = (newCat: '評估案' | '已開案') => {
     setCategory(newCat);
-    if (newCat === '評估案') {
-      if (!caseNumber.trim()) {
+    if (sourceType === '燁輝請購案') {
+      if (!caseNumber.trim() || caseNumber === 'POC') {
+        setCaseNumber('PUR');
+      }
+    } else if (newCat === '評估案') {
+      if (!caseNumber.trim() || caseNumber === 'PUR') {
         setCaseNumber('POC');
       }
     } else if (newCat === '已開案') {
@@ -155,13 +161,15 @@ export function EditInternalProjectDialog({
     }
 
     let finalCaseNumber = caseNumber.trim();
-    if (category === '已開案') {
+    if (sourceType === '燁輝請購案') {
+      if (!finalCaseNumber) finalCaseNumber = 'PUR';
+    } else if (category === '已開案') {
       finalCaseNumber = finalCaseNumber.replace(/^POC[\s\-_]*/i, '').trim();
     } else if (category === '評估案' && !finalCaseNumber) {
       finalCaseNumber = 'POC';
     }
 
-    const finalClient = cleanClientName(clientName) || (sourceType === '億威內部自建專案' ? '億威電子' : (sourceType === '燁輝列管專案' ? '燁輝' : '其他客戶'));
+    const finalClient = cleanClientName(clientName) || (sourceType === '億威內部自建專案' ? '億威電子' : ((sourceType === '燁輝列管專案' || sourceType === '燁輝請購案') ? '燁輝' : '其他客戶'));
     if (!finalClient) {
       toast({ title: '請選擇或輸入客戶名稱', variant: 'destructive' });
       return;
@@ -508,15 +516,18 @@ export function EditInternalProjectDialog({
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-            {/* 1. 專案來源型態 (3選1) */}
+            {/* 1. 專案來源型態 (4選1) */}
             <div>
               <Label className="text-xs font-semibold">專案來源型態 *</Label>
-              <div className="grid grid-cols-3 gap-1.5 mt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-1">
                 <button
                   type="button"
                   onClick={() => {
                     setSourceType('燁輝列管專案');
                     setClientName('燁輝');
+                    if (caseNumber === 'PUR') {
+                      setCaseNumber(category === '評估案' ? 'POC' : '');
+                    }
                   }}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     sourceType === '燁輝列管專案'
@@ -530,8 +541,29 @@ export function EditInternalProjectDialog({
                 <button
                   type="button"
                   onClick={() => {
+                    setSourceType('燁輝請購案');
+                    setClientName('燁輝');
+                    if (!caseNumber.trim() || caseNumber === 'POC') {
+                      setCaseNumber('PUR');
+                    }
+                  }}
+                  className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
+                    sourceType === '燁輝請購案'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>📑 燁輝請購案</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
                     setSourceType('億威內部自建專案');
                     setClientName('億威電子');
+                    if (caseNumber === 'PUR') {
+                      setCaseNumber(category === '評估案' ? 'POC' : '');
+                    }
                   }}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     sourceType === '億威內部自建專案'
@@ -548,6 +580,9 @@ export function EditInternalProjectDialog({
                     setSourceType('其他專案');
                     if (clientName === '燁輝' || clientName === '億威電子') {
                       setClientName('');
+                    }
+                    if (caseNumber === 'PUR') {
+                      setCaseNumber(category === '評估案' ? 'POC' : '');
                     }
                   }}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
@@ -788,9 +823,12 @@ export function EditInternalProjectDialog({
             {/* 7. 案號代碼與外包供應商 */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold">案號代碼</Label>
+                <Label className="text-xs font-semibold">
+                  案號代碼 {sourceType === '燁輝請購案' ? '(請購案預設為 PUR)' : ''}
+                </Label>
                 <Input
                   className="mt-1 text-xs font-mono"
+                  placeholder={sourceType === '燁輝請購案' ? "例如：PUR" : "例如：POC 或 113-05"}
                   value={caseNumber}
                   onChange={(e) => setCaseNumber(e.target.value)}
                 />

@@ -527,10 +527,11 @@ export function InternalTasksClient({
       });
     }
 
-    // 3. 專案來源型態篩選 (燁輝列管專案 vs 億威內部自建專案 vs 其他專案)
+    // 3. 專案來源型態篩選 (燁輝列管專案 vs 燁輝請購案 vs 億威內部自建專案 vs 其他專案)
     if (selectedSourceType !== 'all') {
       projectList = projectList.filter((p) => {
-        const src = p.sourceType || (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案');
+        const isPur = (p.caseNumber || '').toUpperCase().startsWith('PUR');
+        const src = p.sourceType || (isPur ? '燁輝請購案' : (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案'));
         if (selectedSourceType === '其他專案' || selectedSourceType === '其他智慧製造專案') {
           return src === '其他專案' || src === '其他智慧製造專案';
         }
@@ -1861,6 +1862,7 @@ export function InternalTasksClient({
                 <SelectContent>
                   <SelectItem value="all">全部來源型態 ({projects.length})</SelectItem>
                   <SelectItem value="燁輝列管專案">🏢 燁輝列管專案</SelectItem>
+                  <SelectItem value="燁輝請購案">📑 燁輝請購案</SelectItem>
                   <SelectItem value="億威內部自建專案">🏭 億威自建專案</SelectItem>
                   <SelectItem value="其他專案">⚙️ 其他專案</SelectItem>
                 </SelectContent>
@@ -2183,7 +2185,11 @@ export function InternalTasksClient({
                       )}
 
                       {/* 專案來源型態標籤 (置於名稱前) */}
-                      {project.sourceType === '億威內部自建專案' ? (
+                      {project.sourceType === '燁輝請購案' ? (
+                        <Badge className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
+                          <span>📑 燁輝請購</span>
+                        </Badge>
+                      ) : project.sourceType === '億威內部自建專案' ? (
                         <Badge className="bg-purple-700 hover:bg-purple-800 text-white text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0">
                           <span>🏭 億威自建</span>
                         </Badge>

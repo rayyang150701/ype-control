@@ -1249,7 +1249,8 @@ async function getOptimizedProjectData() {
             caseNumberProcessed.add(caseNumber);
             const meta = parseProjectMeta(doc.on_hold_notes);
             const clientName = meta.clientName?.trim() || '燁輝';
-            const sourceType: ProjectSourceType = meta.sourceType || '燁輝列管專案';
+            const isPurCase = caseNumber.toUpperCase().startsWith('PUR');
+            const sourceType: ProjectSourceType = meta.sourceType || (isPurCase ? '燁輝請購案' : '燁輝列管專案');
             
             const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
                 meta.responsiblePm,
@@ -1942,7 +1943,8 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
         }
 
         const clientName = meta.clientName?.trim() || '燁輝';
-        const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
+        const isPurCase = (doc.case_number || '').toUpperCase().startsWith('PUR');
+        const sourceType: ProjectSourceType = meta.sourceType || (isPurCase ? '燁輝請購案' : (isEval ? '億威內部自建專案' : '燁輝列管專案'));
         const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
             meta.responsiblePm,
             meta.tpmOfficeContact,
@@ -2005,18 +2007,23 @@ export async function createInternalProject(data: {
     try {
         const category = data.category || '評估案';
         const isEval = category === '評估案';
+        const isPur = data.sourceType === '燁輝請購案';
         let caseNum = data.caseNumber?.trim();
         if (!caseNum) {
-            // 評估案自動帶 POC，無需流水號
-            caseNum = isEval ? 'POC' : `PRJ-${Date.now().toString().slice(-4)}`;
-        } else if (category === '已開案') {
-            // 已開案自動移除 POC 前綴
+            // 請購案預設 PUR，評估案自動帶 POC
+            caseNum = isPur ? 'PUR' : (isEval ? 'POC' : `PRJ-${Date.now().toString().slice(-4)}`);
+        } else if (category === '已開案' && !isPur) {
+            // 已開案自動移除 POC 前綴 (非請購案)
             caseNum = caseNum.replace(/^POC[\s\-_]*/i, '').trim();
         }
 
-        const sourceType: ProjectSourceType = data.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
+        const isPurCase = (caseNum || '').toUpperCase().startsWith('PUR');
+        const sourceType: ProjectSourceType = data.sourceType || (isPurCase ? '燁輝請購案' : (isEval ? '億威內部自建專案' : '燁輝列管專案'));
         const clientName = data.clientName?.trim() || '燁輝';
-        const responsiblePm = data.responsiblePm?.trim() || data.tpmOfficeContact?.trim() || '';
+        const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
+            data.responsiblePm,
+            data.tpmOfficeContact
+        );
         const clientContact = data.clientContact?.trim() || '';
         const vendorOrSupplier = data.vendorOrSupplier?.trim() || '';
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -2030,6 +2037,7 @@ export async function createInternalProject(data: {
             sourceType,
             clientName,
             responsiblePm,
+            tpmOfficeContact,
             clientContact,
             vendorOrSupplier: vendorOrSupplier || undefined,
             expectedCompletionDate: data.expectedCompletionDate || null,
@@ -2042,8 +2050,8 @@ export async function createInternalProject(data: {
             name: data.name.trim(),
             case_number: caseNum,
             status: isEval ? 'evaluation' : 'active',
-            project_purpose: data.projectPurpose || (isEval ? '內部評估案 / POC 項目' : '內部自主開案項目'),
-            tpm_office_contact: responsiblePm,
+            project_purpose: data.projectPurpose || (sourceType === '燁輝請購案' ? '燁輝請購案項目' : (isEval ? '內部評估案 / POC 項目' : '內部自主開案項目')),
+            tpm_office_contact: tpmOfficeContact,
             yieh_phui_project_manager: clientContact,
             is_on_hold: false,
             on_hold_notes: serializeProjectMeta(meta),
@@ -2065,6 +2073,7 @@ export async function createInternalProject(data: {
                 sourceType,
                 clientName,
                 responsiblePm,
+                tpmOfficeContact,
                 clientContact,
                 vendorOrSupplier,
                 expectedCompletionDate: meta.expectedCompletionDate || null,
@@ -2144,14 +2153,18 @@ export async function updateInternalProject(projectId: string, data: {
 
         if (data.caseNumber !== undefined) {
             let cNum = data.caseNumber.trim();
-            if (data.category === '已開案') {
+            if (data.sourceType === '燁輝請購案' || meta.sourceType === '燁輝請購案') {
+                if (!cNum) cNum = 'PUR';
+            } else if (data.category === '已開案') {
                 cNum = cNum.replace(/^POC[\s\-_]*/i, '').trim();
             } else if (data.category === '評估案' && !cNum) {
                 cNum = 'POC';
             }
             updateData.case_number = cNum;
         } else if (data.category === '已開案' && proj.case_number) {
-            updateData.case_number = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
+            if (data.sourceType !== '燁輝請購案' && meta.sourceType !== '燁輝請購案') {
+                updateData.case_number = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
+            }
         }
 
         if (data.clientContact !== undefined) updateData.yieh_phui_project_manager = data.clientContact.trim();
@@ -2392,7 +2405,8 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
         const isEval = meta.category ? meta.category === '評估案' : (proj.status === 'poc' || proj.status === 'evaluation');
 
         const clientName = meta.clientName?.trim() || '燁輝';
-        const sourceType: ProjectSourceType = meta.sourceType || (clientName.includes('燁輝') ? '燁輝列管專案' : '億威內部自建專案');
+        const isPurCase = (proj.case_number || '').toUpperCase().startsWith('PUR');
+        const sourceType: ProjectSourceType = meta.sourceType || (isPurCase ? '燁輝請購案' : (clientName.includes('燁輝') ? '燁輝列管專案' : '億威內部自建專案'));
         const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
             meta.responsiblePm,
             meta.tpmOfficeContact,
