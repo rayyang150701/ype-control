@@ -44,7 +44,7 @@ export function MonthView({
     showLocation: true,
     showTime: true,
     showTravelers: true,
-    showWeekend: true,
+    showWeekend: false,
   });
 
   const allDays = getMonthDays(year, month);
@@ -219,7 +219,7 @@ export function MonthView({
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
                     >
                       <CalendarDays className="w-4 h-4" />
-                      國定假日管理
+                      假日管理 (放假類別維護)
                     </button>
                   </div>
                 </div>
@@ -287,9 +287,14 @@ export function MonthView({
                     {date.getDate()}
                   </span>
                   {holiday && isInCurrentMonth && (
-                    <span className="text-[11px] px-1.5 py-0.2 bg-red-100 text-red-600 rounded font-medium truncate max-w-[85px]">
-                      {holiday.name}
-                    </span>
+                    <div className="flex items-center gap-1 max-w-[130px] truncate">
+                      <span className="text-[10px] px-1.5 py-0.2 bg-red-600 text-white rounded font-bold shrink-0">
+                        {holiday.category || (holiday.isStatutory ? '國定假日' : '放假')}
+                      </span>
+                      <span className="text-[11px] text-red-600 font-bold truncate">
+                        {holiday.name}
+                      </span>
+                    </div>
                   )}
                 </div>
                 <button

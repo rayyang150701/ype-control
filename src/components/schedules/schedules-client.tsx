@@ -402,6 +402,17 @@ export function SchedulesClient({
           </Button>
 
           <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHolidayModal(true)}
+            className="text-xs h-9 gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            title="假日管理 (放假類別與行事曆維護)"
+          >
+            <CalendarDays className="w-3.5 h-3.5 text-red-600" />
+            <span>假日管理</span>
+          </Button>
+
+          <Button
             size="sm"
             onClick={() => handleOpenCreateForm()}
             className="text-xs h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"

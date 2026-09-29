@@ -105,4 +105,5 @@ export interface Holiday {
   name: string; // 假日名稱 (如: 國慶日、中秋節)
   date: string; // 日期 (YYYY-MM-DD)
   isStatutory?: boolean; // 是否為國定假日
+  category?: string; // 放假類別 (如: 國定假日、彈性放假、補假、公司假、颱風假等)
 }

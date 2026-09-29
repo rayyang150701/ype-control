@@ -23,6 +23,16 @@ interface HolidayManagementDialogProps {
   onHolidaysChange: () => Promise<void> | void;
 }
 
+export const HOLIDAY_PRESET_CATEGORIES = [
+  '國定假日',
+  '彈性放假',
+  '補假',
+  '公司假',
+  '廠區歲修',
+  '颱風假',
+  '其他放假',
+];
+
 const COMMON_TAIWAN_HOLIDAY_TEMPLATES = [
   { month: 1, day: 1, name: '元旦' },
   { month: 2, day: 28, name: '和平紀念日' },
@@ -43,6 +53,8 @@ export function HolidayManagementDialog({
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
   const [formDate, setFormDate] = useState('');
   const [formName, setFormName] = useState('');
+  const [formCategory, setFormCategory] = useState('國定假日');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddYear, setQuickAddYear] = useState(currentYear);
   const [quickAddSelections, setQuickAddSelections] = useState<boolean[]>(
@@ -54,16 +66,22 @@ export function HolidayManagementDialog({
     setEditingHoliday(null);
     setFormDate('');
     setFormName('');
+    setFormCategory('國定假日');
+    setIsCustomCategory(false);
   };
 
   const startEdit = (holiday: Holiday) => {
     setEditingHoliday(holiday);
     setFormDate(holiday.date);
     setFormName(holiday.name);
+    const cat = holiday.category || (holiday.isStatutory ? '國定假日' : '公司假');
+    setFormCategory(cat);
+    setIsCustomCategory(!HOLIDAY_PRESET_CATEGORIES.includes(cat));
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const finalCategory = formCategory.trim() || '國定假日';
     if (!formDate || !formName.trim()) {
       toast({
         variant: 'destructive',
@@ -75,11 +93,13 @@ export function HolidayManagementDialog({
 
     try {
       setIsSaving(true);
+      const isStatutory = finalCategory === '國定假日' || editingHoliday?.isStatutory || false;
       const res = await saveHoliday({
         id: editingHoliday?.id || `h-${formDate}-${Date.now().toString().slice(-4)}`,
         date: formDate,
         name: formName.trim(),
-        isStatutory: editingHoliday?.isStatutory ?? false,
+        category: finalCategory,
+        isStatutory,
       });
 
       if (res.success) {
@@ -128,6 +148,7 @@ export function HolidayManagementDialog({
           id: `h-${dateStr}`,
           date: dateStr,
           name: t.name,
+          category: '國定假日',
           isStatutory: true,
         });
         count++;
@@ -161,7 +182,7 @@ export function HolidayManagementDialog({
         <DialogHeader className="px-6 py-4 border-b bg-gray-50/80 sticky top-0 z-10">
           <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <CalendarDays className="w-5 h-5 text-red-600" />
-            國定與公司特定假日管理
+            假日管理 (放假類別與行事曆維護)
           </DialogTitle>
         </DialogHeader>
 
@@ -172,22 +193,58 @@ export function HolidayManagementDialog({
               {editingHoliday ? '✏️ 編輯假日資訊' : '➕ 新增自訂假日'}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-3">
                 <Label className="text-xs font-semibold text-gray-600">日期</Label>
                 <input
                   type="date"
                   value={formDate}
                   onChange={(e) => setFormDate(e.target.value)}
-                  className="w-full mt-1 px-3 py-1.5 border rounded-lg text-sm bg-white"
+                  className="w-full mt-1 px-2.5 py-1.5 border rounded-lg text-sm bg-white"
                   required
                 />
               </div>
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-3">
+                <Label className="text-xs font-semibold text-gray-600">放假類別</Label>
+                <select
+                  value={
+                    HOLIDAY_PRESET_CATEGORIES.includes(formCategory) && !isCustomCategory
+                      ? formCategory
+                      : '自訂'
+                  }
+                  onChange={(e) => {
+                    if (e.target.value === '自訂') {
+                      setIsCustomCategory(true);
+                      setFormCategory('');
+                    } else {
+                      setIsCustomCategory(false);
+                      setFormCategory(e.target.value);
+                    }
+                  }}
+                  className="w-full mt-1 px-2.5 py-1.5 border rounded-lg text-sm bg-white font-medium text-red-700"
+                >
+                  {HOLIDAY_PRESET_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                  <option value="自訂">自訂類別...</option>
+                </select>
+                {isCustomCategory && (
+                  <Input
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value)}
+                    placeholder="自訂類別 (例: 廠慶假)"
+                    className="mt-1 h-8 text-xs text-red-700"
+                    required
+                  />
+                )}
+              </div>
+              <div className="sm:col-span-4">
                 <Label className="text-xs font-semibold text-gray-600">假日名稱</Label>
                 <Input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="例：廠區年度維修日、中秋連假"
+                  placeholder="例：廠區年度歲修、元旦"
                   className="mt-1 h-9 text-sm"
                   required
                 />
@@ -213,6 +270,28 @@ export function HolidayManagementDialog({
                   </Button>
                 )}
               </div>
+            </div>
+
+            {/* 常用類別快捷標籤 */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-red-200/60">
+              <span className="text-[11px] text-gray-500 font-medium">快捷選取：</span>
+              {HOLIDAY_PRESET_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    setFormCategory(cat);
+                    setIsCustomCategory(false);
+                  }}
+                  className={`text-[11px] px-2 py-0.5 rounded-full transition cursor-pointer ${
+                    formCategory === cat && !isCustomCategory
+                      ? 'bg-red-600 text-white font-bold'
+                      : 'bg-white text-gray-600 hover:bg-red-100/70 border border-red-200'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
           </form>
 
@@ -317,14 +396,12 @@ export function HolidayManagementDialog({
                           key={holiday.id}
                           className="flex items-center justify-between px-3 py-2 bg-red-50/50 border border-red-100 rounded-lg group text-xs hover:bg-red-50 transition"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             <span className="font-mono text-gray-600 shrink-0">{holiday.date}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 bg-red-600 text-white rounded font-bold shrink-0 shadow-xs">
+                              {holiday.category || (holiday.isStatutory ? '國定假日' : '放假')}
+                            </span>
                             <span className="font-semibold text-red-700 truncate">{holiday.name}</span>
-                            {holiday.isStatutory && (
-                              <span className="text-[10px] px-1 bg-red-100 text-red-600 rounded shrink-0">
-                                國定
-                              </span>
-                            )}
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
                             <button

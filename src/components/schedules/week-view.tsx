@@ -44,7 +44,7 @@ export function WeekView({
     showLocation: true,
     showTime: true,
     showTravelers: true,
-    showWeekend: true,
+    showWeekend: false,
   });
 
   const allDays = getWeekDays(weekInfo.year, weekInfo.weekNumber);
@@ -284,7 +284,7 @@ export function WeekView({
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition"
                       >
                         <CalendarDays className="w-4 h-4" />
-                        國定假日管理
+                        假日管理 (放假類別維護)
                       </button>
                     </div>
                   </div>
@@ -345,8 +345,13 @@ export function WeekView({
                   {date.getMonth() + 1}/{date.getDate()}
                 </div>
                 {holiday && (
-                  <div className="text-[11px] print:text-[9px] text-red-600 font-medium mt-0.5 truncate">
-                    {holiday.name}
+                  <div className="flex flex-col items-center justify-center gap-0.5 mt-0.5">
+                    <span className="inline-block px-1.5 py-0.2 text-[10px] font-bold bg-red-600 text-white rounded shadow-xs print:bg-red-600 print:text-white">
+                      {holiday.category || (holiday.isStatutory ? '國定假日' : '放假')}
+                    </span>
+                    <span className="text-[11px] print:text-[9px] text-red-600 font-bold truncate max-w-full">
+                      {holiday.name}
+                    </span>
                   </div>
                 )}
               </div>
@@ -391,11 +396,25 @@ export function WeekView({
                 </button>
               </div>
 
+              {/* 節假日提示卡片 */}
+              {holiday && (
+                <div className="mb-2 p-1.5 bg-red-50 border border-red-200 rounded-lg text-center text-xs text-red-700 font-medium flex items-center justify-center gap-1.5 shadow-xs">
+                  <span className="px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded shrink-0">
+                    {holiday.category || (holiday.isStatutory ? '國定假日' : '放假')}
+                  </span>
+                  <span className="font-bold text-red-700 truncate">{holiday.name}</span>
+                </div>
+              )}
+
               {/* 行程卡片 */}
               <div className="space-y-2 print:space-y-1">
                 {dayTrips.length === 0 ? (
-                  <div className="text-xs text-gray-400 text-center py-8 print:py-2 print:text-[10px]">
-                    暫無行程
+                  <div className="text-xs text-center py-8 print:py-2 print:text-[10px]">
+                    {holiday ? (
+                      <span className="text-red-400 font-medium">🔴 放假：{holiday.name}（暫無行程）</span>
+                    ) : (
+                      <span className="text-gray-400">暫無行程</span>
+                    )}
                   </div>
                 ) : (
                   dayTrips.map((trip) => {
