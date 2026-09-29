@@ -38,20 +38,23 @@ export const getMonthDays = (year: number, month: number): Date[] => {
 };
 
 /**
- * 取得指定年份與週數的該週起始日期（週一）
+ * 取得指定年份與週數的該週起始日期（週一，遵循標準 ISO 8601）
  */
 export const getStartOfWeek = (year: number, weekNumber: number): Date => {
-  const jan1 = new Date(year, 0, 1);
-  const daysOffset = (weekNumber - 1) * 7;
-  const targetDate = new Date(jan1);
-  targetDate.setDate(jan1.getDate() + daysOffset);
+  // 1月4日必定屬於該年度的第 1 週 (ISO 8601 定義)
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay();
+  const diffJan4ToMonday = jan4Day === 0 ? -6 : 1 - jan4Day;
+  const week1Monday = new Date(year, 0, 4 + diffJan4ToMonday);
+  week1Monday.setHours(0, 0, 0, 0);
 
-  // 調整到週一
-  const dayOfWeek = targetDate.getDay();
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  targetDate.setDate(targetDate.getDate() + diff);
-
-  return targetDate;
+  const monday = new Date(
+    week1Monday.getFullYear(),
+    week1Monday.getMonth(),
+    week1Monday.getDate() + (weekNumber - 1) * 7
+  );
+  monday.setHours(0, 0, 0, 0);
+  return monday;
 };
 
 /**
@@ -62,8 +65,7 @@ export const getWeekDays = (year: number, weekNumber: number): Date[] => {
   const days: Date[] = [];
 
   for (let i = 0; i < 7; i++) {
-    const date = new Date(startDate);
-    date.setDate(startDate.getDate() + i);
+    const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
     days.push(date);
   }
 
@@ -71,12 +73,27 @@ export const getWeekDays = (year: number, weekNumber: number): Date[] => {
 };
 
 /**
- * 計算指定日期所在的週數 (1 ~ 53)
+ * 計算指定日期所在的週數 (1 ~ 53，遵循標準 ISO 8601)
  */
 export const getWeekNumber = (date: Date): number => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNumber = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const d = new Date(date);
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  // 以該週週四所屬年份作為 ISO 年份
+  const thursday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 3);
+  const isoYear = thursday.getFullYear();
+
+  const jan4 = new Date(isoYear, 0, 4);
+  const jan4Day = jan4.getDay();
+  const diffJan4ToMonday = jan4Day === 0 ? -6 : 1 - jan4Day;
+  const week1Monday = new Date(isoYear, 0, 4 + diffJan4ToMonday);
+  week1Monday.setHours(0, 0, 0, 0);
+
+  const diffMs = monday.getTime() - week1Monday.getTime();
+  const weekNumber = 1 + Math.round(diffMs / (7 * 24 * 60 * 60 * 1000));
   return Math.min(53, Math.max(1, weekNumber));
 };
 
@@ -85,16 +102,14 @@ export const getWeekNumber = (date: Date): number => {
  */
 export const getYearWeeks = (year: number): WeekInfo[] => {
   const weeks: WeekInfo[] = [];
-  const jan1 = new Date(year, 0, 1);
-  const dec31 = new Date(year, 11, 31);
-
-  const lastWeek = getWeekNumber(dec31);
-  const totalWeeks = lastWeek >= 52 ? lastWeek : 52;
+  // 12月28日必定屬於該年度最後一週 (ISO 8601 定義)
+  const dec28 = new Date(year, 11, 28);
+  const totalWeeks = getWeekNumber(dec28);
 
   for (let week = 1; week <= totalWeeks; week++) {
     const startDate = getStartOfWeek(year, week);
-    const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + 6);
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 6);
+    endDate.setHours(23, 59, 59, 999);
 
     weeks.push({
       weekNumber: week,
@@ -109,18 +124,26 @@ export const getYearWeeks = (year: number): WeekInfo[] => {
 };
 
 /**
- * 取得當前週資訊
+ * 取得當前週資訊 (正確抓取今日所在的週別與起訖日)
  */
 export const getCurrentWeek = (): WeekInfo => {
   const today = new Date();
   const weekNumber = getWeekNumber(today);
-  const startDate = getStartOfWeek(today.getFullYear(), weekNumber);
-  const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + 6);
+
+  // 取得 ISO 年份 (以當週週四所屬年份為準)
+  const day = today.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + diffToMonday);
+  const thursday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 3);
+  const isoYear = thursday.getFullYear();
+
+  const startDate = getStartOfWeek(isoYear, weekNumber);
+  const endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 6);
+  endDate.setHours(23, 59, 59, 999);
 
   return {
     weekNumber,
-    year: today.getFullYear(),
+    year: isoYear,
     startDate,
     endDate,
     label: `WK${weekNumber.toString().padStart(2, '0')}`,

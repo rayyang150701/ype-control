@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Settings, Printer, AlertTriangle, CalendarDays } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, WeekInfo, Holiday } from '@/types/businessTrip';
-import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, findHoliday } from '@/lib/calendar-helper';
+import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, findHoliday, getCurrentWeek } from '@/lib/calendar-helper';
 
 interface DisplaySettings {
   showCustomer: boolean;
@@ -20,6 +20,7 @@ interface WeekViewProps {
   holidays: Holiday[];
   onPrevWeek: () => void;
   onNextWeek: () => void;
+  onGoToCurrentWeek?: () => void;
   onTripClick: (trip: BusinessTrip) => void;
   onDateClick: (date: Date) => void;
   onOpenHolidayModal: () => void;
@@ -31,6 +32,7 @@ export function WeekView({
   holidays,
   onPrevWeek,
   onNextWeek,
+  onGoToCurrentWeek,
   onTripClick,
   onDateClick,
   onOpenHolidayModal,
@@ -51,6 +53,10 @@ export function WeekView({
     : allDays.filter((date) => date.getDay() !== 0 && date.getDay() !== 6);
 
   const today = new Date();
+  const realCurrentWeek = getCurrentWeek();
+  const isCurrentWeek =
+    weekInfo.year === realCurrentWeek.year &&
+    weekInfo.weekNumber === realCurrentWeek.weekNumber;
 
   const getTripsForDate = (date: Date): BusinessTrip[] => {
     return trips.filter((trip) => {
@@ -133,20 +139,56 @@ export function WeekView({
       `}</style>
 
       {/* 週別導航列 */}
-      <div className="flex items-center justify-between p-4 border-b print:hidden">
-        <button
-          onClick={onPrevWeek}
-          className="p-2 hover:bg-gray-100 rounded-lg transition cursor-pointer"
-          title="上一週"
-        >
-          <ChevronLeft className="w-5 h-5 text-gray-600" />
-        </button>
-        <div className="text-center flex-1">
-          <h2 className="text-lg font-bold text-gray-800">{weekInfo.label}</h2>
-          <p className="text-xs text-gray-500 font-medium">{formatWeekChinese(weekInfo)}</p>
+      <div className="flex flex-wrap items-center justify-between p-3.5 sm:p-4 border-b gap-3 print:hidden">
+        {/* 左側：上一週 / 下一週 / 回到本週 按鈕組 */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onPrevWeek}
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition cursor-pointer border border-gray-200"
+            title="上一週"
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <button
+            type="button"
+            onClick={onNextWeek}
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition cursor-pointer border border-gray-200"
+            title="下一週"
+          >
+            <ChevronRight className="w-4 h-4 text-gray-700" />
+          </button>
+          {onGoToCurrentWeek && (
+            <button
+              type="button"
+              onClick={onGoToCurrentWeek}
+              disabled={isCurrentWeek}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition border cursor-pointer ${
+                isCurrentWeek
+                  ? 'bg-blue-50 text-blue-600 border-blue-200 font-bold opacity-80 cursor-default'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-blue-50 hover:text-blue-600 shadow-2xs'
+              }`}
+              title="切換至當前真實本週"
+            >
+              {isCurrentWeek ? '目前為當週' : '回到本週'}
+            </button>
+          )}
         </div>
 
-        {/* 功能按鈕組 */}
+        {/* 中間：週別標題與起訖日期 */}
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-lg font-bold text-gray-900 tracking-tight">{weekInfo.label}</h2>
+            {isCurrentWeek && (
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[11px] font-extrabold rounded-full">
+                當週
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 font-medium mt-0.5">{formatWeekChinese(weekInfo)}</p>
+        </div>
+
+        {/* 右側功能按鈕組：列印與設定 */}
         <div className="flex items-center gap-2">
           {/* 列印/PDF 匯出 */}
           <button
@@ -251,14 +293,6 @@ export function WeekView({
             )}
           </div>
         </div>
-
-        <button
-          onClick={onNextWeek}
-          className="p-2 hover:bg-gray-100 rounded-lg transition"
-          title="下一週"
-        >
-          <ChevronRight className="w-5 h-5 text-gray-600" />
-        </button>
       </div>
 
       {/* 列印專用簡潔標頭 (僅在列印時顯示，聚焦週別與重點行程) */}
@@ -279,19 +313,41 @@ export function WeekView({
         <div className={`grid ${gridCols}`}>
           {days.map((date, index) => {
             const holiday = findHoliday(date, holidays);
+            const isTodayDate = isToday(date);
             return (
               <div
                 key={index}
                 className={`py-2 px-3 text-center text-sm font-medium border-r last:border-r-0 print:py-1 print:px-1 ${
-                  holiday ? 'text-red-600 bg-red-50/60 print:bg-red-50' : 'text-gray-700'
+                  holiday
+                    ? 'text-red-600 bg-red-50/60 print:bg-red-50'
+                    : isTodayDate
+                    ? 'text-blue-700 bg-blue-50/90 font-bold'
+                    : 'text-gray-700'
                 }`}
               >
-                <div className="print:text-xs print:font-bold">{getDayName(date.getDay())}</div>
-                <div className={`text-xs print:text-[10px] ${holiday ? 'text-red-500 font-semibold' : 'text-gray-500'}`}>
+                <div className="flex items-center justify-center gap-1">
+                  <span className="print:text-xs print:font-bold">{getDayName(date.getDay())}</span>
+                  {isTodayDate && (
+                    <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-extrabold rounded-full print:hidden">
+                      今日
+                    </span>
+                  )}
+                </div>
+                <div
+                  className={`text-xs print:text-[10px] ${
+                    holiday
+                      ? 'text-red-500 font-semibold'
+                      : isTodayDate
+                      ? 'text-blue-600 font-extrabold'
+                      : 'text-gray-500'
+                  }`}
+                >
                   {date.getMonth() + 1}/{date.getDate()}
                 </div>
                 {holiday && (
-                  <div className="text-[11px] print:text-[9px] text-red-600 font-medium mt-0.5 truncate">{holiday.name}</div>
+                  <div className="text-[11px] print:text-[9px] text-red-600 font-medium mt-0.5 truncate">
+                    {holiday.name}
+                  </div>
                 )}
               </div>
             );

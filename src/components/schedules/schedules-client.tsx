@@ -516,6 +516,7 @@ export function SchedulesClient({
           holidays={holidays}
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
+          onGoToCurrentWeek={() => setCurrentWeek(getCurrentWeek())}
           onTripClick={handleTripClick}
           onDateClick={(date) => handleOpenCreateForm(date)}
           onOpenHolidayModal={() => setShowHolidayModal(true)}
