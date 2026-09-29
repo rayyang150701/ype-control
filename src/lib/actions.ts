@@ -3021,9 +3021,9 @@ export async function getHolidays(): Promise<Holiday[]> {
 }
 
 /**
- * 新增或更新自訂假日
+ * 批次新增或更新自訂假日 (支援連續假期起訖區間修改)
  */
-export async function saveHoliday(holiday: Holiday) {
+export async function saveHolidaysBatch(holidaysToSave: Holiday[], removeIdsOrDates?: string[]) {
     const supabase = getSupabaseClient();
     try {
         const { data: record } = await supabase
@@ -3033,12 +3033,22 @@ export async function saveHoliday(holiday: Holiday) {
             .maybeSingle();
 
         let list: Holiday[] = record && record.notes ? JSON.parse(record.notes) : [];
-        const index = list.findIndex((h) => h.id === holiday.id || h.date === holiday.date);
-        if (index >= 0) {
-            list[index] = holiday;
-        } else {
-            list.push(holiday);
+
+        // 移除指定欲替換的舊假日 id 或日期
+        if (removeIdsOrDates && removeIdsOrDates.length > 0) {
+            const removeSet = new Set(removeIdsOrDates);
+            list = list.filter((h) => !removeSet.has(h.id) && !removeSet.has(h.date));
         }
+
+        // 逐一更新或寫入
+        holidaysToSave.forEach((newH) => {
+            const index = list.findIndex((h) => h.id === newH.id || h.date === newH.date);
+            if (index >= 0) {
+                list[index] = newH;
+            } else {
+                list.push(newH);
+            }
+        });
 
         await supabase.from('clients').upsert({
             name: '__SYSTEM_HOLIDAYS__',
@@ -3048,11 +3058,18 @@ export async function saveHoliday(holiday: Holiday) {
         }, { onConflict: 'name' });
 
         revalidatePath('/schedules');
-        return { success: true, message: '假日已成功儲存！' };
+        return { success: true, message: `已成功儲存 ${holidaysToSave.length} 筆放假日設定！` };
     } catch (err: any) {
-        console.error('儲存假日失敗:', err);
-        return { success: false, message: err?.message || '儲存假日失敗' };
+        console.error('批次儲存假日失敗:', err);
+        return { success: false, message: err?.message || '批次儲存假日失敗' };
     }
+}
+
+/**
+ * 新增或更新單筆自訂假日
+ */
+export async function saveHoliday(holiday: Holiday) {
+    return saveHolidaysBatch([holiday]);
 }
 
 /**

@@ -315,6 +315,9 @@ export const DEFAULT_TAIWAN_HOLIDAYS: Holiday[] = [
   { id: 'h-2026-05-01', name: '勞動節', date: '2026-05-01', isStatutory: true, category: '國定假日' },
   { id: 'h-2026-06-19', name: '端午節', date: '2026-06-19', isStatutory: true, category: '國定假日' },
   { id: 'h-2026-09-25', name: '中秋節', date: '2026-09-25', isStatutory: true, category: '國定假日' },
+  { id: 'h-2026-09-26', name: '中秋連假', date: '2026-09-26', isStatutory: true, category: '彈性放假' },
+  { id: 'h-2026-09-27', name: '中秋連假', date: '2026-09-27', isStatutory: true, category: '彈性放假' },
+  { id: 'h-2026-09-28', name: '中秋連假', date: '2026-09-28', isStatutory: true, category: '彈性放假' },
   { id: 'h-2026-10-10', name: '國慶日', date: '2026-10-10', isStatutory: true, category: '國定假日' },
 
   // 2027

@@ -10,9 +10,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CalendarDays, Plus, Trash2, Edit, Zap, Check } from 'lucide-react';
+import { CalendarDays, Plus, Trash2, Edit, Zap, Check, CalendarRange } from 'lucide-react';
 import { Holiday } from '@/types/businessTrip';
-import { saveHoliday, deleteHoliday } from '@/lib/actions';
+import { saveHoliday, saveHolidaysBatch, deleteHoliday } from '@/lib/actions';
+import { formatDate } from '@/lib/calendar-helper';
 import { useToast } from '@/hooks/use-toast';
 
 interface HolidayManagementDialogProps {
@@ -39,8 +40,20 @@ const COMMON_TAIWAN_HOLIDAY_TEMPLATES = [
   { month: 4, day: 4, name: '兒童節' },
   { month: 4, day: 5, name: '清明節' },
   { month: 5, day: 1, name: '勞動節' },
+  { month: 6, day: 19, name: '端午節' },
+  { month: 9, day: 25, name: '中秋節' },
   { month: 10, day: 10, name: '國慶日' },
 ];
+
+function calculateDays(start: string, end: string): number {
+  if (!start || !end) return 1;
+  const d1 = new Date(start.replace(/-/g, '/'));
+  const d2 = new Date(end.replace(/-/g, '/'));
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 1;
+  const diffTime = d2.getTime() - d1.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(1, diffDays + 1);
+}
 
 export function HolidayManagementDialog({
   open,
@@ -51,7 +64,9 @@ export function HolidayManagementDialog({
 }: HolidayManagementDialogProps) {
   const { toast } = useToast();
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
-  const [formDate, setFormDate] = useState('');
+  const [editingGroupIds, setEditingGroupIds] = useState<string[]>([]);
+  const [formStartDate, setFormStartDate] = useState('');
+  const [formEndDate, setFormEndDate] = useState('');
   const [formName, setFormName] = useState('');
   const [formCategory, setFormCategory] = useState('國定假日');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -62,9 +77,21 @@ export function HolidayManagementDialog({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  const dayCount = calculateDays(formStartDate, formEndDate || formStartDate);
+  const isMultiDay = Boolean(formStartDate && formEndDate && formEndDate > formStartDate);
+
+  const handleExtendDays = (days: number) => {
+    if (!formStartDate) return;
+    const d = new Date(formStartDate.replace(/-/g, '/'));
+    d.setDate(d.getDate() + (days - 1));
+    setFormEndDate(formatDate(d));
+  };
+
   const resetForm = () => {
     setEditingHoliday(null);
-    setFormDate('');
+    setEditingGroupIds([]);
+    setFormStartDate('');
+    setFormEndDate('');
     setFormName('');
     setFormCategory('國定假日');
     setIsCustomCategory(false);
@@ -72,7 +99,34 @@ export function HolidayManagementDialog({
 
   const startEdit = (holiday: Holiday) => {
     setEditingHoliday(holiday);
-    setFormDate(holiday.date);
+    setFormStartDate(holiday.date);
+
+    // 智慧偵測是否有同名稱之連續假期區間 (例如中秋連假 9/25-9/28)
+    const baseName = holiday.name.replace(/連假|假期|補假|初[一二三四五六七八九十]/g, '').trim();
+    let currentD = new Date(holiday.date.replace(/-/g, '/'));
+    let maxDateStr = holiday.date;
+    const relatedIds: string[] = [holiday.id || holiday.date];
+
+    for (let i = 1; i <= 30; i++) {
+      const nextD = new Date(currentD);
+      nextD.setDate(nextD.getDate() + 1);
+      const nextStr = formatDate(nextD);
+      const matched = holidays.find(
+        (h) =>
+          h.date === nextStr &&
+          ((baseName && h.name.includes(baseName)) || h.name === holiday.name)
+      );
+      if (matched) {
+        maxDateStr = nextStr;
+        relatedIds.push(matched.id || matched.date);
+        currentD = nextD;
+      } else {
+        break;
+      }
+    }
+
+    setFormEndDate(maxDateStr);
+    setEditingGroupIds(relatedIds);
     setFormName(holiday.name);
     const cat = holiday.category || (holiday.isStatutory ? '國定假日' : '公司假');
     setFormCategory(cat);
@@ -82,28 +136,62 @@ export function HolidayManagementDialog({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalCategory = formCategory.trim() || '國定假日';
-    if (!formDate || !formName.trim()) {
+    if (!formStartDate || !formName.trim()) {
       toast({
         variant: 'destructive',
         title: '欄位未齊全',
-        description: '請填寫日期與假日名稱',
+        description: '請填寫開始日期與假日名稱',
       });
       return;
     }
 
+    const finalEndDate = !formEndDate || formEndDate < formStartDate ? formStartDate : formEndDate;
+
     try {
       setIsSaving(true);
       const isStatutory = finalCategory === '國定假日' || editingHoliday?.isStatutory || false;
-      const res = await saveHoliday({
-        id: editingHoliday?.id || `h-${formDate}-${Date.now().toString().slice(-4)}`,
-        date: formDate,
-        name: formName.trim(),
-        category: finalCategory,
-        isStatutory,
+
+      // 產生區間內的所有日期清單
+      const d1 = new Date(formStartDate.replace(/-/g, '/'));
+      const d2 = new Date(finalEndDate.replace(/-/g, '/'));
+      const datesToSave: string[] = [];
+      const cur = new Date(d1);
+      while (cur <= d2) {
+        datesToSave.push(formatDate(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      // 建立每一天的 Holiday 資料
+      const holidaysToSave: Holiday[] = datesToSave.map((dateStr) => {
+        let id = `h-${dateStr}`;
+        if (editingHoliday && editingHoliday.date === dateStr) {
+          id = editingHoliday.id;
+        }
+        return {
+          id,
+          date: dateStr,
+          name: formName.trim(),
+          category: finalCategory,
+          isStatutory,
+        };
       });
 
+      // 取得需要被替換移除的舊 ID (若編輯時原有的舊日期未在新區間中)
+      const removeIdsOrDates = editingGroupIds.filter((oldIdOrDate) => {
+        const matchedOld = holidays.find((h) => h.id === oldIdOrDate || h.date === oldIdOrDate);
+        return matchedOld && !datesToSave.includes(matchedOld.date);
+      });
+
+      const res = await saveHolidaysBatch(holidaysToSave, removeIdsOrDates);
+
       if (res.success) {
-        toast({ title: '儲存成功', description: res.message });
+        toast({
+          title: '儲存成功',
+          description:
+            datesToSave.length > 1
+              ? `已成功為 ${formStartDate} 至 ${finalEndDate} (共 ${datesToSave.length} 天) 設定連假！`
+              : `已成功儲存放假日！`,
+        });
         resetForm();
         await onHolidaysChange();
       } else {
@@ -193,18 +281,47 @@ export function HolidayManagementDialog({
               {editingHoliday ? '✏️ 編輯假日資訊' : '➕ 新增自訂假日'}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+              {/* 開始日期 */}
               <div className="sm:col-span-3">
-                <Label className="text-xs font-semibold text-gray-600">日期</Label>
+                <Label className="text-xs font-semibold text-gray-700">開始日期 *</Label>
                 <input
                   type="date"
-                  value={formDate}
-                  onChange={(e) => setFormDate(e.target.value)}
+                  value={formStartDate}
+                  onChange={(e) => {
+                    const nextStart = e.target.value;
+                    setFormStartDate(nextStart);
+                    if (!formEndDate || formEndDate < nextStart) {
+                      setFormEndDate(nextStart);
+                    }
+                  }}
                   className="w-full mt-1 px-2.5 py-1.5 border rounded-lg text-sm bg-white"
                   required
                 />
               </div>
+
+              {/* 結束日期 (支援連續假期區間) */}
               <div className="sm:col-span-3">
-                <Label className="text-xs font-semibold text-gray-600">放假類別</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-gray-700">結束日期</Label>
+                  {isMultiDay && (
+                    <span className="text-[10px] text-red-600 font-bold bg-red-100 px-1 py-0.2 rounded">
+                      連放 {dayCount} 天
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  value={formEndDate}
+                  min={formStartDate}
+                  onChange={(e) => setFormEndDate(e.target.value)}
+                  className="w-full mt-1 px-2.5 py-1.5 border rounded-lg text-sm bg-white"
+                  required
+                />
+              </div>
+
+              {/* 放假類別 */}
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-semibold text-gray-700">放假類別</Label>
                 <select
                   value={
                     HOLIDAY_PRESET_CATEGORIES.includes(formCategory) && !isCustomCategory
@@ -239,24 +356,34 @@ export function HolidayManagementDialog({
                   />
                 )}
               </div>
-              <div className="sm:col-span-4">
-                <Label className="text-xs font-semibold text-gray-600">假日名稱</Label>
+
+              {/* 假日名稱 */}
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-semibold text-gray-700">假日名稱 *</Label>
                 <Input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="例：廠區年度歲修、元旦"
+                  placeholder="例：中秋節、廠區歲修"
                   className="mt-1 h-9 text-sm"
                   required
                 />
               </div>
+
+              {/* 送出與取消按鈕 */}
               <div className="sm:col-span-2 flex gap-1.5">
                 <Button
                   type="submit"
                   size="sm"
                   disabled={isSaving}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white text-xs h-9"
+                  className="w-full bg-red-600 hover:bg-red-700 text-white text-xs h-9 font-bold"
                 >
-                  {editingHoliday ? '更新' : '新增'}
+                  {editingHoliday
+                    ? isMultiDay
+                      ? '更新區間'
+                      : '更新'
+                    : isMultiDay
+                    ? '批次新增'
+                    : '新增'}
                 </Button>
                 {editingHoliday && (
                   <Button
@@ -264,12 +391,41 @@ export function HolidayManagementDialog({
                     variant="outline"
                     size="sm"
                     onClick={resetForm}
-                    className="text-xs h-9"
+                    className="text-xs h-9 shrink-0"
                   >
                     取消
                   </Button>
                 )}
               </div>
+            </div>
+
+            {/* 連假區間天數快速帶入與區間提示 */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5 pt-2 border-t border-red-200/50">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-gray-500 font-medium">連假快速設定：</span>
+                {[
+                  { label: '單日 (1天)', days: 1 },
+                  { label: '2天連假', days: 2 },
+                  { label: '3天連假', days: 3 },
+                  { label: '4天連假 (如中秋9/25-9/28)', days: 4 },
+                  { label: '5天連假', days: 5 },
+                ].map((item) => (
+                  <button
+                    key={item.days}
+                    type="button"
+                    onClick={() => handleExtendDays(item.days)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-red-200 bg-white hover:bg-red-100 text-red-700 font-medium transition cursor-pointer"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {isMultiDay && (
+                <span className="text-[11px] text-red-700 font-semibold bg-red-100/90 px-2.5 py-0.5 rounded-full border border-red-200">
+                  🗓️ 連假區間：{formStartDate} ～ {formEndDate} (共 {dayCount} 天)
+                </span>
+              )}
             </div>
 
             {/* 常用類別快捷標籤 */}
