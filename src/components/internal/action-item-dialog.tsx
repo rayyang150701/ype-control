@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
-import { getItemLastUpdateDate } from '@/lib/task-helper';
 import { TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
@@ -86,9 +85,6 @@ export function ActionItemDialog({
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => {
-    if (item) {
-      return getItemLastUpdateDate(item).dateStr;
-    }
     return new Date().toISOString().slice(0, 10);
   });
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
@@ -290,6 +286,7 @@ export function ActionItemDialog({
 
   useEffect(() => {
     if (open) {
+      const todayStr = new Date().toISOString().slice(0, 10);
       if (item) {
         setProjectId(item.projectId);
         setIsCreatingNewProject(false);
@@ -300,7 +297,8 @@ export function ActionItemDialog({
         setWaitingOn(item.waitingOn || '');
         setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
         setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
-        setLastUpdatedDate(getItemLastUpdateDate(item).dateStr);
+        // 每次打開編輯待辦時，自動預設填入當天最新存檔日期（若同專案在2, 5, 10天分別更新，存檔皆為當天最新日期）
+        setLastUpdatedDate(todayStr);
         setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
         setLessonLearnt(item.lessonLearnt || '');
         setAttachments(item.attachments || []);
@@ -312,15 +310,15 @@ export function ActionItemDialog({
         setNewProjectName('');
         setNewProjectCaseNumber('');
         setNewProjectCategory('評估案');
-        setNewProjectEvaluationDate(new Date().toISOString().slice(0, 10));
+        setNewProjectEvaluationDate(todayStr);
         setTitle('');
-        setPhase('開發/施工');
+        setPhase('1.2 施工階段');
         setStatus('pending');
         setOwner(targetProj?.clientName || '燁輝');
         setWaitingOn('');
         setDueDate('');
         setCompletedAt('');
-        setLastUpdatedDate(new Date().toISOString().slice(0, 10));
+        setLastUpdatedDate(todayStr);
         setNotes('');
         setLessonLearnt('');
         setAttachments([]);
@@ -377,6 +375,18 @@ export function ActionItemDialog({
 
       const cleanNotes = (notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim();
 
+      // 存檔時自動寫入當下最新存檔時間（若手動調整日期則依指定日期）
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      let saveUpdatedAt = now.toISOString();
+      if (lastUpdatedDate) {
+        if (lastUpdatedDate === todayStr) {
+          saveUpdatedAt = now.toISOString();
+        } else {
+          saveUpdatedAt = new Date(`${lastUpdatedDate}T${now.toTimeString().slice(0, 8)}`).toISOString();
+        }
+      }
+
       if (item?.id) {
         const res = await updateActionItem(item.id, {
           title,
@@ -386,7 +396,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
-          updatedAt: lastUpdatedDate ? new Date(`${lastUpdatedDate}T12:00:00`).toISOString() : null,
+          updatedAt: saveUpdatedAt,
           notes: cleanNotes,
           lessonLearnt,
           attachments,
@@ -408,7 +418,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
-          updatedAt: lastUpdatedDate ? new Date(`${lastUpdatedDate}T12:00:00`).toISOString() : null,
+          updatedAt: saveUpdatedAt,
           notes: cleanNotes,
           lessonLearnt,
           attachments,
@@ -695,11 +705,11 @@ export function ActionItemDialog({
             <div>
               <Label className="text-sm font-semibold flex items-center justify-between h-5">
                 <span>最近更新日</span>
-                <span className="text-[10px] font-normal text-slate-400">儲存時依此日期紀錄</span>
+                <span className="text-[10px] font-normal text-blue-600 font-medium">預設當天最新存檔日期</span>
               </Label>
               <Input
                 type="date"
-                className="mt-1"
+                className="mt-1 bg-blue-50/20 border-slate-300 focus:border-blue-500"
                 value={lastUpdatedDate}
                 onChange={(e) => setLastUpdatedDate(e.target.value)}
               />

@@ -57,8 +57,8 @@ export function parseLatestDateFromNotes(
 
 /**
  * 取得待辦事項的「最近更新日期」資訊
- * 優先依據備忘進度日誌中記錄的實質最新日期（如 9/29, 9/24），
- * 若無進度日期前綴則 fallback 到系統 updatedAt 或 createdAt。
+ * 根據使用者存檔時的系統更新日期 (updatedAt，若無則 createdAt) 為權威基準。
+ * 當使用者存檔時即會記錄當天最新日期。
  */
 export function getItemLastUpdateDate(item: {
   updatedAt?: string | null;
@@ -72,13 +72,7 @@ export function getItemLastUpdateDate(item: {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const yearHint = item.updatedAt
-    ? new Date(item.updatedAt).getFullYear()
-    : item.createdAt
-    ? new Date(item.createdAt).getFullYear()
-    : today.getFullYear();
-
-  const noteDate = parseLatestDateFromNotes(item.notes, yearHint);
+  // 1. 優先以系統實質存檔更新日期為準 (每次存檔即為當天最新日期)
   const systemDateStr = item.updatedAt
     ? item.updatedAt.slice(0, 10)
     : item.createdAt
@@ -86,15 +80,20 @@ export function getItemLastUpdateDate(item: {
     : '';
 
   let finalDateStr = '';
-  if (noteDate && noteDate.dateStr) {
-    finalDateStr = noteDate.dateStr;
-  } else if (systemDateStr) {
+  if (systemDateStr) {
     finalDateStr = systemDateStr;
   } else {
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
-    finalDateStr = `${y}-${m}-${d}`;
+    // 2. 備援：若無系統時間戳記，嘗試解析備忘錄中記錄的日期或使用今日
+    const yearHint = today.getFullYear();
+    const noteDate = parseLatestDateFromNotes(item.notes, yearHint);
+    if (noteDate && noteDate.dateStr) {
+      finalDateStr = noteDate.dateStr;
+    } else {
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      finalDateStr = `${y}-${m}-${d}`;
+    }
   }
 
   const targetDate = new Date(`${finalDateStr}T00:00:00`);
