@@ -105,8 +105,19 @@ export function TaskCentricView({
   // 細部篩選條件
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [selectedPm, setSelectedPm] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'dueDate' | 'projectCase' | 'statusPriority'>('newest');
+
+  // 整理所有負責 PM 清單
+  const pmList = useMemo(() => {
+    const set = new Set<string>();
+    projects.forEach((p) => {
+      const pm = p.responsiblePm?.trim() || (p as any).tpmOfficeContact?.trim();
+      if (pm) set.add(pm);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-TW'));
+  }, [projects]);
 
   // 需求1: 整理所有未結案、未完成的「等候對象」清單
   const activeWaitingOns = useMemo(() => {
@@ -207,6 +218,11 @@ export function TaskCentricView({
 
       // 3. 下拉欄位篩選
       if (selectedProjectId !== 'all' && item.projectId !== selectedProjectId) return false;
+      if (selectedPm !== 'all') {
+        const proj = projectMap.get(item.projectId);
+        const pm = proj?.responsiblePm?.trim() || (proj as any)?.tpmOfficeContact?.trim() || '未指定';
+        if (pm !== selectedPm) return false;
+      }
       if (selectedWaitingOn !== 'all') {
         if (item.waitingOn !== selectedWaitingOn) return false;
         // 需求1: 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
@@ -261,6 +277,7 @@ export function TaskCentricView({
     activeTab,
     searchQuery,
     selectedProjectId,
+    selectedPm,
     selectedWaitingOn,
     sortBy,
     projectMap,
@@ -269,6 +286,7 @@ export function TaskCentricView({
   const hasActiveFilters =
     searchQuery ||
     selectedProjectId !== 'all' ||
+    selectedPm !== 'all' ||
     selectedWaitingOn !== 'all' ||
     activeTab !== 'all';
 
@@ -276,6 +294,7 @@ export function TaskCentricView({
     setActiveTab('all');
     setSearchQuery('');
     setSelectedProjectId('all');
+    setSelectedPm('all');
     setSelectedWaitingOn('all');
     setSortBy('newest');
   };
@@ -307,6 +326,21 @@ export function TaskCentricView({
               <SelectItem value="overdue" className="text-amber-700 font-medium">⚠️ 逾期/到期 ({tabCounts.overdue})</SelectItem>
               <SelectItem value="active" className="text-blue-700 font-medium">🔄 處理中/待辦 ({tabCounts.active})</SelectItem>
               <SelectItem value="completed" className="text-emerald-700 font-medium">✅ 已完成 ({tabCounts.completed})</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* 負責 PM 下拉 */}
+          <Select value={selectedPm} onValueChange={setSelectedPm}>
+            <SelectTrigger className={`w-[140px] h-9 text-xs bg-white ${selectedPm !== 'all' ? 'border-blue-400 font-semibold text-blue-900 bg-blue-50/50' : ''}`}>
+              <SelectValue placeholder="全部負責 PM" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">全部負責 PM</SelectItem>
+              {pmList.map((pm) => (
+                <SelectItem key={pm} value={pm}>
+                  👤 {pm}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
