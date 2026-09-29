@@ -39,6 +39,14 @@ const PHASES: ActionItemPhase[] = [
   '1.4.2 驗收結案',
 ];
 
+const getLocalTodayDateStr = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export function ActionItemDialog({
   open,
   onOpenChange,
@@ -75,7 +83,7 @@ export function ActionItemDialog({
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCaseNumber, setNewProjectCaseNumber] = useState('');
   const [newProjectCategory, setNewProjectCategory] = useState<'評估案' | '已開案'>('評估案');
-  const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => getLocalTodayDateStr());
 
   const [title, setTitle] = useState(item?.title || '');
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '1.2 施工階段');
@@ -84,9 +92,7 @@ export function ActionItemDialog({
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
-  const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => {
-    return new Date().toISOString().slice(0, 10);
-  });
+  const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => getLocalTodayDateStr());
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
@@ -286,7 +292,7 @@ export function ActionItemDialog({
 
   useEffect(() => {
     if (open) {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = getLocalTodayDateStr();
       if (item) {
         setProjectId(item.projectId);
         setIsCreatingNewProject(false);
@@ -377,7 +383,7 @@ export function ActionItemDialog({
 
       // 存檔時自動寫入當下最新存檔時間（若手動調整日期則依指定日期）
       const now = new Date();
-      const todayStr = now.toISOString().slice(0, 10);
+      const todayStr = getLocalTodayDateStr();
       let saveUpdatedAt = now.toISOString();
       if (lastUpdatedDate) {
         if (lastUpdatedDate === todayStr) {

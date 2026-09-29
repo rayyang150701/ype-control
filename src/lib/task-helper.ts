@@ -57,8 +57,11 @@ export function parseLatestDateFromNotes(
 
 /**
  * 取得待辦事項的「最近更新日期」資訊
- * 根據使用者存檔時的系統更新日期 (updatedAt，若無則 createdAt) 為權威基準。
- * 當使用者存檔時即會記錄當天最新日期。
+ * 智慧綜合比對：
+ * 1. 系統實質存檔更新日期 (updatedAt / createdAt)
+ * 2. 備忘日誌各行記錄的最新進度日期 (如 2026/9/29, 9/29 等)
+ * 取兩者之中最新 (Math.max) 且不超過當天未來之日期。
+ * 無論使用者是「直接存檔」或是「在進度日誌中記錄日期」，都能即時準確呈現當下最新存檔與更新日期！
  */
 export function getItemLastUpdateDate(item: {
   updatedAt?: string | null;
@@ -71,38 +74,55 @@ export function getItemLastUpdateDate(item: {
 } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayTs = today.getTime();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  const todayDateStr = `${y}-${m}-${d}`;
 
-  // 1. 優先以系統實質存檔更新日期為準 (每次存檔即為當天最新日期)
+  let latestDateStr = '';
+  let latestTs = 0;
+
+  // 1. 檢查系統存檔更新日期 (updatedAt / createdAt)
   const systemDateStr = item.updatedAt
     ? item.updatedAt.slice(0, 10)
     : item.createdAt
     ? item.createdAt.slice(0, 10)
     : '';
 
-  let finalDateStr = '';
   if (systemDateStr) {
-    finalDateStr = systemDateStr;
-  } else {
-    // 2. 備援：若無系統時間戳記，嘗試解析備忘錄中記錄的日期或使用今日
-    const yearHint = today.getFullYear();
-    const noteDate = parseLatestDateFromNotes(item.notes, yearHint);
-    if (noteDate && noteDate.dateStr) {
-      finalDateStr = noteDate.dateStr;
-    } else {
-      const y = today.getFullYear();
-      const m = String(today.getMonth() + 1).padStart(2, '0');
-      const d = String(today.getDate()).padStart(2, '0');
-      finalDateStr = `${y}-${m}-${d}`;
+    const sysDate = new Date(`${systemDateStr}T00:00:00`);
+    const sysTs = sysDate.getTime();
+    if (!isNaN(sysTs)) {
+      latestTs = sysTs;
+      latestDateStr = systemDateStr;
     }
   }
 
-  const targetDate = new Date(`${finalDateStr}T00:00:00`);
-  const timestamp = !isNaN(targetDate.getTime()) ? targetDate.getTime() : today.getTime();
+  // 2. 檢查備忘日誌中的最新進度日期 (如 2026/9/29, 9/29)
+  const noteDate = parseLatestDateFromNotes(item.notes, today.getFullYear());
+  if (noteDate && noteDate.dateStr) {
+    const nDate = new Date(`${noteDate.dateStr}T00:00:00`);
+    const nTs = nDate.getTime();
+    // 只要備忘錄中的進度日期更新（且不大於未來合理範圍），就取最新者
+    if (!isNaN(nTs) && nTs > latestTs && nTs <= todayTs + 86400000) {
+      latestTs = nTs;
+      latestDateStr = noteDate.dateStr;
+    }
+  }
+
+  // 3. 若皆無，預設為今日
+  if (!latestDateStr) {
+    latestDateStr = todayDateStr;
+    latestTs = todayTs;
+  }
+
+  const targetDate = new Date(`${latestDateStr}T00:00:00`);
   const daysAgo = Math.max(0, differenceInCalendarDays(today, targetDate));
 
   return {
-    dateStr: finalDateStr,
-    timestamp,
+    dateStr: latestDateStr,
+    timestamp: latestTs,
     daysAgo,
   };
 }
