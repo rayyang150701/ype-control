@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,10 +12,418 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, Clock, MapPin, Users, Building, FileText, Check, UtensilsCrossed, Sparkles, Filter, Video } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Calendar,
+  Clock,
+  MapPin,
+  Users,
+  Building,
+  Building2,
+  FileText,
+  Check,
+  UtensilsCrossed,
+  Sparkles,
+  Filter,
+  Video,
+  FolderPlus,
+  ChevronDown,
+  X,
+  Lock,
+} from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, TIME_OPTIONS, TripCategory, TripStatus } from '@/types/businessTrip';
 import type { Client, Project, User } from '@/types';
 import { formatDate } from '@/lib/calendar-helper';
+import { useAdmin } from '@/components/admin-context';
+import { useToast } from '@/hooks/use-toast';
+import { NewPocProjectDialog } from '@/components/internal/new-poc-project-dialog';
+
+// --- 關鍵字搜尋專案下拉選單 (含查無專案時手動建立專案) ---
+interface ProjectComboboxProps {
+  value: string;
+  projectName: string;
+  projects: Project[];
+  onChange: (projectId: string, project?: Project) => void;
+  canCreateProject: boolean;
+  onOpenCreateProject: (typedName: string) => void;
+}
+
+function ProjectCombobox({
+  value,
+  projectName,
+  projects,
+  onChange,
+  canCreateProject,
+  onOpenCreateProject,
+}: ProjectComboboxProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedProject = useMemo(() => {
+    if (!value) return null;
+    return projects.find((p) => p.id === value) || (projectName ? ({ id: value, name: projectName } as Project) : null);
+  }, [value, projectName, projects]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) => {
+      const name = (p.name || '').toLowerCase();
+      const caseNum = (p.caseNumber || '').toLowerCase();
+      const client = (p.clientName || '').toLowerCase();
+      const category = (p.projectCategory || '').toLowerCase();
+      return name.includes(q) || caseNum.includes(q) || client.includes(q) || category.includes(q);
+    });
+  }, [projects, query]);
+
+  const hasExactMatch = useMemo(() => {
+    if (!query.trim()) return true;
+    const q = query.trim().toLowerCase();
+    return projects.some((p) => (p.name || '').trim().toLowerCase() === q);
+  }, [projects, query]);
+
+  const handleSelect = (proj: Project) => {
+    onChange(proj.id, proj);
+    setIsOpen(false);
+    setQuery('');
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange('', undefined);
+    setQuery('');
+    setIsOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const displayInputValue = isOpen ? query : (selectedProject ? selectedProject.name : '');
+
+  return (
+    <div ref={containerRef} className="relative w-full mt-1">
+      <div className="relative flex items-center">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={displayInputValue}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={selectedProject ? selectedProject.name : '輸入關鍵字搜尋專案 (名稱/案號/客戶)...'}
+          className="pr-16 text-sm bg-white border-slate-300 focus:ring-blue-500 rounded-lg"
+        />
+
+        <div className="absolute right-1.5 flex items-center gap-0.5">
+          {Boolean(selectedProject || query) && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+              title="清除選取專案"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen((prev) => !prev);
+              if (!isOpen) inputRef.current?.focus();
+            }}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+            title={isOpen ? '收合專案清單' : '展開專案清單'}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* 已關聯專案提示 */}
+      {!isOpen && selectedProject && (
+        <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 flex-wrap">
+          <span className="font-semibold text-slate-700">已關聯：</span>
+          <span className="font-medium text-slate-900">{selectedProject.name}</span>
+          {selectedProject.caseNumber && (
+            <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">
+              {selectedProject.caseNumber}
+            </span>
+          )}
+          {selectedProject.clientName && (
+            <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px]">
+              {selectedProject.clientName}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 下拉清單 */}
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl animate-in fade-in-50 zoom-in-95">
+          {filtered.length === 0 ? (
+            <div className="p-3 text-center space-y-2.5">
+              <p className="text-xs text-slate-500">
+                未找到與「<span className="font-semibold text-slate-800">{query.trim()}</span>」相符的專案
+              </p>
+              {canCreateProject ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenCreateProject(query.trim());
+                  }}
+                  className="w-full flex items-center justify-between p-2.5 rounded-lg text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold border border-blue-200 transition text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FolderPlus className="w-4 h-4 text-blue-600 shrink-0" />
+                    <div>
+                      <div className="font-bold text-blue-900">＋ 建立新專案「{query.trim()}」</div>
+                      <div className="text-[10px] text-blue-600 font-normal">該專案尚未建立？點此手動新增並自動關聯</div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] bg-blue-600 text-white px-2.5 py-1 rounded shadow-xs shrink-0 ml-2">
+                    立即建立
+                  </span>
+                </button>
+              ) : (
+                <div className="p-2.5 text-center text-xs text-slate-400 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span>該專案未建立（建立新專案需管理員或編輯者權限）</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="px-2 py-1 text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                <span>選擇專案 ({filtered.length})</span>
+                {query && <span className="font-normal text-slate-400">關鍵字: {query}</span>}
+              </div>
+
+              {filtered.map((proj) => {
+                const isSelected = proj.id === value;
+                return (
+                  <button
+                    key={proj.id}
+                    type="button"
+                    onClick={() => handleSelect(proj)}
+                    className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                        : 'hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                      <span className="truncate max-w-[260px] font-medium text-slate-900">{proj.name}</span>
+                      {proj.caseNumber && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                          {proj.caseNumber}
+                        </span>
+                      )}
+                      {proj.clientName && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                          {proj.clientName}
+                        </span>
+                      )}
+                      {proj.projectCategory && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded shrink-0 ${
+                          proj.projectCategory === '評估案' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {proj.projectCategory}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0 ml-1" />}
+                  </button>
+                );
+              })}
+
+              {/* 當有搜尋內容但未完全吻合，且具備權限時提供建立捷徑 */}
+              {query.trim() && !hasExactMatch && canCreateProject && (
+                <div className="pt-1.5 mt-1 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      onOpenCreateProject(query.trim());
+                    }}
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-blue-600 hover:bg-blue-50 font-medium transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <FolderPlus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate">非既有專案？建立新專案「{query.trim()}」</span>
+                    </div>
+                    <span className="text-[10px] text-blue-600 border border-blue-200 bg-white px-1.5 py-0.5 rounded shrink-0 ml-1 font-semibold">
+                      + 建立
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- 關鍵字搜尋客戶下拉選單 ---
+interface ClientComboboxProps {
+  value: string;
+  customerName: string;
+  clients: Client[];
+  onChange: (customerId: string, client?: Client) => void;
+}
+
+function ClientCombobox({
+  value,
+  customerName,
+  clients,
+  onChange,
+}: ClientComboboxProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedClient = useMemo(() => {
+    if (!value && !customerName) return null;
+    return clients.find((c) => c.id === value || (customerName && c.name === customerName)) || null;
+  }, [value, customerName, clients]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => {
+      const name = (c.name || '').toLowerCase();
+      const code = (c.code || '').toLowerCase();
+      return name.includes(q) || code.includes(q);
+    });
+  }, [clients, query]);
+
+  const handleSelect = (client: Client) => {
+    onChange(client.id, client);
+    setIsOpen(false);
+    setQuery('');
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange('', undefined);
+    setQuery('');
+    setIsOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const displayText = selectedClient ? `${selectedClient.name}${selectedClient.code ? ` (${selectedClient.code})` : ''}` : customerName || '';
+  const displayInputValue = isOpen ? query : displayText;
+
+  return (
+    <div ref={containerRef} className="relative w-full mt-1">
+      <div className="relative flex items-center">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={displayInputValue}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={displayText || '輸入關鍵字搜尋客戶 (如: 燁輝, YP)...'}
+          className="pr-16 text-sm bg-white border-slate-300 focus:ring-blue-500 rounded-lg"
+        />
+
+        <div className="absolute right-1.5 flex items-center gap-0.5">
+          {Boolean(selectedClient || customerName || query) && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+              title="清除選取客戶"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen((prev) => !prev);
+              if (!isOpen) inputRef.current?.focus();
+            }}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+            title={isOpen ? '收合客戶清單' : '展開客戶清單'}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl animate-in fade-in-50 zoom-in-95">
+          {filtered.length === 0 ? (
+            <div className="p-3 text-center text-xs text-slate-500">
+              未找到與「<span className="font-semibold text-slate-800">{query.trim()}</span>」相符的客戶
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">
+                選擇客戶 ({filtered.length})
+              </div>
+              {filtered.map((client) => {
+                const isSelected = selectedClient?.id === client.id || customerName === client.name;
+                return (
+                  <button
+                    key={client.id}
+                    type="button"
+                    onClick={() => handleSelect(client)}
+                    className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-50 text-blue-900 font-semibold border border-blue-200'
+                        : 'hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-900">{client.name}</span>
+                      {client.code && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                          {client.code}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface TripFormDialogProps {
   open: boolean;
@@ -27,6 +435,7 @@ interface TripFormDialogProps {
   users: User[];
   defaultCustomerId?: string;
   onSave: (tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  onProjectCreated?: (newProject: Project) => void;
 }
 
 export function TripFormDialog({
@@ -39,7 +448,36 @@ export function TripFormDialog({
   users,
   defaultCustomerId,
   onSave,
+  onProjectCreated,
 }: TripFormDialogProps) {
+  const { toast } = useToast();
+  const { isAdmin, isEditor, isGuest, setIsLoginDialogOpen } = useAdmin();
+  const canCreateProject = (isAdmin || isEditor) && !isGuest;
+
+  const [projectList, setProjectList] = useState<Project[]>(projects);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [createProjectDefaultName, setCreateProjectDefaultName] = useState('');
+
+  useEffect(() => {
+    setProjectList(projects);
+  }, [projects]);
+
+  const handleOpenCreateProject = (initialName: string) => {
+    if (!canCreateProject) {
+      toast({
+        title: '權限不足',
+        description: '建立新專案僅限管理員或編輯者執行，請先登入帳號。',
+        variant: 'destructive',
+      });
+      if (isGuest) {
+        setIsLoginDialogOpen(true);
+      }
+      return;
+    }
+    setCreateProjectDefaultName(initialName);
+    setIsCreateProjectOpen(true);
+  };
+
   const [formData, setFormData] = useState({
     subject: '',
     projectId: '',
@@ -242,8 +680,8 @@ export function TripFormDialog({
   };
 
   // 當專案改變時，自動關聯專案名稱與對應客戶（若客戶未指定）
-  const handleProjectChange = (projectId: string) => {
-    const proj = projects.find((p) => p.id === projectId);
+  const handleProjectChange = (projectId: string, projectObj?: Project) => {
+    const proj = projectObj || projectList.find((p) => p.id === projectId);
     if (proj) {
       let matchedClientId = formData.customerId;
       let matchedClientName = formData.customerName;
@@ -256,7 +694,7 @@ export function TripFormDialog({
 
       setFormData((prev) => ({
         ...prev,
-        projectId,
+        projectId: proj.id,
         projectName: proj.name,
         customerId: matchedClientId,
         customerName: matchedClientName,
@@ -275,12 +713,12 @@ export function TripFormDialog({
     }
   };
 
-  const handleCustomerChange = (customerId: string) => {
-    const client = clients.find((c) => c.id === customerId);
+  const handleCustomerChange = (customerId: string, clientObj?: Client) => {
+    const client = clientObj || clients.find((c) => c.id === customerId);
     const newCustomerName = client ? client.name : '';
     setFormData((prev) => ({
       ...prev,
-      customerId,
+      customerId: client ? client.id : '',
       customerName: newCustomerName,
       lunchBoxes: newCustomerName.includes('燁輝') ? prev.lunchBoxes : 0,
     }));
@@ -290,6 +728,19 @@ export function TripFormDialog({
     } else {
       setTravelerClientFilter('all');
     }
+  };
+
+  const handleProjectCreatedSuccess = (newProj: any) => {
+    if (!newProj) return;
+    setProjectList((prev) => [newProj, ...prev.filter((p) => p.id !== newProj.id)]);
+    handleProjectChange(newProj.id, newProj);
+    if (onProjectCreated) {
+      onProjectCreated(newProj);
+    }
+    toast({
+      title: '新專案建立成功',
+      description: `已成功建立「${newProj.name}」並自動關聯至此行程！`,
+    });
   };
 
   const validate = () => {
@@ -345,8 +796,9 @@ export function TripFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl">
         <DialogHeader className="px-6 py-4 border-b bg-gray-50/80 sticky top-0 z-10">
           <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-600" />
@@ -467,38 +919,40 @@ export function TripFormDialog({
             {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
           </div>
 
-          {/* 專案與客戶 (2 欄) */}
+          {/* 專案與客戶 (2 欄) - 支援關鍵字搜尋帶出、查無專案時手動建立、客戶關鍵字搜尋 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-semibold text-gray-700">關聯專案 (可選)</Label>
-              <select
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-gray-700">關聯專案 (可選)</Label>
+                {canCreateProject && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateProject('')}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>+ 手動建立專案</span>
+                  </button>
+                )}
+              </div>
+              <ProjectCombobox
                 value={formData.projectId}
-                onChange={(e) => handleProjectChange(e.target.value)}
-                className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-- 請選擇專案 --</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.clientName ? `(${p.clientName})` : ''}
-                  </option>
-                ))}
-              </select>
+                projectName={formData.projectName}
+                projects={projectList}
+                onChange={handleProjectChange}
+                canCreateProject={canCreateProject}
+                onOpenCreateProject={handleOpenCreateProject}
+              />
             </div>
 
             <div>
               <Label className="text-sm font-semibold text-gray-700">關聯客戶 (可選)</Label>
-              <select
+              <ClientCombobox
                 value={formData.customerId}
-                onChange={(e) => handleCustomerChange(e.target.value)}
-                className="w-full mt-1 px-3 py-2 border rounded-md text-sm bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-- 請選擇客戶 --</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.code ? `(${c.code})` : ''}
-                  </option>
-                ))}
-              </select>
+                customerName={formData.customerName}
+                clients={clients}
+                onChange={handleCustomerChange}
+              />
             </div>
           </div>
 
@@ -859,5 +1313,17 @@ export function TripFormDialog({
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* 建立新專案彈窗 (僅具管理員或編輯者權限開放) */}
+    <NewPocProjectDialog
+      open={isCreateProjectOpen}
+      onOpenChange={setIsCreateProjectOpen}
+      users={users}
+      clients={clients}
+      defaultName={createProjectDefaultName}
+      defaultClientName={formData.customerName || '燁輝'}
+      onSuccess={handleProjectCreatedSuccess}
+    />
+  </>
   );
 }

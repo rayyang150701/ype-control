@@ -36,6 +36,7 @@ import {
   deleteBusinessTrip,
   updateBusinessTripStatus,
   getHolidays,
+  getAllProjectsForInternal,
 } from '@/lib/actions';
 
 import { TripFilterPanel } from './trip-filter-panel';
@@ -74,7 +75,7 @@ export function SchedulesClient({
   // 資料狀態
   const [trips, setTrips] = useState<BusinessTrip[]>(initialTrips);
   const [clients] = useState<Client[]>(initialClients);
-  const [projects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [users] = useState<User[]>(initialUsers);
   const [holidays, setHolidays] = useState<Holiday[]>(initialHolidays);
 
@@ -91,12 +92,16 @@ export function SchedulesClient({
   const reloadData = async () => {
     try {
       setIsRefreshing(true);
-      const [tripsData, holidaysData] = await Promise.all([
+      const [tripsData, holidaysData, projectsData] = await Promise.all([
         getBusinessTrips(),
         getHolidays(),
+        getAllProjectsForInternal(),
       ]);
       setTrips(tripsData);
       setHolidays(holidaysData);
+      if (projectsData) {
+        setProjects(projectsData as any);
+      }
       toast({ title: '更新完成', description: '出差行程資料已同步最新狀態' });
     } catch (err: any) {
       console.error('重新載入行程失敗:', err);
@@ -567,6 +572,9 @@ export function SchedulesClient({
           users={users}
           defaultCustomerId={filter.customerId}
           onSave={handleSaveTrip}
+          onProjectCreated={(newProj) => {
+            setProjects((prev) => [newProj, ...prev.filter((p) => p.id !== newProj.id)]);
+          }}
         />
       )}
 

@@ -18,6 +18,8 @@ interface NewPocProjectDialogProps {
   onOpenChange: (open: boolean) => void;
   users?: User[];
   clients?: Client[];
+  defaultName?: string;
+  defaultClientName?: string;
   onSuccess: (newProject?: any) => void;
 }
 
@@ -26,6 +28,8 @@ export function NewPocProjectDialog({
   onOpenChange,
   users = [],
   clients: initialClients = [],
+  defaultName = '',
+  defaultClientName = '',
   onSuccess,
 }: NewPocProjectDialogProps) {
   const { toast } = useToast();
@@ -34,8 +38,8 @@ export function NewPocProjectDialog({
 
   const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
   const [sourceType, setSourceType] = useState<ProjectSourceType>('億威內部自建專案');
-  const [clientName, setClientName] = useState('燁輝');
-  const [name, setName] = useState('');
+  const [clientName, setClientName] = useState(defaultClientName || '燁輝');
+  const [name, setName] = useState(defaultName || '');
   const [caseNumber, setCaseNumber] = useState('POC');
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [evaluationDate, setEvaluationDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -43,6 +47,14 @@ export function NewPocProjectDialog({
   const [clientContact, setClientContact] = useState('');
   const [vendorOrSupplier, setVendorOrSupplier] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
+
+  // 當彈窗開啟且有傳入預設專案名稱/客戶名稱時，自動帶入
+  useEffect(() => {
+    if (open) {
+      if (defaultName) setName(defaultName);
+      if (defaultClientName) setClientName(defaultClientName);
+    }
+  }, [open, defaultName, defaultClientName]);
 
   const handleCategoryChange = (newCat: '評估案' | '已開案') => {
     setCategory(newCat);
@@ -263,7 +275,7 @@ export function NewPocProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto z-[60]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold">
             <FolderPlus className="h-5 w-5 text-purple-600" />
