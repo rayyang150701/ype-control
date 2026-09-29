@@ -2683,30 +2683,38 @@ export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTri
             .order('start_date', { ascending: false });
 
         if (!error && data) {
-            let list: BusinessTrip[] = data.map((doc: any) => ({
-                id: doc.id,
-                subject: doc.subject || '',
-                projectId: doc.project_id || undefined,
-                projectName: doc.project_name || '',
-                customerId: doc.customer_id || undefined,
-                customerName: doc.customer_name || '',
-                travelers: Array.isArray(doc.travelers)
-                    ? doc.travelers
-                    : (typeof doc.travelers === 'string' ? JSON.parse(doc.travelers || '[]') : []),
-                location: doc.location || '',
-                startDate: doc.start_date ? String(doc.start_date).slice(0, 10) : '',
-                endDate: doc.end_date ? String(doc.end_date).slice(0, 10) : '',
-                startTime: doc.start_time || '09:00',
-                endTime: doc.end_time || '17:00',
-                category: doc.category || 'business',
-                tpm: doc.tpm || '',
-                status: doc.status || 'pending',
-                lunchBoxes: doc.lunch_boxes || 0,
-                notes: doc.notes || '',
-                createdBy: doc.created_by || '',
-                createdAt: formatISO(doc.created_at),
-                updatedAt: formatISO(doc.updated_at),
-            }));
+            let list: BusinessTrip[] = data.map((doc: any) => {
+                const notesRaw = doc.notes || '';
+                const match = notesRaw.match(/<!--MEETING_URL:(.*?)-->/);
+                const meetingUrl = doc.meeting_url || (match ? match[1]?.trim() : undefined);
+                const cleanNotes = notesRaw.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+
+                return {
+                    id: doc.id,
+                    subject: doc.subject || '',
+                    projectId: doc.project_id || undefined,
+                    projectName: doc.project_name || '',
+                    customerId: doc.customer_id || undefined,
+                    customerName: doc.customer_name || '',
+                    travelers: Array.isArray(doc.travelers)
+                        ? doc.travelers
+                        : (typeof doc.travelers === 'string' ? JSON.parse(doc.travelers || '[]') : []),
+                    location: doc.location || '',
+                    meetingUrl: meetingUrl || undefined,
+                    startDate: doc.start_date ? String(doc.start_date).slice(0, 10) : '',
+                    endDate: doc.end_date ? String(doc.end_date).slice(0, 10) : '',
+                    startTime: doc.start_time || '09:00',
+                    endTime: doc.end_time || '17:00',
+                    category: doc.category || 'business',
+                    tpm: doc.tpm || '',
+                    status: doc.status || 'pending',
+                    lunchBoxes: doc.lunch_boxes || 0,
+                    notes: cleanNotes,
+                    createdBy: doc.created_by || '',
+                    createdAt: formatISO(doc.created_at),
+                    updatedAt: formatISO(doc.updated_at),
+                };
+            });
 
             if (filter) {
                 list = applyTripFilters(list, filter);
@@ -2745,6 +2753,11 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
     const supabase = getSupabaseClient();
     try {
         const nowIso = new Date().toISOString();
+        let finalNotes = tripData.notes || '';
+        if (tripData.meetingUrl?.trim()) {
+            finalNotes = `<!--MEETING_URL:${tripData.meetingUrl.trim()}-->\n${finalNotes}`;
+        }
+
         const payload: any = {
             subject: tripData.subject,
             project_id: tripData.projectId || null,
@@ -2761,7 +2774,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
             tpm: tripData.tpm || '',
             status: tripData.status || 'pending',
             lunch_boxes: tripData.lunchBoxes || 0,
-            notes: tripData.notes || '',
+            notes: finalNotes,
             created_by: tripData.createdBy || '',
             created_at: nowIso,
             updated_at: nowIso,
@@ -2787,6 +2800,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
                     customerName: data.customer_name || '',
                     travelers: Array.isArray(data.travelers) ? data.travelers : JSON.parse(data.travelers || '[]'),
                     location: data.location || '',
+                    meetingUrl: tripData.meetingUrl?.trim() || undefined,
                     startDate: String(data.start_date).slice(0, 10),
                     endDate: String(data.end_date).slice(0, 10),
                     startTime: data.start_time || '09:00',
@@ -2795,7 +2809,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
                     lunchBoxes: data.lunch_boxes || 0,
-                    notes: data.notes || '',
+                    notes: tripData.notes || '',
                     createdBy: data.created_by || '',
                     createdAt: formatISO(data.created_at),
                     updatedAt: formatISO(data.updated_at),
@@ -2852,7 +2866,31 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
         if (tripData.tpm !== undefined) updatePayload.tpm = tripData.tpm;
         if (tripData.status !== undefined) updatePayload.status = tripData.status;
         if (tripData.lunchBoxes !== undefined) updatePayload.lunch_boxes = tripData.lunchBoxes;
-        if (tripData.notes !== undefined) updatePayload.notes = tripData.notes;
+
+        if (tripData.notes !== undefined || tripData.meetingUrl !== undefined) {
+            let baseNotes = tripData.notes !== undefined ? tripData.notes : '';
+            if (tripData.notes === undefined || tripData.meetingUrl === undefined) {
+                const { data: cur } = await supabase.from('business_trips').select('notes').eq('id', id).maybeSingle();
+                const curNotes = cur?.notes || '';
+                const match = curNotes.match(/<!--MEETING_URL:(.*?)-->/);
+                if (tripData.notes === undefined) {
+                    baseNotes = curNotes.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+                }
+                const targetUrl = tripData.meetingUrl !== undefined ? tripData.meetingUrl?.trim() : match?.[1]?.trim();
+                if (targetUrl) {
+                    updatePayload.notes = `<!--MEETING_URL:${targetUrl}-->\n${baseNotes}`;
+                } else {
+                    updatePayload.notes = baseNotes;
+                }
+            } else {
+                const targetUrl = tripData.meetingUrl?.trim();
+                if (targetUrl) {
+                    updatePayload.notes = `<!--MEETING_URL:${targetUrl}-->\n${baseNotes}`;
+                } else {
+                    updatePayload.notes = baseNotes;
+                }
+            }
+        }
 
         const { data, error } = await supabase
             .from('business_trips')
@@ -2863,6 +2901,11 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
 
         if (!error && data) {
             revalidatePath('/schedules');
+            const notesRaw = data.notes || '';
+            const match = notesRaw.match(/<!--MEETING_URL:(.*?)-->/);
+            const meetingUrl = data.meeting_url || (match ? match[1]?.trim() : undefined);
+            const cleanNotes = notesRaw.replace(/<!--MEETING_URL:.*?-->\n?/, '');
+
             return {
                 success: true,
                 message: '行程已更新！',
@@ -2875,6 +2918,7 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
                     customerName: data.customer_name || '',
                     travelers: Array.isArray(data.travelers) ? data.travelers : JSON.parse(data.travelers || '[]'),
                     location: data.location || '',
+                    meetingUrl: meetingUrl || undefined,
                     startDate: String(data.start_date).slice(0, 10),
                     endDate: String(data.end_date).slice(0, 10),
                     startTime: data.start_time || '09:00',
@@ -2883,7 +2927,7 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
                     tpm: data.tpm || '',
                     status: data.status || 'pending',
                     lunchBoxes: data.lunch_boxes || 0,
-                    notes: data.notes || '',
+                    notes: cleanNotes,
                     createdBy: data.created_by || '',
                     createdAt: formatISO(data.created_at),
                     updatedAt: formatISO(data.updated_at),

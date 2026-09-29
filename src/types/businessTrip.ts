@@ -14,6 +14,7 @@ export interface BusinessTrip {
   customerName?: string; // 客戶名稱 (如：燁輝、正和鋼鐵、宇陽傳動等)
   travelers: string[]; // 出差參與人員名單 (如：["施雲翔", "徐智宏"])
   location: string; // 出差地點 / 廠區
+  meetingUrl?: string; // 線上會議連結 (選填，Google Meet / Teams / Zoom 等)
   startDate: string; // 開始日期 (格式: "YYYY-MM-DD")
   endDate: string; // 結束日期 (格式: "YYYY-MM-DD")
   startTime: string; // 開始時間 (格式: "HH:mm")

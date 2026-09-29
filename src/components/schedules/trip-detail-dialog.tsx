@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,9 +20,14 @@ import {
   Square,
   AlertTriangle,
   ExternalLink,
+  Video,
+  Copy,
+  Check,
+  Mail,
 } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES } from '@/types/businessTrip';
 import { formatDateChinese, isTripReportOverdue, generateGoogleCalendarUrl } from '@/lib/calendar-helper';
+import { useToast } from '@/hooks/use-toast';
 
 interface TripDetailDialogProps {
   open: boolean;
@@ -40,30 +46,113 @@ export function TripDetailDialog({
   onDelete,
   onStatusChange,
 }: TripDetailDialogProps) {
-  if (!trip) return null;
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
 
-  const category = TRIP_CATEGORIES.find((c) => c.value === trip.category);
-  const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+  const category = trip ? TRIP_CATEGORIES.find((c) => c.value === trip.category) : undefined;
+  const isOverdue = trip ? isTripReportOverdue(trip.endDate, trip.endTime, trip.notes) : false;
 
   const handleStatusToggle = () => {
-    if (onStatusChange) {
+    if (trip && onStatusChange) {
       const newStatus = trip.status === 'pending' ? 'confirmed' : 'pending';
       onStatusChange(newStatus);
     }
   };
 
+  // 生成排版專業乾淨的郵件內容 (可直接發送或貼至通訊軟體)
+  const emailContent = useMemo(() => {
+    if (!trip) return '';
+    const categoryLabel = category?.label || '行程';
+    const travelersStr = trip.travelers && trip.travelers.length > 0 ? trip.travelers.join('、') : '未指定';
+    const dateStr = trip.startDate === trip.endDate 
+      ? formatDateChinese(trip.startDate)
+      : `${formatDateChinese(trip.startDate)} ~ ${formatDateChinese(trip.endDate)}`;
+    const timeStr = `${trip.startTime} ~ ${trip.endTime}`;
+
+    const lines = [
+      `【${categoryLabel}通知】${trip.subject}`,
+      ``,
+      `各位同仁好：`,
+      `以下為「${trip.subject}」的行程資訊：`,
+      ``,
+      `📅 行程日期：${dateStr}`,
+      `⏰ 行程時間：${timeStr}`,
+      `🏷️ 行程類別：${categoryLabel}`,
+      `👥 參與人員：${travelersStr}`,
+    ];
+
+    if (trip.location) {
+      lines.push(`📍 ${trip.category === 'online_meeting' ? '會議地點' : '出差地點'}：${trip.location}`);
+    }
+    if (trip.meetingUrl) {
+      lines.push(`🔗 線上會議連結：${trip.meetingUrl}`);
+    }
+    if (trip.customerName) {
+      lines.push(`🏢 關聯客戶：${trip.customerName}`);
+    }
+    if (trip.projectName) {
+      lines.push(`📁 關聯專案：${trip.projectName}`);
+    }
+    if (trip.tpm) {
+      lines.push(`👤 TPM 負責人：${trip.tpm}`);
+    }
+    if (trip.lunchBoxes && trip.lunchBoxes > 0) {
+      lines.push(`🍱 廠區便當代訂：${trip.lunchBoxes} 個`);
+    }
+    if (trip.notes) {
+      lines.push(``, `📝 行程說明 / 備忘錄：`, `${trip.notes}`);
+    }
+    lines.push(``, `---`, `此行程資訊由 燁輝/億威專案進度管理系統 發送`);
+
+    return lines.join('\n');
+  }, [trip, category]);
+
+  const handleCopyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(emailContent);
+      setCopied(true);
+      toast({
+        title: '已複製郵件內容！',
+        description: '您可直接在 Outlook、Gmail 或通訊軟體中貼上作為通知發送。',
+      });
+      setTimeout(() => setCopied(false), 2500);
+    } catch (e) {
+      console.error('複製失敗:', e);
+    }
+  };
+
+  const mailToUrl = useMemo(() => {
+    if (!trip) return '#';
+    const categoryLabel = category?.label || '行程';
+    const subject = encodeURIComponent(`【${categoryLabel}通知】${trip.subject}`);
+    const body = encodeURIComponent(emailContent);
+    return `mailto:?subject=${subject}&body=${body}`;
+  }, [trip, category, emailContent]);
+
   const handleAddToGoogleCalendar = () => {
+    if (!trip) return;
+    const calendarDetails = [
+      trip.meetingUrl ? `【線上會議連結】\n${trip.meetingUrl}` : '',
+      trip.travelers && trip.travelers.length > 0 ? `【參與人員】\n${trip.travelers.join('、')}` : '',
+      trip.customerName ? `【關聯客戶】\n${trip.customerName}` : '',
+      trip.projectName ? `【關聯專案】\n${trip.projectName}` : '',
+      trip.tpm ? `【TPM 負責人】\n${trip.tpm}` : '',
+      trip.notes ? `【出差/會議重點】\n${trip.notes}` : '',
+    ].filter(Boolean).join('\n\n');
+
     const url = generateGoogleCalendarUrl(
       trip.subject,
       trip.startDate,
       trip.startTime,
       trip.endDate,
       trip.endTime,
-      trip.location,
-      trip.notes
+      trip.location || (trip.category === 'online_meeting' ? '線上會議' : undefined),
+      calendarDetails
     );
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  if (!trip) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -188,12 +277,48 @@ export function TripDetailDialog({
             </div>
           </div>
 
+          {/* 線上會議連結 */}
+          {trip.meetingUrl && (
+            <div className="flex items-start gap-3 p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl">
+              <Video className="w-5 h-5 text-purple-600 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-purple-700 font-semibold mb-1">線上會議連結</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <a
+                    href={trip.meetingUrl.startsWith('http') ? trip.meetingUrl : `https://${trip.meetingUrl}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-semibold text-purple-700 hover:text-purple-900 underline truncate max-w-sm flex items-center gap-1.5"
+                    title="點擊開啟線上會議"
+                  >
+                    <span>{trip.meetingUrl}</span>
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(trip.meetingUrl!);
+                      toast({ title: '已複製會議連結！' });
+                    }}
+                    className="px-2.5 py-0.5 text-xs bg-white border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-100 font-medium transition cursor-pointer shadow-2xs"
+                  >
+                    複製網址
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 地點 */}
           <div className="flex items-start gap-3 p-3.5 bg-gray-50/80 border border-gray-100 rounded-xl">
             <MapPin className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <div className="text-xs text-gray-500 font-medium">出差地點</div>
-              <div className="font-medium text-gray-800 text-sm mt-0.5">{trip.location || '—'}</div>
+              <div className="text-xs text-gray-500 font-medium">
+                {trip.category === 'online_meeting' ? '會議地點' : '出差地點'}
+              </div>
+              <div className="font-medium text-gray-800 text-sm mt-0.5">
+                {trip.location || (trip.category === 'online_meeting' ? '線上會議' : '—')}
+              </div>
             </div>
           </div>
 
@@ -271,19 +396,50 @@ export function TripDetailDialog({
 
         {/* Footer 操作區塊 */}
         <div className="sticky bottom-0 bg-white border-t px-6 py-4 space-y-2.5">
+          {/* 郵件通知拷貝與寄送 (2 欄) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleCopyEmail}
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition flex items-center justify-center gap-2 font-semibold text-sm shadow-xs cursor-pointer"
+              title="拷貝為標準郵件格式，可直接貼入 Email 或通訊軟體發送"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span className="text-emerald-300">已複製郵件內容！</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-slate-300" />
+                  <span>📋 拷貝郵件內容</span>
+                </>
+              )}
+            </button>
+
+            <a
+              href={mailToUrl}
+              className="px-4 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition flex items-center justify-center gap-2 font-medium text-sm shadow-xs text-center"
+              title="以電腦預設郵件軟體 (Outlook/Thunderbird) 開啟新信件"
+            >
+              <Mail className="w-4 h-4 text-blue-600" />
+              <span>✉️ 開啟郵件發送</span>
+            </a>
+          </div>
+
           {/* 加入 Google 行事曆按鈕 */}
           <button
             type="button"
             onClick={handleAddToGoogleCalendar}
-            className="w-full px-4 py-2.5 bg-white border border-blue-400 text-blue-600 rounded-xl hover:bg-blue-50 transition flex items-center justify-center gap-2 font-semibold text-sm shadow-xs cursor-pointer"
+            className="w-full px-4 py-2 bg-blue-50/60 border border-blue-200 text-blue-700 rounded-xl hover:bg-blue-100/70 transition flex items-center justify-center gap-2 font-medium text-xs shadow-2xs cursor-pointer"
           >
-            <Calendar className="w-4 h-4 text-blue-500" />
+            <Calendar className="w-3.5 h-3.5 text-blue-600" />
             <span>🗓️ 一鍵加入 Google 行事曆</span>
-            <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+            <ExternalLink className="w-3 h-3 text-blue-500" />
           </button>
 
           {/* 編輯 / 刪除按鈕 */}
-          <div className="flex gap-2.5">
+          <div className="flex gap-2.5 pt-1">
             <button
               type="button"
               onClick={onEdit}

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, Clock, MapPin, Users, Building, FileText, Check, UtensilsCrossed, Sparkles, Filter } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, MapPin, Users, Building, FileText, Check, UtensilsCrossed, Sparkles, Filter, Video } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, TIME_OPTIONS, TripCategory, TripStatus } from '@/types/businessTrip';
 import type { Client, Project, User } from '@/types';
 import { formatDate } from '@/lib/calendar-helper';
@@ -46,6 +46,7 @@ export function TripFormDialog({
     projectName: '',
     travelers: [''],
     location: '',
+    meetingUrl: '',
     customerId: '',
     customerName: '',
     startDate: formatDate(new Date()),
@@ -161,6 +162,7 @@ export function TripFormDialog({
           projectName: trip.projectName || '',
           travelers: trvs,
           location: trip.location || '',
+          meetingUrl: trip.meetingUrl || '',
           customerId: trip.customerId || '',
           customerName: trip.customerName || '',
           startDate: trip.startDate || formatDate(new Date()),
@@ -193,6 +195,7 @@ export function TripFormDialog({
           projectName: '',
           travelers: [''],
           location: '',
+          meetingUrl: '',
           customerId: defaultCustomerId || '',
           customerName: initCustomerName,
           startDate: initDate,
@@ -298,7 +301,7 @@ export function TripFormDialog({
     if (validTravelers.length === 0) {
       newErrors.travelers = '請至少填寫或選擇一位出差人員';
     }
-    if (!formData.location.trim()) {
+    if (formData.category !== 'online_meeting' && !formData.location.trim()) {
       newErrors.location = '請輸入出差地點或廠區';
     }
     if (formData.endDate < formData.startDate) {
@@ -321,7 +324,8 @@ export function TripFormDialog({
         customerId: formData.customerId || undefined,
         customerName: formData.customerName || undefined,
         travelers: formData.travelers.map((t) => t.trim()).filter(Boolean),
-        location: formData.location.trim(),
+        location: formData.location.trim() || (formData.category === 'online_meeting' ? '線上會議' : ''),
+        meetingUrl: formData.meetingUrl?.trim() || undefined,
         startDate: formData.startDate,
         endDate: formData.endDate,
         startTime: formData.startTime,
@@ -329,7 +333,7 @@ export function TripFormDialog({
         category: formData.category,
         tpm: formData.tpm ? formData.tpm.trim() : undefined,
         status: formData.status,
-        lunchBoxes: isYiehPhui ? Number(formData.lunchBoxes) || 0 : 0,
+        lunchBoxes: isYiehPhui && formData.category !== 'online_meeting' ? Number(formData.lunchBoxes) || 0 : 0,
         notes: formData.notes ? formData.notes.trim() : undefined,
       });
       onOpenChange(false);
@@ -363,6 +367,104 @@ export function TripFormDialog({
               className="mt-1"
             />
             {errors.subject && <p className="text-xs text-red-500 mt-1">{errors.subject}</p>}
+          </div>
+
+          {/* 1. 行程類別 (置於主題正下方) */}
+          <div>
+            <Label className="text-sm font-semibold text-gray-700 flex items-center justify-between">
+              <span>行程類別</span>
+              <span className="text-xs text-slate-400 font-normal">點選切換行程性質</span>
+            </Label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-1.5">
+              {TRIP_CATEGORIES.map((cat) => (
+                <label
+                  key={cat.value}
+                  className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer transition ${
+                    formData.category === cat.value
+                      ? 'border-blue-500 bg-blue-50/60 shadow-xs ring-1 ring-blue-500'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="category"
+                    value={cat.value}
+                    checked={formData.category === cat.value}
+                    onChange={() => {
+                      const nextCat = cat.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        category: nextCat,
+                        location: nextCat === 'online_meeting' && !prev.location.trim() ? '線上會議' : prev.location,
+                      }));
+                      if (nextCat === 'online_meeting') {
+                        setErrors((prev) => {
+                          const copy = { ...prev };
+                          delete copy.location;
+                          return copy;
+                        });
+                      }
+                    }}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    <span className="text-xs sm:text-sm font-medium text-gray-800 truncate">
+                      {cat.label}
+                    </span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. 線上會議連結 (當類別為線上會議時顯示，不強制) */}
+          {formData.category === 'online_meeting' && (
+            <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2 animate-in fade-in-50 duration-200">
+              <Label className="text-sm font-semibold text-purple-900 flex items-center gap-1.5">
+                <Video className="w-4 h-4 text-purple-600" />
+                <span>線上會議連結 <span className="text-xs text-purple-600 font-normal">(選填)</span></span>
+              </Label>
+              <Input
+                type="url"
+                value={formData.meetingUrl}
+                onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
+                placeholder="例：https://meet.google.com/xxx-xxxx-xxx 或 Teams / Zoom 視訊會議網址"
+                className="bg-white border-purple-200 focus:ring-purple-400 text-sm"
+              />
+              <p className="text-[11px] text-purple-600">
+                💡 可填寫 Google Meet、MS Teams 或 Zoom 連結，系統將同步加入通知與行事曆。
+              </p>
+            </div>
+          )}
+
+          {/* 3. 出差 / 會議地點 */}
+          <div>
+            <Label className="text-sm font-semibold text-gray-700">
+              {formData.category === 'online_meeting' ? (
+                <>
+                  會議地點 / 廠區 <span className="text-xs text-slate-500 font-normal">(選填，留空預設為線上會議)</span>
+                </>
+              ) : (
+                <>
+                  出差地點 / 廠區 <span className="text-red-500">*</span>
+                </>
+              )}
+            </Label>
+            <Input
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              placeholder={
+                formData.category === 'online_meeting'
+                  ? '留空預設為「線上會議」，亦可填寫各廠會議室或遠端'
+                  : '例：高雄市橋頭區燁輝三廠 塗裝研發中心'
+              }
+              className="mt-1"
+            />
+            {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
           </div>
 
           {/* 專案與客戶 (2 欄) */}
@@ -503,20 +605,6 @@ export function TripFormDialog({
             {errors.travelers && <p className="text-xs text-red-500 mt-1">{errors.travelers}</p>}
           </div>
 
-          {/* 出差地點 */}
-          <div>
-            <Label className="text-sm font-semibold text-gray-700">
-              出差地點 / 廠區 <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              placeholder="例：高雄市橋頭區燁輝三廠 塗裝研發中心"
-              className="mt-1"
-            />
-            {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
-          </div>
-
           {/* 日期與時間 (4 欄) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
             <div>
@@ -575,41 +663,6 @@ export function TripFormDialog({
                   </option>
                 ))}
               </select>
-            </div>
-          </div>
-
-          {/* 出差類別 (含出差、會議、線上會議、其他 4 種類別) */}
-          <div>
-            <Label className="text-sm font-semibold text-gray-700">行程類別</Label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-1.5">
-              {TRIP_CATEGORIES.map((cat) => (
-                <label
-                  key={cat.value}
-                  className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer transition ${
-                    formData.category === cat.value
-                      ? 'border-blue-500 bg-blue-50/60 shadow-xs ring-1 ring-blue-500'
-                      : 'border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="category"
-                    value={cat.value}
-                    checked={formData.category === cat.value}
-                    onChange={() => setFormData({ ...formData, category: cat.value })}
-                    className="text-blue-600 focus:ring-blue-500"
-                  />
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: cat.color }}
-                    />
-                    <span className="text-xs sm:text-sm font-medium text-gray-800 truncate">
-                      {cat.label}
-                    </span>
-                  </div>
-                </label>
-              ))}
             </div>
           </div>
 
@@ -685,8 +738,8 @@ export function TripFormDialog({
             </div>
           </div>
 
-          {/* 燁輝廠區專屬：便當代訂數量 (僅當關聯客戶包含燁輝時顯示) */}
-          {isYiehPhui && (
+          {/* 燁輝廠區專屬：便當代訂數量 (僅當關聯客戶包含燁輝且非線上會議時顯示) */}
+          {isYiehPhui && formData.category !== 'online_meeting' && (
             <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/80 space-y-3 transition-all animate-fadeIn">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-bold text-amber-900 flex items-center gap-1.5">

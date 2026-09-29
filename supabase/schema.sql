@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS public.business_trips (
   customer_name TEXT DEFAULT '',
   travelers JSONB DEFAULT '[]'::jsonb,
   location TEXT NOT NULL DEFAULT '',
+  meeting_url TEXT DEFAULT '',
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
   start_time TEXT NOT NULL DEFAULT '09:00',
@@ -176,8 +177,9 @@ CREATE TABLE IF NOT EXISTS public.business_trips (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 若既有資料表尚未有 lunch_boxes 欄位可執行：
+-- 若既有資料表尚未有 lunch_boxes 或 meeting_url 欄位可執行：
 ALTER TABLE public.business_trips ADD COLUMN IF NOT EXISTS lunch_boxes INTEGER DEFAULT 0;
+ALTER TABLE public.business_trips ADD COLUMN IF NOT EXISTS meeting_url TEXT DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_business_trips_start_date ON public.business_trips(start_date);
 CREATE INDEX IF NOT EXISTS idx_business_trips_end_date ON public.business_trips(end_date);
