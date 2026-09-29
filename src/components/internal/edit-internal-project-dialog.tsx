@@ -146,6 +146,12 @@ export function EditInternalProjectDialog({
       finalCaseNumber = 'POC';
     }
 
+    const finalClient = cleanClientName(clientName) || (sourceType === '億威內部自建專案' ? '億威電子' : (sourceType === '燁輝列管專案' ? '燁輝' : '其他客戶'));
+    if (!finalClient) {
+      toast({ title: '請選擇或輸入客戶名稱', variant: 'destructive' });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await updateInternalProject(project.id, {
@@ -154,7 +160,7 @@ export function EditInternalProjectDialog({
         category,
         internalStatus,
         sourceType,
-        clientName: cleanClientName(clientName) || '燁輝',
+        clientName: finalClient,
         responsiblePm: responsiblePm.trim(),
         clientContact: clientContact.trim(),
         vendorOrSupplier: vendorOrSupplier.trim() || undefined,
@@ -373,6 +379,15 @@ export function EditInternalProjectDialog({
   const cleanClientList = useMemo(() => {
     const seen = new Set<string>();
     const list: { id: string; name: string }[] = [];
+
+    // 1. 確保系統標準企業必然在選單中
+    const standardClients = ['燁輝', '億威電子'];
+    standardClients.forEach((name) => {
+      seen.add(name);
+      list.push({ id: `std-${name}`, name });
+    });
+
+    // 2. 加入資料庫已有的客戶
     clientList.forEach((c) => {
       const clean = cleanClientName(c.name);
       if (clean && !seen.has(clean)) {
@@ -380,11 +395,28 @@ export function EditInternalProjectDialog({
         list.push({ id: c.id, name: clean });
       }
     });
-    if (!seen.has('燁輝')) {
-      list.unshift({ id: 'default-yiehphui', name: '燁輝' });
-    }
+
+    // 3. 加入成員中綁定的客戶
+    users.forEach((u) => {
+      if (u.clientName) {
+        const clean = cleanClientName(u.clientName);
+        if (clean && !seen.has(clean)) {
+          seen.add(clean);
+          list.push({ id: `usr-${clean}`, name: clean });
+        }
+      }
+    });
+
     return list;
-  }, [clientList]);
+  }, [clientList, users]);
+
+  const clientOptions = useMemo(() => {
+    return cleanClientList.map((c) => ({
+      value: c.name,
+      label: c.name,
+      hint: c.name === '燁輝' ? '企業集團' : c.name === '億威電子' ? '內部自建' : '往來客戶',
+    }));
+  }, [cleanClientList]);
 
   return (
     <>
@@ -434,7 +466,10 @@ export function EditInternalProjectDialog({
 
                 <button
                   type="button"
-                  onClick={() => setSourceType('億威內部自建專案')}
+                  onClick={() => {
+                    setSourceType('億威內部自建專案');
+                    setClientName('億威電子');
+                  }}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     sourceType === '億威內部自建專案'
                       ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
@@ -446,7 +481,12 @@ export function EditInternalProjectDialog({
 
                 <button
                   type="button"
-                  onClick={() => setSourceType('其他專案')}
+                  onClick={() => {
+                    setSourceType('其他專案');
+                    if (clientName === '燁輝' || clientName === '億威電子') {
+                      setClientName('');
+                    }
+                  }}
                   className={`py-2 px-2 rounded-md text-xs font-semibold border flex items-center justify-center gap-1 transition-all ${
                     sourceType === '其他專案' || sourceType === '其他智慧製造專案'
                       ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
@@ -504,28 +544,21 @@ export function EditInternalProjectDialog({
               </div>
             </div>
 
-            {/* 3. 客戶名稱 (下拉式) */}
+            {/* 3. 客戶名稱 (下拉/輸入) */}
             <div>
               <Label className="text-xs font-semibold flex items-center gap-1">
                 <Building2 className="h-3.5 w-3.5 text-slate-500" />
-                客戶名稱 (下拉式) *
+                客戶名稱 (下拉/輸入) *
               </Label>
-              <Select value={cleanClientName(clientName) || '燁輝'} onValueChange={(val) => setClientName(cleanClientName(val))}>
-                <SelectTrigger className="mt-1 text-xs h-9">
-                  <SelectValue placeholder="請選擇客戶名稱" />
-                </SelectTrigger>
-                <SelectContent className="max-h-48">
-                  {cleanClientList.length > 0 ? (
-                    cleanClientList.map((c) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="燁輝">燁輝</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={clientName}
+                  onChange={(val) => setClientName(cleanClientName(val))}
+                  options={clientOptions}
+                  placeholder={sourceType === '其他專案' ? "請選擇或直接輸入客戶名稱..." : "請選擇客戶..."}
+                  emptyHint="可直接輸入自訂客戶名稱"
+                />
+              </div>
             </div>
 
             {/* 4. 專案名稱 */}
