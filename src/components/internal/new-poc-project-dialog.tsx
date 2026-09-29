@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createPocProject, getClients } from '@/lib/actions';
-import { FolderPlus, Calendar, UserCheck, Users, Building2, Briefcase } from 'lucide-react';
+import { FolderPlus, Calendar, UserCheck, Users, Building2, Briefcase, Sparkles } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { User, Client, ProjectSourceType } from '@/types';
 
@@ -47,6 +47,7 @@ export function NewPocProjectDialog({
   const [expectedCompletionDate, setExpectedCompletionDate] = useState('');
   const [evaluationDate, setEvaluationDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [responsiblePm, setResponsiblePm] = useState('');
+  const [tpmOfficeContact, setTpmOfficeContact] = useState('');
   const [clientContact, setClientContact] = useState('');
   const [vendorOrSupplier, setVendorOrSupplier] = useState('');
   const [projectPurpose, setProjectPurpose] = useState('');
@@ -140,7 +141,7 @@ export function NewPocProjectDialog({
         caseNumber: finalCaseNumber || undefined,
         expectedCompletionDate: expectedCompletionDate || undefined,
         evaluationDate: evaluationDate || undefined,
-        tpmOfficeContact: responsiblePm.trim(),
+        tpmOfficeContact: tpmOfficeContact.trim() || undefined,
         projectPurpose,
       });
 
@@ -151,6 +152,7 @@ export function NewPocProjectDialog({
         setExpectedCompletionDate('');
         setEvaluationDate(new Date().toISOString().slice(0, 10));
         setResponsiblePm('');
+        setTpmOfficeContact('');
         setClientContact('');
         setVendorOrSupplier('');
         setProjectPurpose('');
@@ -169,14 +171,62 @@ export function NewPocProjectDialog({
     }
   };
 
-  // 整理 PM 下拉選項清單 (一律只選部門為 PM 的成員；若無則備援顯示所有成員並標註部門)
-  const pmUsers = users.filter((u) => u.department?.trim().toUpperCase() === 'PM');
-  const availablePmUsers = pmUsers.length > 0 ? pmUsers : users;
+  // 預設常見 TPM 人員名單
+  const defaultTpmNames = ['陳家姷', '陳家炳', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
+
+  // 整理 PM 下拉選項清單 (嚴格排除 TPM 成員，只選內部 PM 或非 TPM 成員)
+  const pmUsers = users.filter((u) => {
+    const dept = (u.department || '').trim().toUpperCase();
+    const name = (u.displayName || u.email || '').trim();
+    if (dept.includes('TPM') || defaultTpmNames.some((n) => name.includes(n))) return false;
+    return dept === 'PM';
+  });
+  const fallbackPmUsers = users.filter((u) => {
+    const dept = (u.department || '').trim().toUpperCase();
+    const name = (u.displayName || u.email || '').trim();
+    return !dept.includes('TPM') && !defaultTpmNames.some((n) => name.includes(n));
+  });
+  const availablePmUsers = pmUsers.length > 0 ? pmUsers : fallbackPmUsers;
   const pmOptions = availablePmUsers.map((u) => ({
     value: u.displayName || u.email,
     label: u.displayName || u.email,
     hint: u.department ? `部門: ${u.department}` : (u.role === 'admin' ? '管理員' : '成員'),
   }));
+
+  // 整理 TPM 窗口下拉選項清單 (部門為 TPM 的燁輝同仁或在 TPM 名單中者)
+  const tpmOptions = useMemo(() => {
+    const list: { value: string; label: string; hint?: string }[] = [];
+    const seen = new Set<string>();
+
+    users.forEach((u) => {
+      const name = (u.displayName || u.email || '').trim();
+      const dept = (u.department || '').trim().toUpperCase();
+      const comp = (u.clientName || '').trim();
+      if ((dept.includes('TPM') || defaultTpmNames.some((n) => name.includes(n))) && !comp.includes('億威') && !comp.includes('燕巢')) {
+        if (!seen.has(name) && name) {
+          seen.add(name);
+          list.push({
+            value: name,
+            label: name,
+            hint: '燁輝 · TPM',
+          });
+        }
+      }
+    });
+
+    defaultTpmNames.forEach((n) => {
+      if (!seen.has(n)) {
+        seen.add(n);
+        list.push({
+          value: n,
+          label: n,
+          hint: '燁輝 · TPM',
+        });
+      }
+    });
+
+    return list;
+  }, [users]);
 
   // 智慧寬容客戶名稱比對 (如「億威」相容「億威電子」、「億威 (EW)」等)
   const isClientMatch = (userClient?: string, targetClient?: string) => {
@@ -462,34 +512,49 @@ export function NewPocProjectDialog({
             />
           </div>
 
-          {/* 4. 負責 PM 與 客戶窗口 (下拉式 + 保留手動輸入) */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* 4. 負責 PM、TPM 窗口 與 客戶/現場窗口 (下拉式 + 保留手動輸入) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <Label className="text-xs font-semibold flex items-center gap-1">
-                <UserCheck className="h-3.5 w-3.5 text-slate-500" />
-                負責 PM 是誰 (下拉/輸入)
+              <Label className="text-xs font-semibold flex items-center gap-1 text-blue-700">
+                <UserCheck className="h-3.5 w-3.5 text-blue-600" />
+                負責 PM (億威)
               </Label>
               <div className="mt-1">
                 <SearchableCombobox
                   value={responsiblePm}
                   onChange={setResponsiblePm}
                   options={pmOptions}
-                  placeholder="選擇成員或直接輸入..."
+                  placeholder="選擇 PM 或輸入..."
                 />
               </div>
             </div>
 
             <div>
-              <Label className="text-xs font-semibold flex items-center gap-1">
+              <Label className="text-xs font-semibold flex items-center gap-1 text-amber-700">
+                <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                TPM 窗口 (燁輝)
+              </Label>
+              <div className="mt-1">
+                <SearchableCombobox
+                  value={tpmOfficeContact}
+                  onChange={setTpmOfficeContact}
+                  options={tpmOptions}
+                  placeholder="選擇 TPM 窗口..."
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold flex items-center gap-1 text-slate-700">
                 <Users className="h-3.5 w-3.5 text-slate-500" />
-                客戶窗口是誰 (下拉/輸入)
+                客戶 / 現場窗口
               </Label>
               <div className="mt-1">
                 <SearchableCombobox
                   value={clientContact}
                   onChange={setClientContact}
                   options={contactOptions}
-                  placeholder="選擇窗口或直接輸入..."
+                  placeholder="選擇窗口或輸入..."
                 />
               </div>
             </div>

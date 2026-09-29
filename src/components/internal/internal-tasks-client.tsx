@@ -38,6 +38,7 @@ import {
   ExternalLink,
   Copy,
   Briefcase,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
@@ -176,11 +177,12 @@ export function InternalTasksClient({
   const [selectedSourceType, setSelectedSourceType] = useState<'all' | ProjectSourceType>('all');
   const [selectedClient, setSelectedClient] = useState<string>('all');
   const [selectedPm, setSelectedPm] = useState<string>('all');
+  const [selectedTpm, setSelectedTpm] = useState<string>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [filterDimension, setFilterDimension] = useState<
-    'pm' | 'client' | 'sourceType' | 'internalStatus' | 'phase' | 'status' | 'waitingOn'
+    'pm' | 'tpm' | 'client' | 'sourceType' | 'internalStatus' | 'phase' | 'status' | 'waitingOn'
   >('pm');
   const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
@@ -318,10 +320,30 @@ export function InternalTasksClient({
     };
   }, [actionItems, projects]);
 
-  // 取得專案負責 PM (優先讀取 responsiblePm，次之 tpmOfficeContact)
+  // 燁輝 TPM 同仁已知姓名清單（用於嚴格區隔億威 PM 與燁輝 TPM 窗口）
+  const isTpmPerson = (name?: string | null): boolean => {
+    if (!name) return false;
+    const n = name.trim();
+    const tpmKeywords = ['陳家姷', '陳家炳', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
+    return tpmKeywords.some((t) => n.includes(t)) || n.toUpperCase().includes('TPM');
+  };
+
+  // 取得專案負責 PM (僅限億威 PM，絕不含 TPM 窗口；若原欄位誤填 TPM 人員則視為未指定)
   const getProjectPm = (project: FullProject | undefined | null): string => {
     if (!project) return '';
-    return project.responsiblePm?.trim() || (project as any).tpmOfficeContact?.trim() || '';
+    const pm = project.responsiblePm?.trim() || '';
+    if (isTpmPerson(pm)) return '';
+    return pm;
+  };
+
+  // 取得專案 TPM 窗口 (讀取 tpmOfficeContact 或歸戶自原誤填為 PM 之 TPM 同仁)
+  const getProjectTpm = (project: FullProject | undefined | null): string => {
+    if (!project) return '';
+    const tpm = project.tpmOfficeContact?.trim() || '';
+    if (tpm && isTpmPerson(tpm)) return tpm;
+    const pm = project.responsiblePm?.trim() || '';
+    if (isTpmPerson(pm)) return pm;
+    return tpm;
   };
 
   // 整理所有負責 PM 選項與專案數量統計
@@ -333,7 +355,27 @@ export function InternalTasksClient({
     });
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
+      .sort((a, b) => {
+        if (a.name === '未指定') return 1;
+        if (b.name === '未指定') return -1;
+        return b.count - a.count || a.name.localeCompare(b.name, 'zh-TW');
+      });
+  }, [projects]);
+
+  // 整理所有 TPM 窗口選項與專案數量統計
+  const tpmFilterOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    projects.forEach((p) => {
+      const tpm = getProjectTpm(p) || '未指定';
+      map.set(tpm, (map.get(tpm) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        if (a.name === '未指定') return 1;
+        if (b.name === '未指定') return -1;
+        return b.count - a.count || a.name.localeCompare(b.name, 'zh-TW');
+      });
   }, [projects]);
 
   // 過濾後的待辦清單
@@ -367,9 +409,13 @@ export function InternalTasksClient({
       const itemPm = getProjectPm(proj) || '未指定';
       const matchesPm = selectedPm === 'all' || itemPm === selectedPm;
 
-      return matchesSearch && matchesPhase && matchesStatus && matchesWaiting && matchesPm;
+      // TPM 窗口篩選
+      const itemTpm = getProjectTpm(proj) || '未指定';
+      const matchesTpm = selectedTpm === 'all' || itemTpm === selectedTpm;
+
+      return matchesSearch && matchesPhase && matchesStatus && matchesWaiting && matchesPm && matchesTpm;
     });
-  }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn, selectedPm, projectMap, projects]);
+  }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn, selectedPm, selectedTpm, projectMap, projects]);
 
   // 統計評估案 vs 已開案 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
@@ -502,6 +548,11 @@ export function InternalTasksClient({
       projectList = projectList.filter((p) => (getProjectPm(p) || '未指定') === selectedPm);
     }
 
+    // 6. TPM 窗口篩選
+    if (selectedTpm !== 'all') {
+      projectList = projectList.filter((p) => (getProjectTpm(p) || '未指定') === selectedTpm);
+    }
+
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
     const caseNumberMap = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
 
@@ -613,6 +664,7 @@ export function InternalTasksClient({
     selectedSourceType,
     selectedClient,
     selectedPm,
+    selectedTpm,
     selectedPhase,
     selectedStatus,
     selectedWaitingOn,
@@ -1128,6 +1180,7 @@ export function InternalTasksClient({
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (selectedPm !== 'all') count++;
+    if (selectedTpm !== 'all') count++;
     if (selectedClient !== 'all') count++;
     if (selectedSourceType !== 'all') count++;
     if (selectedInternalStatus !== 'all') count++;
@@ -1137,6 +1190,7 @@ export function InternalTasksClient({
     return count;
   }, [
     selectedPm,
+    selectedTpm,
     selectedClient,
     selectedSourceType,
     selectedInternalStatus,
@@ -1161,6 +1215,7 @@ export function InternalTasksClient({
     setSelectedStatus('all');
     setSelectedWaitingOn('all');
     setSelectedPm('all');
+    setSelectedTpm('all');
     setSortBy('caseNumberAsc');
     setHideEmptyProjects(false);
   };
@@ -1711,6 +1766,7 @@ export function InternalTasksClient({
                   <Filter className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <span className="truncate">
                     {filterDimension === 'pm' && '👤 負責 PM'}
+                    {filterDimension === 'tpm' && '👥 TPM 窗口'}
                     {filterDimension === 'client' && '🏢 客戶名稱'}
                     {filterDimension === 'sourceType' && '🏭 專案來源'}
                     {filterDimension === 'internalStatus' && '📌 專案狀態'}
@@ -1723,6 +1779,9 @@ export function InternalTasksClient({
               <SelectContent>
                 <SelectItem value="pm">
                   👤 負責 PM {selectedPm !== 'all' ? `(● ${selectedPm})` : ''}
+                </SelectItem>
+                <SelectItem value="tpm">
+                  👥 TPM 窗口 {selectedTpm !== 'all' ? `(● ${selectedTpm})` : ''}
                 </SelectItem>
                 <SelectItem value="client">
                   🏢 客戶名稱 {selectedClient !== 'all' ? `(● ${selectedClient})` : ''}
@@ -1756,6 +1815,22 @@ export function InternalTasksClient({
                   {pmFilterOptions.map((pm) => (
                     <SelectItem key={pm.name} value={pm.name}>
                       👤 {pm.name} ({pm.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {filterDimension === 'tpm' && (
+              <Select value={selectedTpm} onValueChange={setSelectedTpm}>
+                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedTpm !== 'all' ? 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold' : ''}`}>
+                  <SelectValue placeholder="全部 TPM 窗口" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <SelectItem value="all">全部 TPM 窗口 ({projects.length})</SelectItem>
+                  {tpmFilterOptions.map((tpm) => (
+                    <SelectItem key={tpm.name} value={tpm.name}>
+                      👥 {tpm.name} ({tpm.count})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1886,6 +1961,19 @@ export function InternalTasksClient({
                   type="button"
                   onClick={() => setSelectedPm('all')}
                   className="hover:bg-blue-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {selectedTpm !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                <span>👥 TPM: {selectedTpm}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTpm('all')}
+                  className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
@@ -2175,11 +2263,19 @@ export function InternalTasksClient({
                         </Badge>
                       )}
 
-                      {/* 負責 PM 與 客戶窗口 */}
-                      {(project.responsiblePm || project.tpmOfficeContact) && (
-                        <span className="text-[11px] text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
-                          <UserCheck className="h-3 w-3 text-slate-500" />
-                          PM: {project.responsiblePm || project.tpmOfficeContact}
+                      {/* 負責 PM (億威) */}
+                      {getProjectPm(project) && (
+                        <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                          <UserCheck className="h-3 w-3 text-blue-600" />
+                          PM: {getProjectPm(project)}
+                        </span>
+                      )}
+
+                      {/* TPM 窗口 (燁輝) */}
+                      {getProjectTpm(project) && (
+                        <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-medium shadow-2xs shrink-0">
+                          <Sparkles className="h-3 w-3 text-amber-600" />
+                          TPM: {getProjectTpm(project)}
                         </span>
                       )}
 

@@ -6,6 +6,7 @@ import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectAc
 import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 import { DEFAULT_TAIWAN_HOLIDAYS } from '@/lib/calendar-helper';
+import { isTpmPerson, separatePmAndTpm } from '@/lib/tpm-helper';
 
 /**
  * 格式化為 ISO 字串
@@ -50,13 +51,14 @@ const getCurrentReportingPeriod = () => {
     return `${format(monday, 'yyyy/MM/dd')} - ${format(sunday, 'MM/dd')}`;
 };
 
-export interface ProjectMeta {
+interface ProjectMeta {
     isInternal?: boolean;
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated';
     sourceType?: ProjectSourceType;
     clientName?: string;
     responsiblePm?: string;
+    tpmOfficeContact?: string;
     clientContact?: string;
     expectedCompletionDate?: string | null;
     evaluationDate?: string | null;
@@ -1249,17 +1251,18 @@ async function getOptimizedProjectData() {
             const clientName = meta.clientName?.trim() || '燁輝';
             const sourceType: ProjectSourceType = meta.sourceType || '燁輝列管專案';
             
-            // 優先讀取資料庫專屬欄位 tpm_office_contact 與 yieh_phui_project_manager
-            const tpmOfficeContact = (doc.tpm_office_contact && doc.tpm_office_contact.trim() !== '')
-                ? doc.tpm_office_contact.trim()
-                : (meta.responsiblePm?.trim() || '');
+            const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
+                meta.responsiblePm,
+                meta.tpmOfficeContact,
+                doc.tpm_office_contact,
+                doc.egiga_contact
+            );
 
             const yiehPhuiProjectManager = (doc.yieh_phui_project_manager && doc.yieh_phui_project_manager.trim() !== '')
                 ? doc.yieh_phui_project_manager.trim()
                 : (meta.clientContact?.trim() || '');
 
             const egigaContact = doc.egiga_contact || '';
-            const responsiblePm = meta.responsiblePm?.trim() || tpmOfficeContact || '';
             const clientContact = meta.clientContact?.trim() || yiehPhuiProjectManager || '';
 
             const projectObj: FullProject = {
@@ -1940,7 +1943,12 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
 
         const clientName = meta.clientName?.trim() || '燁輝';
         const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
-        const responsiblePm = meta.responsiblePm?.trim() || doc.tpm_office_contact || doc.egiga_contact || '';
+        const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
+            meta.responsiblePm,
+            meta.tpmOfficeContact,
+            doc.tpm_office_contact,
+            doc.egiga_contact
+        );
         const clientContact = meta.clientContact?.trim() || doc.yieh_phui_project_manager || '';
         const evalDate = meta.evaluationDate || (isEval ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
         const kickoffDate = meta.kickoffDate || (!isEval && meta.evaluationDate ? (doc.created_at ? String(doc.created_at).slice(0, 10) : null) : null);
@@ -1967,7 +1975,7 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             projectPurpose: doc.project_purpose || '',
             currentStatusAndIssues: doc.current_status_and_issues || '',
             yiehPhuiProjectManager: clientContact,
-            tpmOfficeContact: responsiblePm,
+            tpmOfficeContact,
             egigaContact: doc.egiga_contact || '',
             isOnHold: !!doc.is_on_hold,
             phaseSchedules: meta.phaseSchedules || undefined,
@@ -2109,14 +2117,30 @@ export async function updateInternalProject(projectId: string, data: {
         }
         if (data.sourceType) meta.sourceType = data.sourceType;
         if (data.clientName) meta.clientName = data.clientName.trim();
-        if (data.responsiblePm !== undefined) meta.responsiblePm = data.responsiblePm.trim();
-        if (data.clientContact !== undefined) meta.clientContact = data.clientContact.trim();
-        if (data.vendorOrSupplier !== undefined) meta.vendorOrSupplier = data.vendorOrSupplier.trim();
 
         const updateData: any = {
             name: data.name.trim(),
-            on_hold_notes: serializeProjectMeta(meta),
         };
+
+        if (data.responsiblePm !== undefined) {
+            const pmInput = data.responsiblePm.trim();
+            if (isTpmPerson(pmInput)) {
+                meta.tpmOfficeContact = pmInput;
+                updateData.tpm_office_contact = pmInput;
+                meta.responsiblePm = '';
+            } else {
+                meta.responsiblePm = pmInput;
+            }
+        }
+        if (data.tpmOfficeContact !== undefined) {
+            const tpmInput = data.tpmOfficeContact.trim();
+            meta.tpmOfficeContact = tpmInput;
+            updateData.tpm_office_contact = tpmInput;
+        }
+        if (data.clientContact !== undefined) meta.clientContact = data.clientContact.trim();
+        if (data.vendorOrSupplier !== undefined) meta.vendorOrSupplier = data.vendorOrSupplier.trim();
+
+        updateData.on_hold_notes = serializeProjectMeta(meta);
 
         if (data.caseNumber !== undefined) {
             let cNum = data.caseNumber.trim();
@@ -2129,9 +2153,6 @@ export async function updateInternalProject(projectId: string, data: {
         } else if (data.category === '已開案' && proj.case_number) {
             updateData.case_number = proj.case_number.replace(/^POC[\s\-_]*/i, '').trim();
         }
-        
-        const effectivePm = data.responsiblePm !== undefined ? data.responsiblePm.trim() : (data.tpmOfficeContact !== undefined ? data.tpmOfficeContact.trim() : undefined);
-        if (effectivePm !== undefined) updateData.tpm_office_contact = effectivePm;
 
         if (data.clientContact !== undefined) updateData.yieh_phui_project_manager = data.clientContact.trim();
         if (data.projectPurpose !== undefined) updateData.project_purpose = data.projectPurpose;
@@ -2179,7 +2200,7 @@ export async function updateInternalProject(projectId: string, data: {
                 expectedCompletionDate: meta.expectedCompletionDate || null,
                 evaluationDate: meta.evaluationDate || null,
                 kickoffDate: meta.kickoffDate || null,
-                tpmOfficeContact: effectivePm ?? proj.tpm_office_contact,
+                tpmOfficeContact: meta.tpmOfficeContact ?? updateData.tpm_office_contact ?? proj.tpm_office_contact,
                 projectPurpose: data.projectPurpose ?? proj.project_purpose,
             }
         };
@@ -2371,8 +2392,13 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
         const isEval = meta.category ? meta.category === '評估案' : (proj.status === 'poc' || proj.status === 'evaluation');
 
         const clientName = meta.clientName?.trim() || '燁輝';
-        const sourceType: ProjectSourceType = meta.sourceType || (isEval ? '億威內部自建專案' : '燁輝列管專案');
-        const responsiblePm = meta.responsiblePm?.trim() || proj.tpm_office_contact || proj.egiga_contact || '';
+        const sourceType: ProjectSourceType = meta.sourceType || (clientName.includes('燁輝') ? '燁輝列管專案' : '億威內部自建專案');
+        const { responsiblePm, tpmOfficeContact } = separatePmAndTpm(
+            meta.responsiblePm,
+            meta.tpmOfficeContact,
+            proj.tpm_office_contact,
+            proj.egiga_contact
+        );
         const clientContact = meta.clientContact?.trim() || proj.yieh_phui_project_manager || '';
 
         const fullProj: FullProject = {
@@ -2393,7 +2419,7 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
             projectPurpose: proj.project_purpose || '',
             currentStatusAndIssues: proj.current_status_and_issues || '',
             yiehPhuiProjectManager: clientContact,
-            tpmOfficeContact: responsiblePm,
+            tpmOfficeContact,
             egigaContact: proj.egiga_contact || '',
             isOnHold: !!proj.is_on_hold,
             createdAt: formatISO(proj.created_at),
