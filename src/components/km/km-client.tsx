@@ -261,7 +261,7 @@ export function KMClient({
           <div className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-indigo-600" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              專案KM (知識管理與文件檢索)
+              專案-KM (知識管理與文件檢索)
             </h1>
             <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs">
               知識資產 {allDocuments.length} 份

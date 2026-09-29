@@ -412,7 +412,7 @@ export function ProjectVarianceClient({
           <div className="flex items-center gap-2">
             <BarChart2 className="h-5 w-5 text-blue-600" />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              專案差異分析
+              專案-Gap Analysis
             </h1>
             <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
               四大階段規劃 vs 待辦事項實際

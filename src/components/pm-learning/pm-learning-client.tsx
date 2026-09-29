@@ -162,7 +162,7 @@ export function PMLearningClient({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">
-                  PM 學習地圖
+                  專案-Map
                 </h1>
                 <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs font-semibold">
                   億威電子 · PMO 專案管理處

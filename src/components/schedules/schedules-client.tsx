@@ -354,7 +354,7 @@ export function SchedulesClient({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight">出差與行程管理</h1>
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight">專案行程</h1>
               <Badge variant="secondary" className="text-xs">
                 {filteredTrips.length} 筆行程
               </Badge>

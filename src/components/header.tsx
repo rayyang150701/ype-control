@@ -154,6 +154,51 @@ export function Header() {
         </div>
 
         <div className="flex items-center justify-end space-x-2">
+            {/* AI分析快捷按鈕 (放置於幫助選單左側) */}
+            {isAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (pathname.startsWith('/internal-tasks')) {
+                    window.dispatchEvent(new CustomEvent('open-ai-diagnosis'));
+                  } else {
+                    router.push('/internal-tasks?ai=open');
+                  }
+                }}
+                className="gap-1.5 text-xs font-semibold bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 border-indigo-200/90 shadow-2xs cursor-pointer active:scale-95"
+                title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
+              >
+                <Bot className="h-4 w-4 text-indigo-600" />
+                <span>AI分析</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (isGuest) {
+                    toast({
+                      title: '需要管理者權限',
+                      description: '「AI分析」僅限管理員以上使用，請先登入帳號。',
+                    });
+                    setIsLoginDialogOpen(true);
+                  } else {
+                    toast({
+                      title: '權限不足',
+                      description: 'AI分析功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                className="gap-1.5 text-xs text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed hover:bg-slate-100"
+                title="僅限管理員與主管理員使用"
+              >
+                <Lock className="h-3.5 w-3.5 text-slate-400" />
+                <span>AI分析</span>
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-1" data-tour="help-menu">
@@ -284,7 +329,7 @@ export function Header() {
         </div>
       </div>
 
-      {/* 導覽列分頁：燁輝進度管制表 vs 待辦事項 vs 行程管理 vs 專案差異分析 vs AI分析 */}
+      {/* 導覽列分頁：燁輝進度管制表 vs 專案待辦 vs 專案行程 vs 專案-Gap Analysis vs 專案-KM vs 專案-Map */}
       <div className="w-full bg-slate-50/90 border-t border-b border-slate-200/80 px-4 py-2 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           {/* 1. 燁輝進度管制表 - 所有人皆可點擊 */}
@@ -300,7 +345,7 @@ export function Header() {
             <span>📊 燁輝進度管制表</span>
           </Link>
 
-          {/* 2. 待辦事項 - 管理者與編輯者開放，訪客提示登入 */}
+          {/* 2. 專案待辦 - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/internal-tasks"
@@ -311,7 +356,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📋 待辦事項</span>
+              <span>📋 專案待辦</span>
             </Link>
           ) : (
             <button
@@ -319,7 +364,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「待辦事項」僅限登入成員檢視，請先登入帳號。',
+                  description: '「專案待辦」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -327,11 +372,11 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📋 待辦事項 (登入後檢視)</span>
+              <span>📋 專案待辦 (登入後檢視)</span>
             </button>
           )}
 
-          {/* 3. 行程管理 - 管理者與編輯者開放，訪客提示登入 */}
+          {/* 3. 專案行程 - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/schedules"
@@ -342,7 +387,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📅 行程管理</span>
+              <span>📅 專案行程</span>
             </Link>
           ) : (
             <button
@@ -350,7 +395,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「行程管理」僅限登入成員檢視，請先登入帳號。',
+                  description: '「專案行程」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -358,11 +403,11 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📅 行程管理 (登入後檢視)</span>
+              <span>📅 專案行程 (登入後檢視)</span>
             </button>
           )}
 
-          {/* 4. 專案差異分析 - 管理者與編輯者開放，訪客提示登入 */}
+          {/* 4. 專案-Gap Analysis - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/project-variance"
@@ -373,7 +418,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📊 專案差異分析</span>
+              <span>📊 專案-Gap Analysis</span>
             </Link>
           ) : (
             <button
@@ -381,7 +426,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「專案差異分析」僅限登入成員檢視，請先登入帳號。',
+                  description: '「專案-Gap Analysis」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -389,11 +434,11 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📊 專案差異分析 (登入後檢視)</span>
+              <span>📊 專案-Gap Analysis (登入後檢視)</span>
             </button>
           )}
 
-          {/* 5. 專案KM - 管理者與編輯者開放，訪客提示登入 */}
+          {/* 5. 專案-KM - 管理者與編輯者開放，訪客提示登入 */}
           {isEditor ? (
             <Link
               href="/km"
@@ -404,7 +449,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>📚 專案KM</span>
+              <span>📚 專案-KM</span>
             </Link>
           ) : (
             <button
@@ -412,7 +457,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「專案KM」僅限登入成員檢視，請先登入帳號。',
+                  description: '「專案-KM」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -420,54 +465,11 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📚 專案KM (登入後檢視)</span>
+              <span>📚 專案-KM (登入後檢視)</span>
             </button>
           )}
 
-          {/* 6. AI分析 - 僅主管理員與管理員開放，編輯者與訪客反灰禁用 */}
-          {isAdmin ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (pathname.startsWith('/internal-tasks')) {
-                  window.dispatchEvent(new CustomEvent('open-ai-diagnosis'));
-                } else {
-                  router.push('/internal-tasks?ai=open');
-                }
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-200/80 shadow-2xs cursor-pointer active:scale-95"
-              title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
-            >
-              <Bot className="h-4 w-4 text-indigo-600" />
-              <span>🤖 AI分析</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                if (isGuest) {
-                  toast({
-                    title: '需要管理者權限',
-                    description: '「AI分析」僅限管理員以上使用，請先登入帳號。',
-                  });
-                  setIsLoginDialogOpen(true);
-                } else {
-                  toast({
-                    title: '權限不足',
-                    description: 'AI分析功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
-                    variant: 'destructive',
-                  });
-                }
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 shadow-none cursor-not-allowed hover:bg-slate-100"
-              title="僅限管理員與主管理員使用"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>🤖 AI分析 (管理員專屬)</span>
-            </button>
-          )}
-
-          {/* 7. PM學習地圖 - 億威電子 PMO 培訓與個人工作區 */}
+          {/* 6. 專案-Map - 億威電子 PMO 培訓與個人工作區 */}
           {isEditor ? (
             <Link
               href="/pm-learning"
@@ -478,7 +480,7 @@ export function Header() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
               }`}
             >
-              <span>🎯 PM學習地圖</span>
+              <span>🎯 專案-Map</span>
             </Link>
           ) : (
             <button
@@ -486,7 +488,7 @@ export function Header() {
               onClick={() => {
                 toast({
                   title: '需要登入權限',
-                  description: '「PM學習地圖」僅限登入成員檢視，請先登入帳號。',
+                  description: '「專案-Map」僅限登入成員檢視，請先登入帳號。',
                 });
                 setIsLoginDialogOpen(true);
               }}
@@ -494,7 +496,7 @@ export function Header() {
               title="僅限登入成員存取 (未開放未登入訪客)"
             >
               <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>🎯 PM學習地圖 (登入後檢視)</span>
+              <span>🎯 專案-Map (登入後檢視)</span>
             </button>
           )}
         </div>
@@ -504,15 +506,15 @@ export function Header() {
             : pathname.startsWith('/users')
             ? '👥 成員管理：維護系統使用者、所屬客戶與部門'
             : pathname.startsWith('/schedules')
-            ? '📅 行程管理：跨廠調校、會議與國定假日行事曆'
+            ? '📅 專案行程：跨廠調校、會議與國定假日行事曆'
             : pathname.startsWith('/km')
-            ? '📚 專案KM：跨專案關鍵文件、教育訓練教材與驗收資料即時檢索'
+            ? '📚 專案-KM：跨專案關鍵文件、教育訓練教材與驗收資料即時檢索'
             : pathname.startsWith('/project-variance')
-            ? '📊 專案差異分析：四大階段預定規劃期程 vs 待辦事項實際進度比較'
+            ? '📊 專案-Gap Analysis：四大階段預定規劃期程 vs 待辦事項實際進度比較'
             : pathname.startsWith('/pm-learning')
-            ? '🎯 PM學習地圖：億威電子 PMO 團隊培訓、職能發展與個人工作區'
+            ? '🎯 專案-Map：億威電子 PMO 團隊培訓、職能發展與個人工作區'
             : pathname.startsWith('/internal-tasks')
-            ? '🎯 內部專案管理視圖：隨時掌握「等誰處理 (Waiting-on)」與跟催期程'
+            ? '🎯 專案待辦：內部專案管理視圖，掌握等誰處理與跟催期程'
             : '👁️ 客戶視圖：燁輝智慧製造方案進度總覽'}
         </div>
       </div>

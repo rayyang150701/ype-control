@@ -1131,7 +1131,7 @@ export function InternalTasksClient({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              內部專案管制與待辦歷程追蹤
+              專案待辦與內部管制歷程
             </h1>
             <Badge variant="secondary" className="font-normal text-xs">
               內部管制專用
