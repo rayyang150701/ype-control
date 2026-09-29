@@ -36,13 +36,15 @@ export function TripFilterPanel({
     new Set([
       ...trips.map((t) => t.pm).filter(Boolean),
       ...projects.map((p) => p.responsiblePm).filter(Boolean),
-      ...projects.map((p) => p.tpmOfficeContact).filter(Boolean),
     ] as string[])
   ).sort();
 
   // 取得所有曾出現過的 TPM 負責人（去重）
   const allTPMs = Array.from(
-    new Set(trips.map((t) => t.tpm).filter(Boolean) as string[])
+    new Set([
+      ...trips.map((t) => t.tpm).filter(Boolean),
+      ...projects.map((p) => p.tpmOfficeContact).filter(Boolean),
+    ] as string[])
   ).sort();
 
   // 取得當前年份的所有週次資訊

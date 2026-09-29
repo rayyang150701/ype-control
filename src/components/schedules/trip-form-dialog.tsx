@@ -546,67 +546,94 @@ export function TripFormDialog({
     );
   }, [users]);
 
-  // 依據 travelerClientFilter (公司別) 篩選對應人名
+  // 輔助函式：公司別精確比對（確保「燁輝」與「燁輝燕巢」完全區隔，彼此互不包含）
+  const isExactCompanyMatch = (userCompany?: string, filterCompany?: string) => {
+    if (!userCompany || !filterCompany) return false;
+    const u = userCompany.trim();
+    const f = filterCompany.trim();
+    if (u === f) return true;
+
+    // 支援「億威」與「億威電子」別名相容
+    if ((u === '億威' || u === '億威電子') && (f === '億威' || f === '億威電子')) return true;
+
+    // 嚴格隔離「燁輝」與「燁輝燕巢」
+    // 若篩選為「燁輝」，只要所屬公司包含「燕巢」就絕對不匹配
+    if ((f === '燁輝' || f === '燁輝企業') && (u.includes('燕巢') || u !== '燁輝')) {
+      return false;
+    }
+    // 若篩選包含「燕巢」（如「燁輝燕巢」），只要所屬公司不含「燕巢」就絕對不匹配
+    if (f.includes('燕巢') && !u.includes('燕巢')) {
+      return false;
+    }
+
+    // 去除公司型態尾綴（如股份有限公司、有限公司）後比對
+    const cleanCompany = (str: string) => str.replace(/股份有限公司|有限公司/g, '').trim();
+    if (cleanCompany(u) === cleanCompany(f)) return true;
+
+    return false;
+  };
+
+  // 依據 travelerClientFilter (公司別) 篩選對應人名（精確比對，選擇「燁輝」時絕對不會帶出「燁輝燕巢」人員）
   const filteredPersonnelOptions = useMemo(() => {
     if (!travelerClientFilter || travelerClientFilter === 'all') {
       return allPersonnelList;
     }
-    const filterLower = travelerClientFilter.toLowerCase();
-    return allPersonnelList.filter((p) => {
-      const pCompany = (p.clientName || '').toLowerCase();
-      return pCompany.includes(filterLower);
-    });
+    return allPersonnelList.filter((p) => isExactCompanyMatch(p.clientName, travelerClientFilter));
   }, [allPersonnelList, travelerClientFilter]);
 
-  // 燁輝專屬 TPM 名單 (當客戶為燁輝時優先提取 部門=TPM 與 燁輝人員)
-  const yiehPhuiTpmOptions = useMemo(() => {
+  // TPM 負責人名單：僅嚴格取自「燁輝」且部門為「TPM」之同仁（絕不含億威 PM/成員、非 TPM 課室或燕巢同仁）
+  const tpmOptions = useMemo(() => {
     const list = new Set<string>();
     allPersonnelList.forEach((p) => {
-      const isDeptTpm = p.department?.toUpperCase().includes('TPM');
-      const isClientYp = p.clientName?.includes('燁輝') || p.department?.includes('燁輝');
-      if (isDeptTpm || isClientYp) {
+      const pCompany = (p.clientName || '').trim();
+      const pDept = (p.department || '').trim().toUpperCase();
+
+      // 嚴格判定：公司為「燁輝」（排除燁輝燕巢等其他單位），且部門包含「TPM」
+      const isYiehPhuiExact = (pCompany === '燁輝' || pCompany === '燁輝企業') && !pCompany.includes('燕巢');
+      const isTpmDept = pDept.includes('TPM');
+
+      if (isYiehPhuiExact && isTpmDept) {
         list.add(p.name);
       }
     });
 
+    // 備援：若無精確標註部門，但部門名稱明確含有 TPM 且不屬於億威或燕巢
     if (list.size === 0) {
-      allPersonnelList.forEach((p) => list.add(p.name));
+      allPersonnelList.forEach((p) => {
+        const pCompany = (p.clientName || '').trim();
+        const pDept = (p.department || '').trim().toUpperCase();
+        if (pDept.includes('TPM') && pCompany !== '億威' && pCompany !== '億威電子' && !pCompany.includes('燕巢')) {
+          list.add(p.name);
+        }
+      });
     }
 
-    return Array.from(list).sort();
+    return Array.from(list).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
   }, [allPersonnelList]);
 
-  // 一般 TPM 選項名單 (非燁輝時)
-  const regularTpmOptions = useMemo(() => {
-    const list = new Set<string>();
-    allPersonnelList.forEach((p) => {
-      if (p.department?.toUpperCase().includes('TPM') || p.department?.toUpperCase().includes('PM')) {
-        list.add(p.name);
-      }
-    });
-    if (list.size === 0) {
-      allPersonnelList.forEach((p) => list.add(p.name));
-    }
-    return Array.from(list).sort();
-  }, [allPersonnelList]);
-
-  // 負責 PM 選項名單 (從專案負責 PM、窗口與成員名單提取)
+  // 負責 PM 選項名單 (從專案負責 PM 與 成員名單提取，僅限 PM 部門/人員，不混入 TPM 窗口)
   const pmOptions = useMemo(() => {
     const list = new Set<string>();
-    projectList.forEach((p) => {
-      if (p.responsiblePm?.trim()) list.add(p.responsiblePm.trim());
-      if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
-    });
     allPersonnelList.forEach((p) => {
-      if (p.department?.toUpperCase().includes('PM')) {
+      const pDept = (p.department || '').trim().toUpperCase();
+      // 部門為 PM 且不是 TPM
+      if (pDept === 'PM' || (pDept.includes('PM') && !pDept.includes('TPM'))) {
         list.add(p.name);
+      }
+    });
+    projectList.forEach((p) => {
+      if (p.responsiblePm?.trim()) {
+        const name = p.responsiblePm.trim();
+        if (!tpmOptions.includes(name)) {
+          list.add(name);
+        }
       }
     });
     if (list.size === 0) {
       allPersonnelList.forEach((p) => list.add(p.name));
     }
-    return Array.from(list).sort();
-  }, [projectList, allPersonnelList]);
+    return Array.from(list).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  }, [allPersonnelList, projectList, tpmOptions]);
 
   // 依據傳入的 trip 或 selectedDate 初始化
   useEffect(() => {
@@ -719,8 +746,8 @@ export function TripFormDialog({
         projectName: proj.name,
         customerId: matchedClientId,
         customerName: matchedClientName,
-        pm: prev.pm || proj.responsiblePm || proj.tpmOfficeContact || '',
-        tpm: prev.tpm || proj.tpmOfficeContact || '',
+        pm: proj.responsiblePm || prev.pm || '',
+        tpm: proj.tpmOfficeContact || prev.tpm || '',
       }));
 
       if (matchedClientName) {
@@ -1194,12 +1221,10 @@ export function TripFormDialog({
                 <Label className="text-sm font-semibold text-gray-700">
                   TPM 負責人 (可選)
                 </Label>
-                {isYiehPhui && (
-                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 flex items-center gap-0.5">
-                    <Sparkles className="w-2.5 h-2.5" />
-                    燁輝/TPM
-                  </span>
-                )}
+                <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-0.5 font-medium">
+                  <Sparkles className="w-2.5 h-2.5" />
+                  燁輝 TPM
+                </span>
               </div>
 
               <div className="flex items-center gap-1.5 mt-1">
@@ -1209,11 +1234,11 @@ export function TripFormDialog({
                     list="tpm-options-list"
                     value={formData.tpm}
                     onChange={(e) => setFormData({ ...formData, tpm: e.target.value })}
-                    placeholder={isYiehPhui ? '輸入或選 TPM/窗口' : '輸入或選 TPM'}
+                    placeholder="輸入或選 TPM 窗口"
                     className="text-sm bg-white"
                   />
                   <datalist id="tpm-options-list">
-                    {(isYiehPhui ? yiehPhuiTpmOptions : regularTpmOptions).map((opt) => (
+                    {tpmOptions.map((opt) => (
                       <option key={opt} value={opt} />
                     ))}
                   </datalist>
@@ -1231,7 +1256,7 @@ export function TripFormDialog({
                   title="從名單快速點選帶入 TPM"
                 >
                   <option value="">▼ 挑選...</option>
-                  {(isYiehPhui ? yiehPhuiTpmOptions : regularTpmOptions).map((opt) => (
+                  {tpmOptions.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -1239,11 +1264,9 @@ export function TripFormDialog({
                 </select>
               </div>
 
-              {isYiehPhui && (
-                <p className="text-[10px] text-amber-700 mt-1">
-                  💡 客戶含燁輝：已優先列出 TPM 部門同仁。
-                </p>
-              )}
+              <p className="text-[10px] text-slate-500 mt-1">
+                💡 TPM 負責人僅列出燁輝 TPM 窗口同仁。
+              </p>
             </div>
 
             {/* 行程確認狀態 */}

@@ -319,7 +319,7 @@ export function InternalTasksClient({
   }, [actionItems, projects]);
 
   // 取得專案負責 PM (優先讀取 responsiblePm，次之 tpmOfficeContact)
-  const getProjectPm = (project: FullProject | Project | undefined | null): string => {
+  const getProjectPm = (project: FullProject | undefined | null): string => {
     if (!project) return '';
     return project.responsiblePm?.trim() || (project as any).tpmOfficeContact?.trim() || '';
   };
