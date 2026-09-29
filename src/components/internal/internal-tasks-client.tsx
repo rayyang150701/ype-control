@@ -49,6 +49,7 @@ import { EditInternalProjectDialog } from './edit-internal-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { TaskCentricView } from './task-centric-view';
 import { useAdmin } from '@/components/admin-context';
+import { getItemLastUpdateDate } from '@/lib/task-helper';
 import { updateActionItem, deleteActionItem, updateInternalProjectStatus } from '@/lib/actions';
 import {
   DropdownMenu,
@@ -1138,9 +1139,37 @@ export function InternalTasksClient({
                   📅 延期 {delayCount} 次{delayTotalDays > 0 ? ` (+${delayTotalDays}天)` : ''}
                 </span>
               )}
+
+              {/* 最近更新日期 */}
+              {(() => {
+                const uInfo = getItemLastUpdateDate(item);
+                return (
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 justify-end mt-1">
+                    <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span>更新: {uInfo.dateStr}</span>
+                    <span className="text-[10px] text-slate-400">
+                      ({uInfo.daysAgo === 0 ? '今日' : `${uInfo.daysAgo}天前`})
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
-            <span className="text-xs text-muted-foreground">未設預計日</span>
+            <div className="text-right">
+              <span className="text-xs text-muted-foreground block">未設預計日</span>
+              {(() => {
+                const uInfo = getItemLastUpdateDate(item);
+                return (
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 justify-end mt-1">
+                    <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                    <span>更新: {uInfo.dateStr}</span>
+                    <span className="text-[10px] text-slate-400">
+                      ({uInfo.daysAgo === 0 ? '今日' : `${uInfo.daysAgo}天前`})
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
           )}
 
           {/* 未設預計日但有工期資訊時仍顯示 */}

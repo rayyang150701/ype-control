@@ -29,6 +29,7 @@ import {
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { copyToClipboard } from '@/lib/utils';
+import { getItemLastUpdateDate } from '@/lib/task-helper';
 import type { FullProject, ProjectActionItem, User, Client } from '@/types';
 
 interface TaskCentricViewProps {
@@ -107,7 +108,9 @@ export function TaskCentricView({
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedPm, setSelectedPm] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'newest' | 'dueDate' | 'projectCase' | 'statusPriority'>('newest');
+  const [sortBy, setSortBy] = useState<
+    'newest' | 'dueDate' | 'projectCase' | 'statusPriority' | 'oldestUpdated' | 'recentlyUpdated'
+  >('newest');
 
   // 整理所有負責 PM 清單
   const pmList = useMemo(() => {
@@ -270,6 +273,29 @@ export function TaskCentricView({
         return rankA - rankB;
       }
 
+      if (sortBy === 'oldestUpdated') {
+        // 最久未更新優先：未完成且最久未更新的排在最前，供使用者逐一確認
+        if (a.status === 'completed' && b.status !== 'completed') return 1;
+        if (a.status !== 'completed' && b.status === 'completed') return -1;
+
+        const infoA = getItemLastUpdateDate(a);
+        const infoB = getItemLastUpdateDate(b);
+        if (infoA.timestamp !== infoB.timestamp) {
+          return infoA.timestamp - infoB.timestamp; // 較舊的在前
+        }
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      }
+
+      if (sortBy === 'recentlyUpdated') {
+        // 最近更新優先：最新更新的排在最前
+        const infoA = getItemLastUpdateDate(a);
+        const infoB = getItemLastUpdateDate(b);
+        if (infoA.timestamp !== infoB.timestamp) {
+          return infoB.timestamp - infoA.timestamp; // 較新的在前
+        }
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      }
+
       return 0;
     });
   }, [
@@ -388,11 +414,17 @@ export function TaskCentricView({
 
           {/* 排序下拉 */}
           <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-            <SelectTrigger className="w-[145px] h-9 text-xs bg-white">
+            <SelectTrigger className={`w-[175px] h-9 text-xs bg-white ${sortBy === 'oldestUpdated' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
               <ArrowUpDown className="h-3 w-3 mr-1 text-slate-500" />
               <SelectValue placeholder="排序方式" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="oldestUpdated" className="text-amber-800 font-semibold">
+                ⏳ 最久未更新優先 (需確認)
+              </SelectItem>
+              <SelectItem value="recentlyUpdated">
+                🕒 最近更新優先 (由新到舊)
+              </SelectItem>
               <SelectItem value="newest">建立時間 (最新)</SelectItem>
               <SelectItem value="dueDate">預計到期 (急迫優先)</SelectItem>
               <SelectItem value="projectCase">依專案案號排序</SelectItem>
@@ -498,6 +530,7 @@ export function TaskCentricView({
             const dueDateObj = item.dueDate ? new Date(item.dueDate) : null;
             const diffDays = dueDateObj ? differenceInCalendarDays(today, dueDateObj) : 0;
             const isOverdue = !isDone && dueDateObj && diffDays > 0;
+            const updateInfo = getItemLastUpdateDate(item);
 
             return (
               <div
@@ -673,60 +706,79 @@ export function TaskCentricView({
                         )}
                       </div>
 
-                      {/* 預計完成日 (延誤、超前) + 操作按鈕 */}
-                      <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
-                        {item.dueDate ? (
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <span className="text-muted-foreground flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              預計: {item.dueDate}
-                            </span>
+                      {/* 預計完成日 (延誤、超前) + 最近更新 + 操作按鈕 */}
+                      <div className="flex flex-col items-end gap-1.5 shrink-0 self-end sm:self-center">
+                        <div className="flex items-center gap-2.5">
+                          {item.dueDate ? (
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                預計: {item.dueDate}
+                              </span>
 
-                            {isDone ? (
-                              <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                ✅ 已完成
-                              </span>
-                            ) : isOverdue ? (
-                              <span className="text-rose-700 font-bold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                                🚨 延誤 {diffDays} 天
-                              </span>
-                            ) : diffDays === 0 ? (
-                              <span className="text-amber-800 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                ⚠️ 今日到期
-                              </span>
-                            ) : (
-                              <span className="text-blue-700 font-semibold text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                                ⏳ 剩餘 {Math.abs(diffDays)} 天
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">未設預計日</span>
-                        )}
+                              {isDone ? (
+                                <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  ✅ 已完成
+                                </span>
+                              ) : isOverdue ? (
+                                <span className="text-rose-700 font-bold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                  🚨 延誤 {diffDays} 天
+                                </span>
+                              ) : diffDays === 0 ? (
+                                <span className="text-amber-800 font-bold text-xs bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                  ⚠️ 今日到期
+                                </span>
+                              ) : (
+                                <span className="text-blue-700 font-semibold text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  ⏳ 剩餘 {Math.abs(diffDays)} 天
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">未設預計日</span>
+                          )}
 
-                        {/* 編輯 / 刪除 按鈕 */}
-                        {isAdmin && (
-                          <div className="flex items-center gap-0.5 ml-1 border-l pl-1.5 border-slate-200">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onEditItem(item)}
-                              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 cursor-pointer"
-                              title="編輯待辦事項"
-                            >
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onDeleteItem(item.id)}
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 cursor-pointer"
-                              title="刪除事項"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
+                          {/* 編輯 / 刪除 按鈕 */}
+                          {isAdmin && (
+                            <div className="flex items-center gap-0.5 ml-1 border-l pl-1.5 border-slate-200">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onEditItem(item)}
+                                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 cursor-pointer"
+                                title="編輯待辦事項"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onDeleteItem(item.id)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                title="刪除事項"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 最近更新日期 (在預計完成日正下方，對應使用者紅框標註位置) */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span>最近更新: {updateInfo.dateStr}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              updateInfo.daysAgo >= 7
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
+                                : updateInfo.daysAgo >= 3
+                                ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}
+                          >
+                            {updateInfo.daysAgo === 0 ? '今日' : `${updateInfo.daysAgo} 天前`}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

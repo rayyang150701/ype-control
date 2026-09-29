@@ -1589,6 +1589,7 @@ export async function createActionItem(data: {
     notes?: string;
     lessonLearnt?: string;
     attachments?: ActionItemAttachment[];
+    updatedAt?: string | null;
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -1615,7 +1616,7 @@ export async function createActionItem(data: {
             notes: cleanNotes,
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
-            updated_at: nowIso
+            updated_at: data.updatedAt ? new Date(data.updatedAt).toISOString() : nowIso
         };
 
         if (data.attachments && data.attachments.length > 0) {
@@ -1684,6 +1685,7 @@ export async function updateActionItem(id: string, data: Partial<{
     notes: string;
     lessonLearnt: string;
     attachments: ActionItemAttachment[];
+    updatedAt: string | null;
 }>) {
     const supabase = getSupabaseClient();
     try {
@@ -1698,7 +1700,7 @@ export async function updateActionItem(id: string, data: Partial<{
         if (fetchErr || !existing) throw fetchErr || new Error('找不到待辦事項');
 
         const updatePayload: any = {
-            updated_at: nowIso
+            updated_at: data.updatedAt ? new Date(data.updatedAt).toISOString() : nowIso
         };
 
         if (data.title !== undefined) updatePayload.title = data.title;

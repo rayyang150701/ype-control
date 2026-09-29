@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
+import { getItemLastUpdateDate } from '@/lib/task-helper';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
 interface ActionItemDialogProps {
@@ -83,6 +84,12 @@ export function ActionItemDialog({
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
+  const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => {
+    if (item) {
+      return getItemLastUpdateDate(item).dateStr;
+    }
+    return new Date().toISOString().slice(0, 10);
+  });
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
@@ -248,6 +255,7 @@ export function ActionItemDialog({
         setWaitingOn(item.waitingOn || '');
         setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
         setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
+        setLastUpdatedDate(getItemLastUpdateDate(item).dateStr);
         setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
         setLessonLearnt(item.lessonLearnt || '');
         setAttachments(item.attachments || []);
@@ -267,6 +275,7 @@ export function ActionItemDialog({
         setWaitingOn('');
         setDueDate('');
         setCompletedAt('');
+        setLastUpdatedDate(new Date().toISOString().slice(0, 10));
         setNotes('');
         setLessonLearnt('');
         setAttachments([]);
@@ -332,6 +341,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
+          updatedAt: lastUpdatedDate ? new Date(`${lastUpdatedDate}T12:00:00`).toISOString() : null,
           notes: cleanNotes,
           lessonLearnt,
           attachments,
@@ -353,6 +363,7 @@ export function ActionItemDialog({
           waitingOn,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
+          updatedAt: lastUpdatedDate ? new Date(`${lastUpdatedDate}T12:00:00`).toISOString() : null,
           notes: cleanNotes,
           lessonLearnt,
           attachments,
@@ -619,8 +630,8 @@ export function ActionItemDialog({
             </div>
           </div>
 
-          {/* 預計完成日 與 實際完成日 */}
-          <div className={`grid ${status === 'completed' ? 'grid-cols-2 gap-3' : 'grid-cols-1'}`}>
+          {/* 預計完成日、最近更新日 與 實際完成日 */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${status === 'completed' ? 'md:grid-cols-3' : ''} gap-3`}>
             <div>
               <Label className="text-sm font-semibold flex items-center h-5">預計完成日</Label>
               <Input
@@ -634,6 +645,19 @@ export function ActionItemDialog({
                   📌 最初基準日：{item.originalDueDate}
                 </span>
               )}
+            </div>
+
+            <div>
+              <Label className="text-sm font-semibold flex items-center justify-between h-5">
+                <span>最近更新日</span>
+                <span className="text-[10px] font-normal text-slate-400">儲存時依此日期紀錄</span>
+              </Label>
+              <Input
+                type="date"
+                className="mt-1"
+                value={lastUpdatedDate}
+                onChange={(e) => setLastUpdatedDate(e.target.value)}
+              />
             </div>
 
             {status === 'completed' && (
@@ -654,13 +678,30 @@ export function ActionItemDialog({
 
           {/* 歷程紀錄說明 */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-1">
               <Label className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <span>📝 歷程紀錄 / 追蹤說明</span>
               </Label>
-              <span className="text-xs text-muted-foreground">
-                可記錄詳細進程（支援自由拖拉展開高度）
-              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const now = new Date();
+                    const tag = `${now.getMonth() + 1}/${now.getDate()}, `;
+                    setNotes((prev) => (prev ? `${tag}${prev}` : tag));
+                    setLastUpdatedDate(now.toISOString().slice(0, 10));
+                  }}
+                  className="h-6 px-2 text-[11px] text-blue-700 bg-blue-50/80 border-blue-200 hover:bg-blue-100 cursor-pointer"
+                  title="在紀錄最開頭插入今日進度日期標籤並同步更新日"
+                >
+                  + 插入今日日期 ({new Date().getMonth() + 1}/{new Date().getDate()})
+                </Button>
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  可記錄詳細進程（支援自由拖拉展開高度）
+                </span>
+              </div>
             </div>
             <Textarea
               className="min-h-[160px] text-sm leading-relaxed font-sans p-3 resize-y bg-slate-50/40 focus:bg-white border-slate-300 focus:border-indigo-400 transition-colors shadow-2xs"
