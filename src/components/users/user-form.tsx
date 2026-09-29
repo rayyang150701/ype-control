@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useTransition, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -38,7 +38,7 @@ import { useAdmin } from '@/components/admin-context';
 const userSchema = z.object({
   username: z.string().optional(),
   displayName: z.string().min(1, '姓名為必填'),
-  email: z.string().email('請輸入有效的電子郵件'),
+  email: z.string().optional(),
   password: z.string().optional(),
   department: z.string().min(1, '部門別為必填'),
   clientName: z.string().min(1, '公司別為必填'),
@@ -48,6 +48,35 @@ const userSchema = z.object({
   status: z.enum(['active', 'pending'], {
     errorMap: () => ({ message: '請選擇一個狀態' }),
   }),
+}).superRefine((data, ctx) => {
+  const isPending = data.status === 'pending';
+  const cleanEmail = (data.email || '').trim();
+
+  // 帳號啟用時，電子郵件為必填且格式必須正確
+  if (!isPending) {
+    if (!cleanEmail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '帳號啟用時，電子郵件為必填',
+        path: ['email'],
+      });
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '請輸入有效的電子郵件格式',
+        path: ['email'],
+      });
+    }
+  } else {
+    // 停用狀態下，若使用者仍有輸入 email，檢查其格式
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '請輸入有效的電子郵件格式',
+        path: ['email'],
+      });
+    }
+  }
 });
 
 type UserFormData = z.infer<typeof userSchema>;
@@ -90,11 +119,25 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
         },
   });
 
+  const currentStatus = form.watch('status');
+  const isEmailRequired = currentStatus === 'active';
+
+  // 當切換為停用狀態時，主動清除 email 和 password 的驗證錯誤
+  useEffect(() => {
+    if (currentStatus === 'pending') {
+      form.clearErrors('email');
+      form.clearErrors('password');
+    }
+  }, [currentStatus, form]);
+
   const onSubmit = (data: UserFormData) => {
-    // 密碼必填檢查 (僅主管理員可設定密碼)
-    if (isSuperAdmin) {
+    const isAccountPending = data.status === 'pending';
+    const cleanEmail = (data.email || '').trim();
+
+    // 密碼檢查 (僅主管理員可設定密碼；且若帳號為啟用狀態，建立新帳號時密碼為必填)
+    if (isSuperAdmin && !isAccountPending) {
       if (!isEditMode && (!data.password || data.password.trim().length < 6)) {
-        form.setError('password', { message: '建立新帳號時密碼為必填，且至少需 6 個字元' });
+        form.setError('password', { message: '建立啟用帳號時密碼為必填，且至少需 6 個字元' });
         return;
       }
       if (isEditMode && data.password && data.password.trim().length < 6) {
@@ -103,14 +146,14 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
       }
     }
 
-    const finalUsername = data.username?.trim() || data.email.trim();
+    const finalUsername = data.username?.trim() || cleanEmail || data.displayName.trim();
 
     startTransition(async () => {
       const result = isEditMode
         ? await updateUser(initialData.uid, {
             username: finalUsername,
             displayName: data.displayName.trim(),
-            email: data.email.trim(),
+            email: cleanEmail,
             password: data.password?.trim() || undefined,
             department: data.department.trim(),
             clientName: data.clientName.trim(),
@@ -120,8 +163,8 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
         : await createUser({
             username: finalUsername,
             displayName: data.displayName.trim(),
-            email: data.email.trim(),
-            password: data.password!.trim(),
+            email: cleanEmail,
+            password: data.password?.trim() || undefined,
             department: data.department.trim(),
             clientName: data.clientName.trim(),
             role: data.role,
@@ -172,11 +215,15 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                 name="username"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>登入帳號 <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>
+                      登入帳號 {isEmailRequired ? <span className="text-destructive">*</span> : <span className="text-xs text-muted-foreground font-normal">(停用免填)</span>}
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="例如：user@emmt.com.tw" {...field} />
+                      <Input placeholder={isEmailRequired ? '例如：user@emmt.com.tw' : '停用帳號可留空'} {...field} />
                     </FormControl>
-                    <p className="text-[11px] text-muted-foreground">統一使用 Email 作為登入帳號</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {isEmailRequired ? '統一使用 Email 作為登入帳號' : '停用帳號可留空，以姓名辨識'}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -203,15 +250,17 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>電子郵件 (Email) <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>
+                      電子郵件 (Email) {isEmailRequired ? <span className="text-destructive">*</span> : <span className="text-xs text-muted-foreground font-normal">(停用帳號免填)</span>}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="email"
-                        placeholder="user@emmt.com.tw"
+                        placeholder={isEmailRequired ? 'user@emmt.com.tw' : '停用帳號可留空'}
                         {...field}
                         onChange={(e) => {
                           field.onChange(e);
-                          if (!isEditMode) {
+                          if (!isEditMode && isEmailRequired) {
                             form.setValue('username', e.target.value);
                           }
                         }}
@@ -229,7 +278,8 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                     <FormLabel className="flex items-center justify-between">
                       <span>
                         {isEditMode ? '重設密碼 (選填)' : '登入密碼'}
-                        <span className="text-destructive">{!isEditMode && isSuperAdmin ? ' *' : ''}</span>
+                        {isEmailRequired && !isEditMode && isSuperAdmin && <span className="text-destructive"> *</span>}
+                        {!isEmailRequired && <span className="text-xs text-muted-foreground font-normal"> (停用免填)</span>}
                       </span>
                       {!isSuperAdmin && (
                         <span className="text-[11px] text-amber-600 font-normal">僅主管理員可設密碼</span>
@@ -241,12 +291,14 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                         placeholder={
                           !isSuperAdmin
                             ? '僅主管理員可設定或重設密碼'
+                            : !isEmailRequired
+                            ? '帳號停用中，無須設定密碼'
                             : isEditMode
                             ? '留空表示保留原密碼 (若需變更請填寫)'
                             : '請輸入初始密碼 (至少 6 碼)'
                         }
-                        disabled={!isSuperAdmin}
-                        className={!isSuperAdmin ? 'bg-slate-100 cursor-not-allowed opacity-80' : ''}
+                        disabled={!isSuperAdmin || !isEmailRequired}
+                        className={!isSuperAdmin || !isEmailRequired ? 'bg-slate-100 cursor-not-allowed opacity-80' : ''}
                         {...field}
                       />
                     </FormControl>

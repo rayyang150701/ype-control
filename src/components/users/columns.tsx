@@ -168,6 +168,14 @@ export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps)
   {
     accessorKey: 'email',
     header: '電子郵件',
+    cell: ({ row }) => {
+      const email = row.original.email;
+      return email ? (
+        <span className="text-slate-800">{email}</span>
+      ) : (
+        <span className="text-xs text-muted-foreground italic">(未設定 / 停用)</span>
+      );
+    },
   },
   {
     accessorKey: 'clientName',

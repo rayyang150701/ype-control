@@ -72,25 +72,26 @@ export function TripFormDialog({
     );
   }, [formData.customerName, formData.customerId, clients]);
 
-  // 提取所有可供篩選的客戶/單位列表
-  const clientFilterOptions = useMemo(() => {
+  // 提取所有可供篩選的公司列表 (僅提取公司名稱，不混入部門)
+  const companyFilterOptions = useMemo(() => {
     const list = new Set<string>();
+    list.add('燁輝');
+    list.add('億威電子');
     clients.forEach((c) => {
       if (c.name?.trim()) list.add(c.name.trim());
     });
     users.forEach((u) => {
       if (u.clientName?.trim()) list.add(u.clientName.trim());
-      if (u.department?.trim()) list.add(u.department.trim());
     });
-    return Array.from(list);
+    return Array.from(list).sort();
   }, [clients, users]);
 
-  // 所有同仁與人員名冊
+  // 所有同仁與人員名冊：僅嚴格取自成員管理名單 (users)，不混入未經整理的長字串專案聯絡人
   const allPersonnelList = useMemo(() => {
     const map = new Map<string, { id: string; name: string; department?: string; clientName?: string }>();
     users.forEach((u) => {
       const name = (u.displayName || u.username || u.email || '').trim();
-      if (name) {
+      if (name && !map.has(name)) {
         map.set(name, {
           id: u.uid,
           name,
@@ -100,39 +101,20 @@ export function TripFormDialog({
       }
     });
 
-    // 從既有專案中補充相關聯絡人 (若尚未在 user 表)
-    projects.forEach((p) => {
-      const pClient = p.clientName?.trim();
-      if (p.tpmOfficeContact?.trim() && !map.has(p.tpmOfficeContact.trim())) {
-        map.set(p.tpmOfficeContact.trim(), { id: `p-tpm-${p.id}`, name: p.tpmOfficeContact.trim(), department: 'TPM', clientName: pClient });
-      }
-      if (p.yiehPhuiProjectManager?.trim() && !map.has(p.yiehPhuiProjectManager.trim())) {
-        map.set(p.yiehPhuiProjectManager.trim(), { id: `p-ypm-${p.id}`, name: p.yiehPhuiProjectManager.trim(), department: '燁輝PM', clientName: '燁輝' });
-      }
-      if (p.clientContact?.trim() && !map.has(p.clientContact.trim())) {
-        map.set(p.clientContact.trim(), { id: `p-cc-${p.id}`, name: p.clientContact.trim(), clientName: pClient });
-      }
-      if (p.responsiblePm?.trim() && !map.has(p.responsiblePm.trim())) {
-        map.set(p.responsiblePm.trim(), { id: `p-rpm-${p.id}`, name: p.responsiblePm.trim(), department: 'PM' });
-      }
-    });
+    return Array.from(map.values()).sort((a, b) =>
+      (a.clientName || '').localeCompare(b.clientName || '') || a.name.localeCompare(b.name)
+    );
+  }, [users]);
 
-    return Array.from(map.values());
-  }, [users, projects]);
-
-  // 依據 travelerClientFilter 篩選對應人名
+  // 依據 travelerClientFilter (公司別) 篩選對應人名
   const filteredPersonnelOptions = useMemo(() => {
     if (!travelerClientFilter || travelerClientFilter === 'all') {
       return allPersonnelList;
     }
     const filterLower = travelerClientFilter.toLowerCase();
     return allPersonnelList.filter((p) => {
-      const matchClient = p.clientName?.toLowerCase().includes(filterLower);
-      const matchDept = p.department?.toLowerCase().includes(filterLower);
-      if (travelerClientFilter.includes('燁輝')) {
-        return matchClient || matchDept || p.department?.toUpperCase().includes('TPM');
-      }
-      return matchClient || matchDept;
+      const pCompany = (p.clientName || '').toLowerCase();
+      return pCompany.includes(filterLower);
     });
   }, [allPersonnelList, travelerClientFilter]);
 
@@ -147,35 +129,26 @@ export function TripFormDialog({
       }
     });
 
-    // 專案的 TPM 與 燁輝窗口
-    projects
-      .filter((p) => p.clientName?.includes('燁輝'))
-      .forEach((p) => {
-        if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
-        if (p.yiehPhuiProjectManager?.trim()) list.add(p.yiehPhuiProjectManager.trim());
-      });
-
-    // 若篩選為空，提供常規人員與所有專案 TPM
     if (list.size === 0) {
-      projects.forEach((p) => {
-        if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
-      });
       allPersonnelList.forEach((p) => list.add(p.name));
     }
 
-    return Array.from(list);
-  }, [allPersonnelList, projects]);
+    return Array.from(list).sort();
+  }, [allPersonnelList]);
 
   // 一般 TPM 選項名單 (非燁輝時)
   const regularTpmOptions = useMemo(() => {
     const list = new Set<string>();
-    projects.forEach((p) => {
-      if (p.tpmOfficeContact?.trim()) list.add(p.tpmOfficeContact.trim());
-      if (p.yiehPhuiProjectManager?.trim()) list.add(p.yiehPhuiProjectManager.trim());
+    allPersonnelList.forEach((p) => {
+      if (p.department?.toUpperCase().includes('TPM') || p.department?.toUpperCase().includes('PM')) {
+        list.add(p.name);
+      }
     });
-    allPersonnelList.forEach((p) => list.add(p.name));
-    return Array.from(list);
-  }, [projects, allPersonnelList]);
+    if (list.size === 0) {
+      allPersonnelList.forEach((p) => list.add(p.name));
+    }
+    return Array.from(list).sort();
+  }, [allPersonnelList]);
 
   // 依據傳入的 trip 或 selectedDate 初始化
   useEffect(() => {
@@ -439,17 +412,17 @@ export function TripFormDialog({
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 flex items-center gap-1 shrink-0">
                   <Filter className="w-3 h-3 text-slate-400" />
-                  依單位/客戶篩選：
+                  依公司別篩選：
                 </span>
                 <select
                   value={travelerClientFilter}
                   onChange={(e) => setTravelerClientFilter(e.target.value)}
                   className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
                 >
-                  <option value="all">🌐 全部單位 / 所有同仁</option>
-                  {clientFilterOptions.map((cName) => (
+                  <option value="all">🏢 全部公司 / 所有成員</option>
+                  {companyFilterOptions.map((cName) => (
                     <option key={cName} value={cName}>
-                      🏢 {cName}
+                      {cName}
                     </option>
                   ))}
                 </select>
@@ -489,7 +462,7 @@ export function TripFormDialog({
                           key={`${p.name}-${p.id}`}
                           value={p.name}
                         >
-                          {p.name} {p.department || p.clientName ? `(${[p.department, p.clientName].filter(Boolean).join(' · ')})` : ''}
+                          {p.name} {p.clientName || p.department ? `(${[p.clientName, p.department].filter(Boolean).join(' · ')})` : ''}
                         </option>
                       ))}
                     </datalist>
@@ -509,7 +482,7 @@ export function TripFormDialog({
                     <option value="">▼ 快速選擇人員...</option>
                     {filteredPersonnelOptions.map((p) => (
                       <option key={`${p.name}-${p.id}`} value={p.name}>
-                        {p.name} {p.department || p.clientName ? `(${[p.department, p.clientName].filter(Boolean).join(' · ')})` : ''}
+                        {p.name} {p.clientName || p.department ? `(${[p.clientName, p.department].filter(Boolean).join(' · ')})` : ''}
                       </option>
                     ))}
                   </select>
