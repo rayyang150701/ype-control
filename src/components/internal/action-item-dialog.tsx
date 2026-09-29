@@ -13,6 +13,7 @@ import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
 import { getItemLastUpdateDate } from '@/lib/task-helper';
+import { TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
 interface ActionItemDialogProps {
@@ -135,24 +136,50 @@ export function ActionItemDialog({
     return list;
   }, [clientList, owner]);
 
-  // 智慧寬容客戶名稱比對 (如「億威」相容「億威電子」、「億威 (EW)」等)
-  const normalizeClientName = (name?: string) => {
-    if (!name) return '';
-    return name.toLowerCase().replace(/（.*）|\(.*\)/g, '').trim();
-  };
+  // 公司名稱精確比對（確保「燁輝」與「燁輝燕巢」完全區隔，彼此互不包含）
+  const isCompanyMatch = (userCompany?: string, targetCompany?: string): boolean => {
+    if (!userCompany || !targetCompany) return false;
+    const u = userCompany.trim();
+    const t = targetCompany.trim();
+    if (u === t) return true;
 
-  const isClientMatch = (userClient?: string, targetClient?: string) => {
-    if (!userClient || !targetClient) return false;
-    const u = normalizeClientName(userClient);
-    const t = normalizeClientName(targetClient);
-    if (!u || !t) return false;
-    if (u === t || u.includes(t) || t.includes(u)) return true;
-    if (u.includes('億威') && t.includes('億威')) return true;
-    if (u.includes('燁輝') && t.includes('燁輝')) return true;
+    // 清理括號與公司型態尾綴 (如 "億威 (EW)"、"燁輝企業股份有限公司")
+    const cleanCompany = (str: string) =>
+      str
+        .replace(/（.*）|\(.*\)/g, '')
+        .replace(/股份有限公司|有限公司/g, '')
+        .trim();
+
+    const cu = cleanCompany(u);
+    const ct = cleanCompany(t);
+    if (cu === ct) return true;
+
+    // 嚴格隔離「燁輝」與「燁輝燕巢」
+    const isU_Yanchao = cu.includes('燕巢') || u.includes('燕巢');
+    const isT_Yanchao = ct.includes('燕巢') || t.includes('燕巢');
+    if (isU_Yanchao !== isT_Yanchao) {
+      return false;
+    }
+
+    // 燁輝與燁輝企業相容 (且兩者皆非燕巢)
+    const isU_YP = cu === '燁輝' || cu === '燁輝企業';
+    const isT_YP = ct === '燁輝' || ct === '燁輝企業';
+    if (isU_YP && isT_YP) return true;
+
+    // 億威與億威電子相容
+    const isU_EMMT = cu.includes('億威');
+    const isT_EMMT = ct.includes('億威');
+    if (isU_EMMT && isT_EMMT) return true;
+
+    // 其他一般客戶名稱比對（雙方皆非燁輝/燕巢/億威之一般比對）
+    if (!isU_Yanchao && !isT_Yanchao && !isU_YP && !isT_YP && !isU_EMMT && !isT_EMMT) {
+      if (cu.includes(ct) || ct.includes(cu)) return true;
+    }
+
     return false;
   };
 
-  // 根據選擇的責任歸屬 (客戶/單位，如「宇陽傳動」、「億威」或「燁輝」)，精準挑選屬於該客戶的成員
+  // 根據選擇的責任歸屬 (客戶/單位，如「宇陽傳動」、「億威」、「燁輝」或「燁輝燕巢」)，精準挑選屬於該客戶的成員
   const selectedClientName = (owner || '').trim();
 
   const waitingOnMemberOptions = useMemo(() => {
@@ -161,87 +188,105 @@ export function ActionItemDialog({
     // 1. 若責任歸屬未指定或為空，顯示系統所有成員供選擇
     if (!selectedClientName || selectedClientName === '未指定') {
       users.forEach((u) => {
-        const val = (u.displayName || u.email || '').trim();
+        const val = (u.displayName || u.username || u.email || '').trim();
         if (!val) return;
         const hint = u.department
           ? `${u.department}${u.clientName ? ` (${u.clientName})` : ''}`
           : (u.clientName ? `${u.clientName}` : (u.role === 'admin' ? '管理員' : '成員'));
         optionsMap.set(val, { value: val, label: val, hint });
       });
+      effectiveClientOptions.forEach((c: Client) => {
+        if (c.contactPerson && c.contactPerson.trim()) {
+          const rawContacts = c.contactPerson.split(/[,，、;；/／\n]/);
+          rawContacts.forEach((rc) => {
+            const val = rc.trim();
+            if (val && !optionsMap.has(val)) {
+              optionsMap.set(val, { value: val, label: val, hint: `${c.name} 主要窗口` });
+            }
+          });
+        }
+      });
       return Array.from(optionsMap.values());
     }
 
-    // 2. 當有指定客戶時，嚴格只帶出屬於該客戶的人選！
-    // (a) 屬於該客戶的系統成員
+    // 2. 當有指定責任歸屬客戶時，選單選項嚴格且僅來自「成員維護清單」(users) 與「客戶維護清單」(clients)！
+    // (a) 屬於該客戶的成員清單 (users)
     users.forEach((u) => {
       let isMatch = false;
-      if (u.clientName && isClientMatch(u.clientName, selectedClientName)) {
+      if (u.clientName && isCompanyMatch(u.clientName, selectedClientName)) {
         isMatch = true;
       }
       const emailLower = u.email?.toLowerCase() || '';
-      if (selectedClientName.includes('億威') && emailLower.includes('emmt.com.tw')) {
+      // 億威同仁信箱識別
+      if (isCompanyMatch(selectedClientName, '億威') && emailLower.includes('emmt.com.tw')) {
         isMatch = true;
       }
-      if (selectedClientName.includes('燁輝') && emailLower.includes('yiehphui.com.tw')) {
+      // 燁輝本部同仁信箱識別 (注意：若選取「燕巢」則絕對不可帶入燁輝一般信箱同仁)
+      if (
+        isCompanyMatch(selectedClientName, '燁輝') &&
+        !selectedClientName.includes('燕巢') &&
+        emailLower.includes('yiehphui.com.tw') &&
+        !u.clientName?.includes('燕巢')
+      ) {
         isMatch = true;
       }
 
       if (isMatch) {
-        const val = (u.displayName || u.email || '').trim();
+        const val = (u.displayName || u.username || u.email || '').trim();
         if (val && !optionsMap.has(val)) {
-          const hint = u.department
+          let hint = u.department
             ? `${u.department} (${selectedClientName})`
             : `${selectedClientName} 成員`;
+          if (
+            isCompanyMatch(selectedClientName, '燁輝') &&
+            !selectedClientName.includes('燕巢') &&
+            (u.department?.toUpperCase().includes('TPM') || TPM_PERSONNEL_NAMES.some((t) => val.includes(t)))
+          ) {
+            hint = `TPM (${selectedClientName})`;
+          }
           optionsMap.set(val, { value: val, label: val, hint });
         }
       }
     });
 
-    // (b) 該客戶基本資料中設定的主要窗口 (contactPerson)
-    const clientRecord = effectiveClientOptions.find((c: Client) => isClientMatch(c.name, selectedClientName));
-    if (clientRecord?.contactPerson && clientRecord.contactPerson.trim()) {
-      const val = clientRecord.contactPerson.trim();
-      if (!optionsMap.has(val)) {
-        optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 主要窗口` });
-      }
-    }
-
-    // (c) 屬於該客戶的專案中所設定的客戶窗口 (clientContact)
-    projects.forEach((p) => {
-      if (p.clientName && isClientMatch(p.clientName, selectedClientName)) {
-        if (p.clientContact && p.clientContact.trim()) {
-          const val = p.clientContact.trim();
-          if (!optionsMap.has(val)) {
-            optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 專案窗口` });
-          }
-        }
-      }
-    });
-
-    // (d) 過去在待辦事項中，曾指定為此客戶 (或此客戶專案) 處理人 (waitingOn) 的歷程名單 (例如曾手動輸入過「賴冠廷」)
-    if (actionItems && actionItems.length > 0) {
-      actionItems.forEach((ai) => {
-        if (!ai.waitingOn || !ai.waitingOn.trim()) return;
-        let isMatch = false;
-        if (ai.owner && isClientMatch(ai.owner, selectedClientName)) {
-          isMatch = true;
-        } else {
-          const p = projects.find((proj) => proj.id === ai.projectId);
-          if (p?.clientName && isClientMatch(p.clientName, selectedClientName)) {
-            isMatch = true;
-          }
-        }
-        if (isMatch) {
-          const val = ai.waitingOn.trim();
-          if (!optionsMap.has(val)) {
-            optionsMap.set(val, { value: val, label: val, hint: `${selectedClientName} 曾處理人員` });
-          }
+    // 若責任歸屬為「燁輝」(本部，非燕巢)，補齊已知 TPM 窗口名冊供迅速點選
+    if (
+      isCompanyMatch(selectedClientName, '燁輝') &&
+      !selectedClientName.includes('燕巢')
+    ) {
+      TPM_PERSONNEL_NAMES.forEach((name) => {
+        if (!optionsMap.has(name)) {
+          optionsMap.set(name, {
+            value: name,
+            label: name,
+            hint: `TPM (${selectedClientName})`,
+          });
         }
       });
     }
 
+    // (b) 該客戶在「客戶維護清單」(clients) 中設定的官方聯絡人 (contactPerson)
+    const matchedClients = effectiveClientOptions.filter((c: Client) =>
+      isCompanyMatch(c.name, selectedClientName)
+    );
+    matchedClients.forEach((clientRecord) => {
+      if (clientRecord.contactPerson && clientRecord.contactPerson.trim()) {
+        const rawContacts = clientRecord.contactPerson.split(/[,，、;；/／\n]/);
+        rawContacts.forEach((rc) => {
+          const val = rc.trim();
+          if (val && !optionsMap.has(val)) {
+            optionsMap.set(val, {
+              value: val,
+              label: val,
+              hint: `${clientRecord.name} 主要窗口`,
+            });
+          }
+        });
+      }
+    });
+
     return Array.from(optionsMap.values());
-  }, [users, selectedClientName, effectiveClientOptions, projects, actionItems]);
+  }, [users, selectedClientName, effectiveClientOptions]);
 
   useEffect(() => {
     if (open) {
