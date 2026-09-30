@@ -75,7 +75,7 @@ async function runSync(): Promise<NextResponse> {
     // 3. 取得 Supabase 現有的 notion_synced 行程（避免覆蓋手動新增的資料）
     const { data: existingTrips, error: fetchError } = await supabase
       .from('business_trips')
-      .select('id, notion_page_id, updated_at')
+      .select('id, notion_page_id, notes, lunch_boxes, updated_at')
       .not('notion_page_id', 'is', null);
 
     if (fetchError) {
@@ -97,7 +97,7 @@ async function runSync(): Promise<NextResponse> {
       const notionPageId = trip.id!;
 
       // 轉換為 Supabase 欄位格式
-      const record = {
+      const record: any = {
         notion_page_id: notionPageId,
         subject: trip.subject,
         start_date: trip.startDate,
@@ -127,7 +127,16 @@ async function runSync(): Promise<NextResponse> {
           created++;
         }
       } else {
-        // 更新（僅在 Notion 有更新時才覆蓋）
+        // 更新前安全保護：
+        // 1. 若網頁端已填寫出差報告 (notes)，而 Notion 未填寫，保留網頁端的報告避免被清空
+        if (existing.notes && !record.notes) {
+          delete record.notes;
+        }
+        // 2. 若網頁端已有便當數量，而 Notion 未填寫，保留網頁端的資料
+        if (existing.lunch_boxes && record.lunch_boxes === null) {
+          delete record.lunch_boxes;
+        }
+
         const { error } = await supabase
           .from('business_trips')
           .update(record)
