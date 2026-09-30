@@ -3035,6 +3035,33 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
 export async function deleteBusinessTrip(id: string) {
     const supabase = getSupabaseClient();
     try {
+        // 若此行程來自 Notion，將其 notion_page_id 記錄至已刪除清單，避免後續同步重複加回
+        const { data: tripData } = await supabase.from('business_trips').select('notion_page_id').eq('id', id).maybeSingle();
+        if (tripData?.notion_page_id) {
+            const { data: blacklistRow } = await supabase
+                .from('clients')
+                .select('notes')
+                .eq('name', '__DELETED_NOTION_PAGE_IDS__')
+                .maybeSingle();
+
+            let deletedIds: string[] = [];
+            try {
+                if (blacklistRow?.notes) deletedIds = JSON.parse(blacklistRow.notes);
+            } catch (e) {
+                deletedIds = [];
+            }
+
+            if (!deletedIds.includes(tripData.notion_page_id)) {
+                deletedIds.push(tripData.notion_page_id);
+                await supabase.from('clients').upsert({
+                    name: '__DELETED_NOTION_PAGE_IDS__',
+                    code: 'NOTION_BLACKLIST',
+                    notes: JSON.stringify(deletedIds),
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'name' });
+            }
+        }
+
         const { error } = await supabase.from('business_trips').delete().eq('id', id);
         
         // 同步處理備援

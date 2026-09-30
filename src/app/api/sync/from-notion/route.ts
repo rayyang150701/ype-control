@@ -87,7 +87,23 @@ async function runSync(): Promise<NextResponse> {
       (existingTrips ?? []).map((t: any) => [t.notion_page_id, t])
     );
 
-    // 4. 逐筆 upsert（新增或更新）
+    // 4. 取得在網頁端已刪除的 Notion Page ID 黑名單（絕不重複同步加回）
+    const { data: blacklistRow } = await supabase
+      .from('clients')
+      .select('notes')
+      .eq('name', '__DELETED_NOTION_PAGE_IDS__')
+      .maybeSingle();
+
+    let deletedNotionIds = new Set<string>();
+    try {
+      if (blacklistRow?.notes) {
+        deletedNotionIds = new Set<string>(JSON.parse(blacklistRow.notes));
+      }
+    } catch (e) {
+      deletedNotionIds = new Set<string>();
+    }
+
+    // 5. 逐筆 upsert（新增或更新）
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -95,6 +111,12 @@ async function runSync(): Promise<NextResponse> {
 
     for (const trip of notionTrips) {
       const notionPageId = trip.id!;
+
+      // 檢查是否在網頁端曾被手動刪除：若已刪除則永久略過
+      if (deletedNotionIds.has(notionPageId)) {
+        skipped++;
+        continue;
+      }
 
       // 轉換為 Supabase 欄位格式
       const record: any = {
