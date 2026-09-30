@@ -10,6 +10,7 @@ import {
   CalendarDays,
   FileSpreadsheet,
   BarChart3,
+  ArrowDownToLine,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -89,6 +90,8 @@ export function SchedulesClient({
   const [selectedTrip, setSelectedTrip] = useState<BusinessTrip | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [isSyncingNotion, setIsSyncingNotion] = useState(false);
+  const [lastNotionSync, setLastNotionSync] = useState<string | null>(null);
 
   // 重新載入行程與假日資料
   const reloadData = async () => {
@@ -114,6 +117,41 @@ export function SchedulesClient({
       });
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  // Notion 手動同步（觸發 /api/sync/from-notion）
+  const handleNotionSync = async () => {
+    try {
+      setIsSyncingNotion(true);
+      toast({ title: '同步中…', description: '正在從 Notion 拉取最新行程資料' });
+
+      const res = await fetch('/api/sync/from-notion', { method: 'POST' });
+      const data = await res.json();
+
+      if (data.success) {
+        const { created, updated, errors: errCount } = data.stats;
+        setLastNotionSync(new Date().toLocaleTimeString('zh-TW'));
+        toast({
+          title: '✅ Notion 同步完成',
+          description: `新增 ${created} 筆，更新 ${updated} 筆${errCount > 0 ? `，${errCount} 筆錯誤` : ''}`,
+        });
+        await reloadData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Notion 同步失敗',
+          description: data.error || '同步時發生錯誤，請確認 Notion 設定',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Notion 同步失敗',
+        description: err?.message || '網路錯誤，請稍後再試',
+      });
+    } finally {
+      setIsSyncingNotion(false);
     }
   };
 
@@ -455,6 +493,22 @@ export function SchedulesClient({
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>刷新</span>
+          </Button>
+
+          {/* Notion 同步按鈕（僅在設定了 NOTION_DATABASE_ID 時顯示意義） */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNotionSync}
+            disabled={isSyncingNotion}
+            className="text-xs h-9 gap-1.5 text-slate-700 border-slate-300 hover:bg-slate-50"
+            title={lastNotionSync ? `上次同步：${lastNotionSync}` : '從 Notion 同步最新行程'}
+          >
+            <ArrowDownToLine className={`w-3.5 h-3.5 text-slate-600 ${isSyncingNotion ? 'animate-bounce' : ''}`} />
+            <span>{isSyncingNotion ? '同步中…' : 'Notion 同步'}</span>
+            {lastNotionSync && (
+              <span className="text-[10px] text-gray-400 hidden lg:inline">({lastNotionSync})</span>
+            )}
           </Button>
 
           <Button
