@@ -45,7 +45,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   
   // 權限控管狀態 (由全域 AdminContext 提供)
-  const { isAdmin, isEditor, isGuest, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen, currentUser } = useAdmin();
+  const { isAdmin, isEditor, isGuest, setIsAdmin, isLoginDialogOpen, setIsLoginDialogOpen, currentUser, permissions } = useAdmin();
 
   // 每週管制表快照與歷史週次清單
   const [weeklySnapshots, setWeeklySnapshots] = useState<WeeklySnapshotItem[]>([]);
@@ -76,7 +76,12 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
   // 轉存本週專案資料 (同週覆蓋)
   const handleSaveCurrentWeekSnapshot = async () => {
-    if (!isEditor) {
+    if (!permissions.dashboard.canManage) {
+      toast({
+        title: '權限不足',
+        description: '只有管制表完全管理權限才可轉存管制表快照。',
+        variant: 'destructive',
+      });
       setIsLoginDialogOpen(true);
       return;
     }
@@ -115,11 +120,11 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
   // 下拉選取週次直接匯出 Excel
   const handleExportWeek = async (weekKey: string) => {
-    if (!isEditor) {
+    if (!permissions.dashboard.canManage) {
       setIsLoginDialogOpen(true);
       toast({
         title: '權限不足',
-        description: '只有編輯者以上權限才可下載每週管制表。',
+        description: '只有管制表完全管理權限才可下載歷史每週管制表。',
         variant: 'destructive',
       });
       return;
@@ -341,28 +346,28 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         owners={activeOwners}
         onExportAll={() => exportAllProjectsSummary(filteredFullProjects, users)}
         onAddNewProject={() => {
-          if (!isEditor) {
+          if (!permissions.dashboard.canManage) {
             setIsLoginDialogOpen(true);
             return;
           }
           setIsNewProjectOpen(true);
         }}
         onOnHoldProject={() => {
-          if (!isEditor) {
+          if (!permissions.dashboard.canManage) {
             setIsLoginDialogOpen(true);
             return;
           }
           setIsOnHoldProjectOpen(true);
         }}
         onDeleteProject={() => {
-          if (!isEditor) {
+          if (!permissions.dashboard.canManage) {
             setIsLoginDialogOpen(true);
             return;
           }
           setIsDeleteProjectOpen(true);
         }}
         onReusmeProject={() => {
-          if (!isEditor) {
+          if (!permissions.dashboard.canManage) {
             setIsLoginDialogOpen(true);
             return;
           }
@@ -370,10 +375,10 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
         }}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        isAdmin={isAdmin}
-        isEditor={isEditor}
+        isAdmin={permissions.dashboard.canManage}
+        isEditor={permissions.dashboard.canManage}
         onAdminToggle={() => {
-            if (isEditor) {
+            if (permissions.dashboard.canManage) {
                 setIsAdmin(false);
             } else {
                 setIsLoginDialogOpen(true);
@@ -394,7 +399,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
                 subProject={sp} 
                 onCardClick={handleSubProjectClick} 
                 onAddLog={() => handleAddLogClick(sp)}
-                isAdmin={isEditor}
+                isAdmin={permissions.dashboard.canManage}
             />
           ))}
           {filteredSubProjects.length === 0 && (
@@ -409,17 +414,8 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
             onEditProject={handleEditProjectClick} 
             onSubProjectClick={handleSubProjectClick} 
             onAddLog={handleAddLogClick}
-            isAdmin={isEditor}
+            isAdmin={permissions.dashboard.canManage}
             onViewInternalProgress={(internalProjectId) => {
-              if (!isEditor) {
-                toast({
-                  title: '需要登入權限',
-                  description: '內部專案待辦追蹤與跟催歷程僅限系統登入成員檢視。',
-                  variant: 'destructive',
-                });
-                setIsLoginDialogOpen(true);
-                return;
-              }
               setSelectedInternalProjectId(internalProjectId);
               setIsInternalProgressOpen(true);
             }}
@@ -436,7 +432,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
           onExport={async () => exportSubProjectHistory(selectedSubProject, timelineLogs, await getUsers())}
           onLogUpdated={refreshData}
           onEditProject={handleEditProjectClick}
-          isAdmin={isEditor}
+          isAdmin={permissions.dashboard.canManage}
         />
       )}
 

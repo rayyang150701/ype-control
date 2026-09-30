@@ -21,7 +21,9 @@ import {
   Layers,
   ArrowRight,
   BarChart3,
+  Lock,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface PMLearningClientProps {
   initialCourses: PMLearningCourse[];
@@ -36,7 +38,8 @@ export function PMLearningClient({
   clients,
   initialCategories = DEFAULT_PM_CATEGORIES,
 }: PMLearningClientProps) {
-  const { currentUser, isEditor, isAdmin } = useAdmin();
+  const router = useRouter();
+  const { currentUser, isEditor, isAdmin, permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
   const [courses, setCourses] = useState<PMLearningCourse[]>(initialCourses);
   const [categories, setCategories] = useState<string[]>(initialCategories);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
@@ -149,6 +152,27 @@ export function PMLearningClient({
     setViewMode('personal');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (isLoaded && !permissions.map.canView) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-md flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1.5">專案-Map 限管理者存取</h2>
+          <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+            「專案-Map」為最高機密工作區，僅限系統管理者 (Admin) 存取。<br />
+            請切換或登入具備管理者權限之帳號。
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setIsLoginDialogOpen(true)}>管理員登入</Button>
+            <Button size="sm" variant="outline" onClick={() => router.push('/dashboard')}>返回總表</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">

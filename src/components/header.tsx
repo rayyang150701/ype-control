@@ -26,7 +26,7 @@ export function Header() {
   const router = useRouter();
   const pathname = usePathname() || '';
   const { toast } = useToast();
-  const { currentUser, role, isSuperAdmin, isAdmin, isEditor, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
+  const { currentUser, role, roleInfo, permissions, isSuperAdmin, isAdmin, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
   const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
   
   const startTour = async () => {
@@ -225,41 +225,29 @@ export function Header() {
                     variant="secondary"
                     size="sm"
                     className={`gap-1.5 border text-xs font-semibold shadow-xs ${
-                      isSuperAdmin
+                      role === 'admin'
                         ? 'border-amber-500/50 bg-amber-50 text-amber-900 hover:bg-amber-100'
-                        : isAdmin
+                        : role === 'management'
                         ? 'border-indigo-500/40 bg-indigo-50 text-indigo-900 hover:bg-indigo-100'
-                        : isEditor
+                        : role === 'execution'
+                        ? 'border-emerald-500/40 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
+                        : role === 'monitor'
                         ? 'border-blue-500/40 bg-blue-50 text-blue-900 hover:bg-blue-100'
                         : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {isSuperAdmin ? (
-                      <span className="text-amber-600">👑</span>
-                    ) : isAdmin ? (
-                      <span className="text-indigo-600">🛡️</span>
-                    ) : isEditor ? (
-                      <span className="text-blue-600">✏️</span>
-                    ) : (
-                      <span className="text-slate-500">👁️</span>
-                    )}
+                    <span>{roleInfo?.icon || '👤'}</span>
                     <span>
-                      {isSuperAdmin ? '主管理員' : isAdmin ? '管理員' : isEditor ? '編輯者' : '檢視者'}:{' '}
+                      {roleInfo?.label || '使用者'}:{' '}
                       {currentUser.displayName || currentUser.username}
                     </span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuContent className="w-60" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
-                        {isSuperAdmin
-                          ? '👑 系統主管理員 (Super Admin)'
-                          : isAdmin
-                          ? '🛡️ 系統管理員 (Admin)'
-                          : isEditor
-                          ? '✏️ 協作編輯者 (Editor)'
-                          : '👁️ 訪客檢視者 (Viewer)'}
+                        <span>{roleInfo?.badge || '👤 訪客'}</span>
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>
                       {(currentUser.company || currentUser.department) && (
@@ -267,19 +255,13 @@ export function Header() {
                           {[currentUser.company, currentUser.department].filter(Boolean).join(' · ')}
                         </p>
                       )}
-                      <p className="text-[11px] text-blue-600 font-medium pt-0.5">
-                        {isSuperAdmin
-                          ? '擁有最高權限（可刪除帳號、升降階、設定密碼）'
-                          : isAdmin
-                          ? '擁有內部管制、AI診斷與成員維護權限'
-                          : isEditor
-                          ? '可讀寫管制總表、檢視內部專案追蹤'
-                          : '僅擁有唯讀檢視權限'}
+                      <p className="text-[11px] text-blue-600 font-medium pt-0.5 leading-relaxed">
+                        {roleInfo?.desc}
                       </p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  {isAdmin && (
+                  {role === 'admin' && (
                     <>
                       <DropdownMenuGroup>
                         <Link href="/users" passHref>
@@ -329,10 +311,10 @@ export function Header() {
         </div>
       </div>
 
-      {/* 導覽列分頁：燁輝進度管制表 vs 專案待辦 vs 專案行程 vs 專案-Gap Analysis vs 專案-KM vs 專案-Map */}
+      {/* 導覽列分頁：依據權限管制表動態呈現 */}
       <div className="w-full bg-slate-50/90 border-t border-b border-slate-200/80 px-4 py-2 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          {/* 1. 燁輝進度管制表 - 所有人皆可點擊 */}
+          {/* 1. 燁輝進度管制表 - 全部角色皆可檢視 */}
           <Link
             href="/dashboard"
             prefetch={true}
@@ -345,39 +327,21 @@ export function Header() {
             <span>📊 燁輝進度管制表</span>
           </Link>
 
-          {/* 2. 專案待辦 - 管理者與編輯者開放，訪客提示登入 */}
-          {isEditor ? (
-            <Link
-              href="/internal-tasks"
-              prefetch={true}
-              className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
-                pathname.startsWith('/internal-tasks')
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
-              }`}
-            >
-              <span>📋 專案待辦</span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                toast({
-                  title: '需要登入權限',
-                  description: '「專案待辦」僅限登入成員檢視，請先登入帳號。',
-                });
-                setIsLoginDialogOpen(true);
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
-              title="僅限登入成員存取 (未開放未登入訪客)"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📋 專案待辦 (登入後檢視)</span>
-            </button>
-          )}
+          {/* 2. 專案待辦 - 全部角色皆可檢視（訪客僅能檢視） */}
+          <Link
+            href="/internal-tasks"
+            prefetch={true}
+            className={`px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all ${
+              pathname.startsWith('/internal-tasks')
+                ? 'bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 border border-transparent'
+            }`}
+          >
+            <span>📋 專案待辦</span>
+          </Link>
 
-          {/* 3. 專案行程 - 管理者與編輯者開放，訪客提示登入 */}
-          {isEditor ? (
+          {/* 3. 專案行程 - 訪客無法檢視（看不到 icon）；Monitor/Execution/Management/Admin 開放 */}
+          {permissions.schedules.canView && (
             <Link
               href="/schedules"
               prefetch={true}
@@ -389,26 +353,10 @@ export function Header() {
             >
               <span>📅 專案行程</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                toast({
-                  title: '需要登入權限',
-                  description: '「專案行程」僅限登入成員檢視，請先登入帳號。',
-                });
-                setIsLoginDialogOpen(true);
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
-              title="僅限登入成員存取 (未開放未登入訪客)"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📅 專案行程 (登入後檢視)</span>
-            </button>
           )}
 
-          {/* 4. 專案-Gap Analysis - 管理者與編輯者開放，訪客提示登入 */}
-          {isEditor ? (
+          {/* 4. 專案-Gap Analysis - 訪客無法檢視（看不到 icon）；Monitor/Execution/Management/Admin 開放 */}
+          {permissions.gapAnalysis.canView && (
             <Link
               href="/project-variance"
               prefetch={true}
@@ -420,26 +368,10 @@ export function Header() {
             >
               <span>📊 專案-Gap Analysis</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                toast({
-                  title: '需要登入權限',
-                  description: '「專案-Gap Analysis」僅限登入成員檢視，請先登入帳號。',
-                });
-                setIsLoginDialogOpen(true);
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
-              title="僅限登入成員存取 (未開放未登入訪客)"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📊 專案-Gap Analysis (登入後檢視)</span>
-            </button>
           )}
 
-          {/* 5. 專案-KM - 管理者與編輯者開放，訪客提示登入 */}
-          {isEditor ? (
+          {/* 5. 專案-KM - 訪客無法檢視（看不到 icon）；Monitor/Execution/Management/Admin 開放 */}
+          {permissions.km.canView && (
             <Link
               href="/km"
               prefetch={true}
@@ -451,26 +383,10 @@ export function Header() {
             >
               <span>📚 專案-KM</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                toast({
-                  title: '需要登入權限',
-                  description: '「專案-KM」僅限登入成員檢視，請先登入帳號。',
-                });
-                setIsLoginDialogOpen(true);
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
-              title="僅限登入成員存取 (未開放未登入訪客)"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>📚 專案-KM (登入後檢視)</span>
-            </button>
           )}
 
-          {/* 6. 專案-Map - 億威電子 PMO 培訓與個人工作區 */}
-          {isEditor ? (
+          {/* 6. 專案-Map - 僅 Admin (管理者) 能檢視與完全管理；其他角色完全看不到 icon */}
+          {permissions.map.canView && (
             <Link
               href="/pm-learning"
               prefetch={true}
@@ -482,22 +398,6 @@ export function Header() {
             >
               <span>🎯 專案-Map</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                toast({
-                  title: '需要登入權限',
-                  description: '「專案-Map」僅限登入成員檢視，請先登入帳號。',
-                });
-                setIsLoginDialogOpen(true);
-              }}
-              className="px-3.5 py-1.5 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all bg-slate-100/90 text-slate-400 border border-slate-200/80 cursor-not-allowed hover:bg-slate-100"
-              title="僅限登入成員存取 (未開放未登入訪客)"
-            >
-              <Lock className="h-3.5 w-3.5 text-slate-400" />
-              <span>🎯 專案-Map (登入後檢視)</span>
-            </button>
           )}
         </div>
         <div className="text-xs text-slate-500 font-medium hidden lg:block">

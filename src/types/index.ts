@@ -1,6 +1,14 @@
 export type Timestamp = any;
 
-export type UserRole = 'super_admin' | 'admin' | 'editor' | 'viewer';
+export type UserRole =
+  | 'admin'        // 管理者 (Admin)
+  | 'management'   // 億威 PM (Management)
+  | 'execution'    // 億威各部門 (Execution)
+  | 'monitor'      // 燁輝/其他 (Monitor)
+  | 'guest'        // 訪客 (Guest)
+  | 'super_admin'  // 相容舊資料 (視同 admin)
+  | 'editor'       // 相容舊資料
+  | 'viewer';      // 相容舊資料
 export type UserStatus = 'pending' | 'active';
 
 export interface CurrentUser {
@@ -11,6 +19,7 @@ export interface CurrentUser {
   role: UserRole;
   department?: string;
   company?: string;
+  clientName?: string;
 }
 
 export interface User {

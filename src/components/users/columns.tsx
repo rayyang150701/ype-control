@@ -217,31 +217,38 @@ export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps)
     accessorKey: 'role',
     header: '系統權限',
     cell: ({ row }) => {
-      const role = row.original.role;
-      if (role === 'super_admin') {
+      const role = (row.original.role || '').toLowerCase();
+      if (role === 'admin' || role === 'super_admin') {
         return (
           <Badge className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs border-amber-700 shadow-2xs">
-            👑 主管理員
+            👑 管理者
           </Badge>
         );
       }
-      if (role === 'admin') {
+      if (role === 'management') {
         return (
           <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs border-indigo-700 shadow-2xs">
-            🛡️ 管理員
+            💼 億威 PM
           </Badge>
         );
       }
-      if (role === 'editor') {
+      if (role === 'execution') {
+        return (
+          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs border-emerald-700 shadow-2xs">
+            ⚙️ 億威各部門
+          </Badge>
+        );
+      }
+      if (role === 'monitor') {
         return (
           <Badge className="bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs border-blue-700 shadow-2xs">
-            ✏️ 編輯者
+            📊 燁輝/其他
           </Badge>
         );
       }
       return (
-        <Badge variant="outline" className="text-slate-600 font-medium text-xs bg-slate-50">
-          👁️ 檢視者
+        <Badge variant="outline" className="text-slate-600 font-medium text-xs bg-slate-50 border-slate-300">
+          👤 訪客
         </Badge>
       );
     },

@@ -11,7 +11,10 @@ import {
   FileSpreadsheet,
   BarChart3,
   ArrowDownToLine,
+  Lock,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -67,7 +70,9 @@ export function SchedulesClient({
   initialUsers,
   initialHolidays,
 }: SchedulesClientProps) {
+  const router = useRouter();
   const { toast } = useToast();
+  const { permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
 
   // 視圖切換狀態
   const [viewType, setViewType] = useState<CalendarViewType>('month');
@@ -297,6 +302,14 @@ export function SchedulesClient({
 
   // 點擊新增行程
   const handleOpenCreateForm = (date?: Date) => {
+    if (!permissions.schedules.canManage) {
+      toast({
+        title: '權限不足',
+        description: '您的角色權限為「僅能檢視」，無法新增行程。',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSelectedTrip(null);
     setSelectedDate(date || null);
     setShowTripForm(true);
@@ -310,6 +323,14 @@ export function SchedulesClient({
 
   // 點擊編輯行程
   const handleEditTrip = (trip: BusinessTrip) => {
+    if (!permissions.schedules.canManage) {
+      toast({
+        title: '權限不足',
+        description: '您的角色權限為「僅能檢視」，無法編輯行程。',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSelectedTrip(trip);
     setShowTripDetail(false);
     setShowTripForm(true);
@@ -379,6 +400,14 @@ export function SchedulesClient({
 
   // 刪除行程
   const handleDeleteTrip = async (trip?: BusinessTrip) => {
+    if (!permissions.schedules.canManage) {
+      toast({
+        title: '權限不足',
+        description: '您的角色權限為「僅能檢視」，無法刪除行程。',
+        variant: 'destructive',
+      });
+      return;
+    }
     const target = trip || selectedTrip;
     if (!target) return;
 
@@ -401,6 +430,14 @@ export function SchedulesClient({
 
   // 切換確認狀態
   const handleStatusChange = async (newStatus: 'confirmed' | 'pending') => {
+    if (!permissions.schedules.canManage) {
+      toast({
+        title: '權限不足',
+        description: '您的角色權限為「僅能檢視」，無法修改行程確認狀態。',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!selectedTrip) return;
 
     try {
@@ -501,6 +538,26 @@ export function SchedulesClient({
     [trips]
   );
 
+  if (isLoaded && !permissions.schedules.canView) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-md flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1.5">無權限檢視專案行程</h2>
+          <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+            訪客帳號無法存取「專案行程」，請先登入具備檢視權限的帳號。
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setIsLoginDialogOpen(true)}>登入系統</Button>
+            <Button size="sm" variant="outline" onClick={() => router.push('/dashboard')}>返回總表</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 print:space-y-0 print:m-0 print:p-0">
       {/* 頂部主控台標題列 */}
@@ -572,25 +629,29 @@ export function SchedulesClient({
             <span>匯出 CSV</span>
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHolidayModal(true)}
-            className="text-xs h-9 gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-            title="假日管理 (放假類別與行事曆維護)"
-          >
-            <CalendarDays className="w-3.5 h-3.5 text-red-600" />
-            <span>假日管理</span>
-          </Button>
+          {permissions.schedules.canManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHolidayModal(true)}
+              className="text-xs h-9 gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              title="假日管理 (放假類別與行事曆維護)"
+            >
+              <CalendarDays className="w-3.5 h-3.5 text-red-600" />
+              <span>假日管理</span>
+            </Button>
+          )}
 
-          <Button
-            size="sm"
-            onClick={() => handleOpenCreateForm()}
-            className="text-xs h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"
-          >
-            <Plus className="w-4 h-4" />
-            <span>新增行程</span>
-          </Button>
+          {permissions.schedules.canManage && (
+            <Button
+              size="sm"
+              onClick={() => handleOpenCreateForm()}
+              className="text-xs h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>新增行程</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -797,6 +858,7 @@ export function SchedulesClient({
           onEdit={() => handleEditTrip(selectedTrip)}
           onDelete={() => handleDeleteTrip(selectedTrip)}
           onStatusChange={handleStatusChange}
+          canManage={permissions.schedules.canManage}
         />
       )}
 

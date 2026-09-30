@@ -43,18 +43,18 @@ export function UsersClient({ data, clients = [] }: UsersClientProps) {
     setIsResetPasswordOpen(true);
   };
 
-  if (!isAdmin) {
+  if (!isSuperAdmin) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-card rounded-xl border border-slate-200 shadow-xs max-w-lg mx-auto mt-8">
         <div className="p-3 bg-blue-50 rounded-full text-blue-600 mb-3">
           <UsersIcon className="h-8 w-8" />
         </div>
-        <h2 className="text-lg font-bold text-slate-800 mb-1">需要管理員權限</h2>
+        <h2 className="text-lg font-bold text-slate-800 mb-1">需要管理者權限</h2>
         <p className="text-xs text-muted-foreground mb-5 max-w-sm">
-          「成員管理」為管理員專屬功能。請切換為管理員模式後再進行維護。
+          「成員管理」為系統管理者專屬功能。請登入管理者帳號後再進行維護。
         </p>
         <Button onClick={() => setIsLoginDialogOpen(true)} className="gap-2 text-xs">
-          管理員登入
+          管理者登入
         </Button>
       </div>
     );

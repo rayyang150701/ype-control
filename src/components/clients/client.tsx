@@ -37,7 +37,7 @@ interface ClientsClientProps {
 export function ClientsClient({ initialClients }: ClientsClientProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { isAdmin, setIsLoginDialogOpen } = useAdmin();
+  const { role, setIsLoginDialogOpen } = useAdmin();
   const [clients, setClients] = useState<Client[]>(initialClients);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -94,7 +94,7 @@ export function ClientsClient({ initialClients }: ClientsClientProps) {
     }
   };
 
-  if (!isAdmin) {
+  if (role !== 'admin') {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-card rounded-xl border border-slate-200 shadow-xs max-w-lg mx-auto mt-8">
         <div className="p-3 bg-amber-50 rounded-full text-amber-600 mb-3">

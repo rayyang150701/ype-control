@@ -36,6 +36,7 @@ interface TripDetailDialogProps {
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange?: (newStatus: 'confirmed' | 'pending') => void;
+  canManage?: boolean;
 }
 
 export function TripDetailDialog({
@@ -45,6 +46,7 @@ export function TripDetailDialog({
   onEdit,
   onDelete,
   onStatusChange,
+  canManage = true,
 }: TripDetailDialogProps) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
@@ -55,6 +57,7 @@ export function TripDetailDialog({
     : false;
 
   const handleStatusToggle = () => {
+    if (!canManage) return;
     if (trip && onStatusChange) {
       const newStatus = trip.status === 'pending' ? 'confirmed' : 'pending';
       onStatusChange(newStatus);
@@ -457,25 +460,27 @@ export function TripDetailDialog({
             <ExternalLink className="w-3 h-3 text-blue-500" />
           </button>
 
-          {/* 編輯 / 刪除按鈕 */}
-          <div className="flex gap-2.5 pt-1">
-            <button
-              type="button"
-              onClick={onEdit}
-              className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 font-medium text-sm shadow-xs cursor-pointer"
-            >
-              <Edit className="w-4 h-4" />
-              <span>編輯行程</span>
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className="px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2 font-medium text-sm cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>刪除</span>
-            </button>
-          </div>
+          {/* 編輯 / 刪除按鈕 (僅具備完全管理權限才可操作) */}
+          {canManage && (
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={onEdit}
+                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 font-medium text-sm shadow-xs cursor-pointer"
+              >
+                <Edit className="w-4 h-4" />
+                <span>編輯行程</span>
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                className="px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl hover:bg-red-100 transition flex items-center justify-center gap-2 font-medium text-sm cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>刪除</span>
+              </button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

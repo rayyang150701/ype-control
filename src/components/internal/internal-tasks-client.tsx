@@ -74,7 +74,7 @@ export function InternalTasksClient({
   users = [],
   clients = [],
 }: InternalTasksClientProps) {
-  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen } = useAdmin();
+  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen, permissions } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1250,8 +1250,8 @@ export function InternalTasksClient({
     setHideEmptyProjects(false);
   };
 
-  // 權限檢查：內部專案追蹤僅限內部成員 (管理者與協作編輯者) 檢視
-  if (isLoaded && !isEditor) {
+  // 權限檢查：專案待辦（依據權限管制表開放所有角色檢視）
+  if (isLoaded && !permissions.tasks.canView) {
     return (
       <div className="min-h-[65vh] flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-lg flex flex-col items-center text-center">
@@ -1260,7 +1260,7 @@ export function InternalTasksClient({
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">需要登入系統</h2>
           <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-            「內部專案與待辦追蹤」包含公司內部敏感情資與等候跟催歷程，僅開放給內部成員（管理者與協作編輯者）檢視。<br />
+            「專案待辦」僅開放具備檢視權限之使用者瀏覽。<br />
             請先登入帳號以進行存取。
           </p>
           <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
@@ -1297,8 +1297,8 @@ export function InternalTasksClient({
               內部管制專用
             </Badge>
             {!isAdmin && (
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-medium">
-                👁️ 編輯者檢視模式 (唯讀)
+              <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-300 text-xs font-medium">
+                👁️ 唯讀檢視模式
               </Badge>
             )}
           </div>

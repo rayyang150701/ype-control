@@ -42,9 +42,12 @@ const userSchema = z.object({
   password: z.string().optional(),
   department: z.string().min(1, '部門別為必填'),
   clientName: z.string().min(1, '公司別為必填'),
-  role: z.enum(['super_admin', 'admin', 'editor', 'viewer'], {
-    errorMap: () => ({ message: '請選擇一個角色' }),
-  }),
+  role: z.enum(
+    ['admin', 'management', 'execution', 'monitor', 'guest', 'super_admin', 'editor', 'viewer'],
+    {
+      errorMap: () => ({ message: '請選擇一個角色' }),
+    }
+  ),
   status: z.enum(['active', 'pending'], {
     errorMap: () => ({ message: '請選擇一個狀態' }),
   }),
@@ -379,12 +382,11 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {isSuperAdmin && (
-                          <SelectItem value="super_admin">👑 主管理員 (所有權限、含刪除帳號/升降階/設定密碼)</SelectItem>
-                        )}
-                        <SelectItem value="admin">🛡️ 管理員 (除刪除/升降階/設密碼外之所有權限)</SelectItem>
-                        <SelectItem value="editor">✏️ 編輯者 (讀寫管制總表、檢視內部專案追蹤)</SelectItem>
-                        <SelectItem value="viewer">👁️ 檢視者 (僅訪客唯讀)</SelectItem>
+                        <SelectItem value="admin">👑 管理者 (全模組完全管理、專案MAP、帳號與客戶管理)</SelectItem>
+                        <SelectItem value="management">💼 億威 PM (管制表、待辦、行程、Gap、KM 完全管理)</SelectItem>
+                        <SelectItem value="execution">⚙️ 億威各部門 (行程完全管理；管制表、待辦、Gap、KM 檢視)</SelectItem>
+                        <SelectItem value="monitor">📊 燁輝/其他 (管制表完全管理；待辦、行程、Gap、KM 檢視)</SelectItem>
+                        <SelectItem value="guest">👤 訪客 (管制表、待辦僅能檢視；無行程/Gap/KM/MAP)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

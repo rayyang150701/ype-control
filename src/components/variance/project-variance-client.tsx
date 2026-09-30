@@ -30,7 +30,9 @@ import {
   Layers,
   Sparkles,
   Info,
+  Lock,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -81,8 +83,9 @@ export function ProjectVarianceClient({
   users = [],
   clients = [],
 }: ProjectVarianceClientProps) {
+  const router = useRouter();
   const { toast } = useToast();
-  const { isEditor, isAdmin } = useAdmin();
+  const { isEditor, isAdmin, permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
@@ -404,6 +407,26 @@ export function ProjectVarianceClient({
     return groups;
   }, [timelineMonths]);
 
+  if (isLoaded && !permissions.gapAnalysis.canView) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full p-8 rounded-2xl bg-white border border-slate-200 shadow-md flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1.5">無權限檢視此頁面</h2>
+          <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+            訪客帳號無法存取「專案-Gap Analysis」，請先登入具備存取權限的帳號。
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => setIsLoginDialogOpen(true)}>登入系統</Button>
+            <Button size="sm" variant="outline" onClick={() => router.push('/dashboard')}>返回總表</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-5 pb-12">
       {/* 頂部操作工具列 */}
@@ -447,7 +470,7 @@ export function ProjectVarianceClient({
           </div>
 
           {/* 設定規劃時程按鈕 */}
-          {isEditor && currentProject && (
+          {permissions.gapAnalysis.canManage && currentProject && (
             <Button
               variant="outline"
               size="sm"
@@ -460,7 +483,7 @@ export function ProjectVarianceClient({
           )}
 
           {/* 新增待辦事項按鈕 */}
-          {isEditor && currentProject && (
+          {permissions.gapAnalysis.canManage && currentProject && (
             <Button
               size="sm"
               onClick={() => setIsAddActionItemOpen(true)}
