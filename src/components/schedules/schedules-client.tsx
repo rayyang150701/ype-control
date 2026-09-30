@@ -28,6 +28,7 @@ import {
   getYearWeeks,
   formatDate,
   isTripReportOverdue,
+  isTripEndedWithoutReport,
 } from '@/lib/calendar-helper';
 import {
   getBusinessTrips,
@@ -44,6 +45,7 @@ import { MonthView } from './month-view';
 import { WeekView } from './week-view';
 import { ScheduleListView } from './schedule-list-view';
 import { OverdueView } from './overdue-view';
+import { UnreportedView } from './unreported-view';
 import { TravelAnalyticsView } from './travel-analytics-view';
 import { TripFormDialog } from './trip-form-dialog';
 import { TripDetailDialog } from './trip-detail-dialog';
@@ -406,6 +408,11 @@ export function SchedulesClient({
     [trips]
   );
 
+  const unreportedCount = useMemo(
+    () => trips.filter((t) => isTripEndedWithoutReport(t.endDate, t.endTime, t.notes)).length,
+    [trips]
+  );
+
   return (
     <div className="space-y-4 print:space-y-0 print:m-0 print:p-0">
       {/* 頂部主控台標題列 */}
@@ -428,6 +435,9 @@ export function SchedulesClient({
               )}
               {overdueCount > 0 && (
                 <span className="text-red-600 font-bold">・ 待補出差報告 {overdueCount} 筆</span>
+              )}
+              {unreportedCount > 0 && (
+                <span className="text-orange-600 font-medium">・ 未回報 {unreportedCount} 筆</span>
               )}
             </div>
           </div>
@@ -555,6 +565,25 @@ export function SchedulesClient({
           )}
         </button>
 
+        {/* 🆕 未回報查詢分頁：行程已結束但尚未填寫出差紀錄 */}
+        <button
+          type="button"
+          onClick={() => setViewType('unreported')}
+          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
+            viewType === 'unreported'
+              ? 'text-orange-600 border-orange-500'
+              : 'text-gray-500 hover:text-gray-900 border-transparent'
+          }`}
+        >
+          <span>📋</span>
+          <span>未回報</span>
+          {unreportedCount > 0 && (
+            <span className="px-1.5 py-0.2 bg-orange-500 text-white text-[10px] font-extrabold rounded-full">
+              {unreportedCount}
+            </span>
+          )}
+        </button>
+
         {/* 🆕 出差分析儀表板分頁 */}
         <button
           type="button"
@@ -606,6 +635,11 @@ export function SchedulesClient({
       ) : viewType === 'overdue' ? (
         <OverdueView
           trips={filteredTrips}
+          onFillReport={(t) => handleEditTrip(t)}
+        />
+      ) : viewType === 'unreported' ? (
+        <UnreportedView
+          trips={trips}
           onFillReport={(t) => handleEditTrip(t)}
         />
       ) : (

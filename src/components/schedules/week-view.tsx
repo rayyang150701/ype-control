@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Settings, Printer, AlertTriangle, CalendarDays } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, WeekInfo, Holiday } from '@/types/businessTrip';
-import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, findHoliday, getCurrentWeek } from '@/lib/calendar-helper';
+import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, isTripReported, findHoliday, getCurrentWeek } from '@/lib/calendar-helper';
 
 interface DisplaySettings {
   showCustomer: boolean;
@@ -419,6 +419,7 @@ export function WeekView({
                 ) : (
                   dayTrips.map((trip) => {
                     const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+                    const hasReport = isTripReported(trip.notes);
                     return (
                       <button
                         key={trip.id}
@@ -432,6 +433,14 @@ export function WeekView({
                         <div className="font-semibold text-sm text-gray-900 mb-1 flex items-start justify-between gap-1 print:text-[11px] print:mb-0.5">
                           <span className="line-clamp-2 print:line-clamp-2">{trip.subject}</span>
                           <div className="flex items-center gap-1 shrink-0 print:hidden">
+                            {hasReport && (
+                              <span
+                                className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded flex items-center gap-0.5"
+                                title="已填寫出差紀錄"
+                              >
+                                ✅ 已回報
+                              </span>
+                            )}
                             {isOverdue && (
                               <span
                                 className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded flex items-center gap-0.5"

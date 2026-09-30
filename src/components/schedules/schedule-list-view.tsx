@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Edit, Trash2, CalendarOff, Users } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, Holiday } from '@/types/businessTrip';
-import { isTripReportOverdue, findHoliday } from '@/lib/calendar-helper';
+import { isTripReportOverdue, isTripReported, findHoliday } from '@/lib/calendar-helper';
 
 interface ScheduleListViewProps {
   trips: BusinessTrip[];
@@ -134,6 +134,7 @@ export function ScheduleListView({
             {group.trips.map((trip) => {
               const category = TRIP_CATEGORIES.find((c) => c.value === trip.category);
               const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+              const hasReport = isTripReported(trip.notes);
               const sConfig = isOverdue ? overdueConfig : statusConfig[trip.status] || statusConfig.pending;
 
               // 人員縮寫與數量
@@ -213,13 +214,21 @@ export function ScheduleListView({
                   </div>
 
                   {/* 狀態 */}
-                  <div className="md:col-span-2 flex items-center">
+                  <div className="md:col-span-2 flex flex-col items-start gap-1">
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${sConfig.bg} ${sConfig.text}`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${sConfig.dot}`} />
                       {sConfig.label}
                     </span>
+                    {hasReport && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"
+                        title="已填寫出差紀錄"
+                      >
+                        ✅ 已回報
+                      </span>
+                    )}
                   </div>
 
                   {/* 操作按鈕 */}

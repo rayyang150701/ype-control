@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Settings, AlertTriangle, CalendarDays } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, Holiday } from '@/types/businessTrip';
-import { getMonthDays, isSameDay, isTripReportOverdue, findHoliday } from '@/lib/calendar-helper';
+import { getMonthDays, isSameDay, isTripReportOverdue, isTripReported, findHoliday } from '@/lib/calendar-helper';
 
 interface DisplaySettings {
   showCustomer: boolean;
@@ -310,6 +310,7 @@ export function MonthView({
               <div className="space-y-1">
                 {dayTrips.slice(0, 3).map((trip) => {
                   const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+                  const hasReport = isTripReported(trip.notes);
                   return (
                     <button
                       key={trip.id}
@@ -319,11 +320,14 @@ export function MonthView({
                         backgroundColor: `${getCategoryColor(trip.category)}18`,
                         borderLeft: `3px solid ${getCategoryColor(trip.category)}`,
                       }}
-                      title={`${trip.subject}${trip.pm ? `\n負責PM: ${trip.pm}` : ''}${trip.tpm ? `\nTPM: ${trip.tpm}` : ''}\n${trip.travelers.join(', ')}\n${trip.startTime}-${trip.endTime}${isOverdue ? '\n⚠️ 出差報告逾期未填' : ''}`}
+                      title={`${trip.subject}${trip.pm ? `\n負責PM: ${trip.pm}` : ''}${trip.tpm ? `\nTPM: ${trip.tpm}` : ''}\n${trip.travelers.join(', ')}\n${trip.startTime}-${trip.endTime}${hasReport ? '\n✅ 已填寫出差紀錄' : ''}${isOverdue ? '\n⚠️ 出差報告逾期未填' : ''}`}
                     >
                       {/* 主題與警示 */}
                       <div className="font-semibold text-gray-900 truncate flex items-center gap-1">
                         <span className="truncate">{trip.subject}</span>
+                        {hasReport && (
+                          <span className="text-emerald-600 shrink-0 text-[10px]" title="已回報">✅</span>
+                        )}
                         {trip.status === 'pending' && (
                           <span className="text-amber-600 shrink-0 text-[10px]" title="待確認">⚠️</span>
                         )}

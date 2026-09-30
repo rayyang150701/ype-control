@@ -237,6 +237,34 @@ export const isTripReportOverdue = (
 };
 
 /**
+ * ✅ 判斷行程是否已填寫出差紀錄（notes 有實質內容）
+ */
+export const isTripReported = (notes?: string): boolean => {
+  return !!(notes && notes.trim().length > 0);
+};
+
+/**
+ * 🔍 判斷行程是否已結束但尚未填寫出差紀錄（不受 3 天規則限制）
+ * 條件：行程結束時間已過 且 notes 為空
+ */
+export const isTripEndedWithoutReport = (
+  endDate: Date | string,
+  endTime: string = '17:00',
+  notes?: string
+): boolean => {
+  if (notes && notes.trim().length > 0) {
+    return false; // 已回報
+  }
+
+  const d = typeof endDate === 'string' ? new Date(endDate.replace(/-/g, '/')) : new Date(endDate);
+  const [hours, minutes] = (endTime || '17:00').split(':').map(Number);
+  d.setHours(hours || 17, minutes || 0, 0, 0);
+
+  const now = new Date();
+  return now > d;
+};
+
+/**
  * 🗓️ 自動產生 Google 行事曆 URL
  * 點擊後會在新分頁開啟 Google Calendar 並自動帶入標題、時段、地點與說明
  */
