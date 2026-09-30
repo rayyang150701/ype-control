@@ -93,30 +93,25 @@ export async function notionPageToTrip(
   const lunchBoxes = props['便當數量']?.number ?? undefined;
 
   // 11. 出差重點 (notes)：
-  // 若「紀錄重點」為 "完成" 或頁面內有文字內容，拉取內文作為 notes
+  // 僅當 Notion「紀錄重點」標記為 "完成" 時才拉取內文，避免觸發 Notion API 速率限制 (3 req/s)
   let notes: string | undefined = undefined;
   const recordStatus = props['紀錄重點']?.status?.name;
 
-  try {
-    const blocks = await (notion.blocks.children.list as any)({
-      block_id: page.id,
-      page_size: 50,
-    });
-    const lines = (blocks.results || [])
-      .map((b: any) => {
-        const typeObj = b[b.type];
-        return typeObj?.rich_text?.map((t: any) => t.plain_text).join('') || '';
-      })
-      .filter((line: string) => line.trim().length > 0);
+  if (recordStatus === '完成') {
+    try {
+      const blocks = await (notion.blocks.children.list as any)({
+        block_id: page.id,
+        page_size: 50,
+      });
+      const lines = (blocks.results || [])
+        .map((b: any) => {
+          const typeObj = b[b.type];
+          return typeObj?.rich_text?.map((t: any) => t.plain_text).join('') || '';
+        })
+        .filter((line: string) => line.trim().length > 0);
 
-    if (lines.length > 0) {
-      notes = lines.join('\n');
-    } else if (recordStatus === '完成') {
-      notes = '【Notion 標記已完成出差紀錄】';
-    }
-  } catch (err) {
-    // 忽略讀取內文錯誤
-    if (recordStatus === '完成') {
+      notes = lines.length > 0 ? lines.join('\n') : '【Notion 標記已完成出差紀錄】';
+    } catch (err) {
       notes = '【Notion 標記已完成出差紀錄】';
     }
   }

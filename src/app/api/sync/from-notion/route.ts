@@ -111,7 +111,6 @@ async function runSync(): Promise<NextResponse> {
         status: trip.status ?? 'pending',
         category: trip.category ?? 'business',
         notes: trip.notes ?? null,
-        pm: trip.pm ?? null,
         tpm: trip.tpm ?? null,
         lunch_boxes: trip.lunchBoxes ?? null,
         notion_synced_at: new Date().toISOString(),
