@@ -155,6 +155,50 @@ export function SchedulesClient({
     }
   };
 
+  // ⚡ 智慧背景自動同步：進入頁面或每 10 分鐘自動在背景比對 Notion，完全不需手動點擊
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkAndAutoSync = async () => {
+      try {
+        const lastSyncTimeStr = localStorage.getItem('last_notion_auto_sync_time');
+        const now = Date.now();
+        const tenMinutes = 10 * 60 * 1000;
+
+        // 若距上次同步已超過 10 分鐘（或首次載入）
+        if (!lastSyncTimeStr || now - parseInt(lastSyncTimeStr, 10) > tenMinutes) {
+          localStorage.setItem('last_notion_auto_sync_time', now.toString());
+
+          const res = await fetch('/api/sync/from-notion', { method: 'POST' });
+          const data = await res.json();
+
+          if (isMounted && data.success) {
+            setLastNotionSync(new Date().toLocaleTimeString('zh-TW'));
+            // 若 Notion 有任何更新或新增，靜默更新行程清單
+            if (data.stats && (data.stats.created > 0 || data.stats.updated > 0)) {
+              const tripsData = await getBusinessTrips();
+              if (isMounted) {
+                setTrips(tripsData);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Notion AutoSync] 背景同步略過:', err);
+      }
+    };
+
+    // 1. 進入頁面時立即檢查
+    checkAndAutoSync();
+
+    // 2. 頁面開啟時每 10 分鐘自動比對一次
+    const timer = setInterval(checkAndAutoSync, 10 * 60 * 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // 前端過濾行程（支援統一關鍵字、客戶、專案、類別、狀態、TPM、週別）
   const filteredTrips = useMemo(() => {
     return trips.filter((trip) => {
