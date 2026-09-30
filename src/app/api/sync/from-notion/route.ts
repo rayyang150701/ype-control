@@ -65,10 +65,10 @@ async function runSync(): Promise<NextResponse> {
     const pages = await fetchAllNotionTrips(notion, NOTION_DATABASE_ID);
     console.log(`[Notion Sync] 拉取到 ${pages.length} 筆 Notion 行程`);
 
-    // 2. 轉換為系統格式
-    const notionTrips = pages
-      .map((page) => notionPageToTrip(page))
-      .filter((t): t is NonNullable<typeof t> => t !== null);
+    // 2. 轉換為系統格式（非同步取得頁面內文）
+    const notionTrips = (
+      await Promise.all(pages.map((page) => notionPageToTrip(notion, page)))
+    ).filter((t): t is NonNullable<typeof t> => t !== null);
 
     console.log(`[Notion Sync] 成功轉換 ${notionTrips.length} 筆行程`);
 

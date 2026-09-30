@@ -1,183 +1,175 @@
 // src/lib/notion-sync.ts
-// Notion → Supabase 單向同步工具函式（相容 @notionhq/client v5.x）
-// 讀取 Notion 行程資料庫，轉換欄位後寫入 Supabase business_trips
+// Notion → Supabase 單向同步工具函式（100% 針對億威 Notion 行程資料庫結構量身調校）
 
 import { Client as NotionClient, isFullPage } from '@notionhq/client';
 import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import type { BusinessTrip, TripCategory, TripStatus } from '@/types/businessTrip';
 
 // ─────────────────────────────────────────────
-// Notion 欄位名稱對應設定（可依實際 Notion DB 欄位修改）
+// 億威 Notion 資料庫真實欄位名稱對應
 // ─────────────────────────────────────────────
 export const NOTION_FIELD_MAP = {
-  subject: '名稱',            // Title（行程主題）
-  startDate: '日期',          // Date（開始，含結束）
-  endDate: '結束日期',        // Date（若結束日期獨立欄位時填寫，否則留空串）
-  location: '地點',           // Text or Select
-  travelers: '出差人員',       // Multi-select
-  customerName: '客戶',       // Select or Text
-  projectName: '專案',        // Select or Text
-  status: '確認狀態',         // Select: 已確認 / 待確認
-  category: '類別',           // Select: 出差 / 會議 / 線上會議 / 其他
-  notes: '出差重點彙整',       // Rich Text
-  pm: '負責PM',               // Select or Text
-  tpm: 'TPM',                 // Select or Text
-  lunchBoxes: '便當數',       // Number
+  subject: '行程目的',      // Title
+  startDate: '開始日期',    // Date
+  time: '時間',            // Multi-select: 例如 ["10:30~12:00"]
+  category: '行程類型',     // Select: 出差 / 會議 / 線上會議 / POC安裝後追蹤 等
+  unconfirm: '行程unconfirm', // Checkbox: true (待確認) / false (已確認)
+  status: '狀態',          // Status: 未開始 / 進行中 / 完成
+  recordStatus: '紀錄重點', // Status: 未開始 / 進行中 / 完成
+  customer: '客戶',        // Select: 燁輝、義大醫院 等
+  project: '專案名稱',      // Select: 天車吊運、智慧醫療 等
+  travelers: '參與對象',    // Multi-select: Eric, Mike, 其邦 等
+  tpm: 'TPM',              // Multi-select: 徐智宏 等
+  lunchBoxes: '便當數量',   // Number
+  place: 'Place',          // Place
 } as const;
 
-// ─────────────────────────────────────────────
-// 狀態 / 類別對應
-// ─────────────────────────────────────────────
-const STATUS_MAP: Record<string, TripStatus> = {
-  '已確認': 'confirmed',
-  'confirmed': 'confirmed',
-  '待確認': 'pending',
-  'pending': 'pending',
-};
-
-const CATEGORY_MAP: Record<string, TripCategory> = {
-  '出差': 'business',
-  'business': 'business',
-  '會議': 'meeting',
-  'meeting': 'meeting',
-  '線上會議': 'online_meeting',
-  'online_meeting': 'online_meeting',
-  '其他': 'other',
-  'other': 'other',
-};
-
-// ─────────────────────────────────────────────
-// Notion Property 解析工具（型別安全）
-// ─────────────────────────────────────────────
-function getProp(page: PageObjectResponse, key: string) {
-  return page.properties[key] ?? null;
+// 類別對應
+function mapCategory(raw: string): TripCategory {
+  if (!raw) return 'business';
+  if (raw.includes('會議') && raw.includes('線上')) return 'online_meeting';
+  if (raw.includes('會議')) return 'meeting';
+  if (raw.includes('出差')) return 'business';
+  return 'other';
 }
 
-function getTitle(page: PageObjectResponse, key: string): string {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'title') return '';
-  return (prop as any).title.map((t: any) => t.plain_text).join('').trim();
-}
-
-function getRichText(page: PageObjectResponse, key: string): string {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'rich_text') return '';
-  return (prop as any).rich_text.map((t: any) => t.plain_text).join('').trim();
-}
-
-function getSelect(page: PageObjectResponse, key: string): string {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'select') return '';
-  return (prop as any).select?.name ?? '';
-}
-
-function getMultiSelect(page: PageObjectResponse, key: string): string[] {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'multi_select') return [];
-  return (prop as any).multi_select.map((s: any) => s.name);
-}
-
-function getNumber(page: PageObjectResponse, key: string): number | undefined {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'number') return undefined;
-  return (prop as any).number ?? undefined;
-}
-
-function parseDate(raw: string | null | undefined): { date: string; time: string } | null {
-  if (!raw) return null;
-  if (raw.includes('T')) {
-    const [datePart, timePart] = raw.split('T');
-    return { date: datePart, time: timePart.slice(0, 5) };
-  }
-  return { date: raw, time: '' };
-}
-
-function getDateStart(page: PageObjectResponse, key: string): { date: string; time: string } | null {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'date') return null;
-  return parseDate((prop as any).date?.start);
-}
-
-function getDateEnd(page: PageObjectResponse, key: string): { date: string; time: string } | null {
-  const prop = getProp(page, key);
-  if (!prop || prop.type !== 'date') return null;
-  const dateObj = (prop as any).date;
-  return parseDate(dateObj?.end ?? dateObj?.start);
+// 時間字串解析：例如 "13:00~14:00" 或 "10:30-12:00"
+function parseTimeRange(timeStr?: string): { startTime: string; endTime: string } {
+  if (!timeStr) return { startTime: '09:00', endTime: '17:00' };
+  const parts = timeStr.split(/[~～\-－]/).map((s) => s.trim());
+  const startTime = parts[0] || '09:00';
+  const endTime = parts[1] || '17:00';
+  return { startTime, endTime };
 }
 
 // ─────────────────────────────────────────────
 // Notion Page → BusinessTrip 轉換
 // ─────────────────────────────────────────────
-export function notionPageToTrip(page: PageObjectResponse): Partial<BusinessTrip> | null {
-  const fm = NOTION_FIELD_MAP;
+export async function notionPageToTrip(
+  notion: NotionClient,
+  page: PageObjectResponse
+): Promise<Partial<BusinessTrip> | null> {
+  const props = page.properties as any;
 
-  const subject = getTitle(page, fm.subject);
+  // 1. 主題 (必填)
+  const subject = props['行程目的']?.title?.map((t: any) => t.plain_text).join('').trim();
   if (!subject) return null;
 
-  const startInfo = getDateStart(page, fm.startDate);
-  if (!startInfo) return null;
+  // 2. 日期 (必填)
+  const dateObj = props['開始日期']?.date;
+  if (!dateObj?.start) return null;
+  const startDate = dateObj.start.slice(0, 10);
+  const endDate = dateObj.end ? dateObj.end.slice(0, 10) : startDate;
 
-  // 結束日期：先找獨立欄位，沒有就用開始日期欄位的 end
-  let endInfo: { date: string; time: string } | null = null;
-  if (fm.endDate) endInfo = getDateStart(page, fm.endDate);
-  if (!endInfo) endInfo = getDateEnd(page, fm.startDate);
-  if (!endInfo) endInfo = { date: startInfo.date, time: '17:00' };
+  // 3. 時間 (從「時間」多選屬性或日期取得)
+  const timeNames = props['時間']?.multi_select?.map((s: any) => s.name) || [];
+  const timeStr = timeNames[0] || '';
+  const { startTime, endTime } = parseTimeRange(timeStr);
 
-  const statusRaw = getSelect(page, fm.status);
-  const status: TripStatus = STATUS_MAP[statusRaw] ?? 'pending';
+  // 4. 確認狀態：優先看「行程unconfirm」checkbox
+  const isUnconfirmed = props['行程unconfirm']?.checkbox === true;
+  const status: TripStatus = isUnconfirmed ? 'pending' : 'confirmed';
 
-  const categoryRaw = getSelect(page, fm.category);
-  const category: TripCategory = CATEGORY_MAP[categoryRaw] ?? 'business';
+  // 5. 類別
+  const categoryRaw = props['行程類型']?.select?.name || '出差';
+  const category = mapCategory(categoryRaw);
 
-  const travelers = getMultiSelect(page, fm.travelers);
-  const notes = getRichText(page, fm.notes);
-  const location = getRichText(page, fm.location) || getSelect(page, fm.location);
-  const customerName = getSelect(page, fm.customerName) || getRichText(page, fm.customerName);
-  const projectName = getSelect(page, fm.projectName) || getRichText(page, fm.projectName);
-  const pm = getSelect(page, fm.pm) || getRichText(page, fm.pm);
-  const tpm = getSelect(page, fm.tpm) || getRichText(page, fm.tpm);
-  const lunchBoxes = getNumber(page, fm.lunchBoxes);
+  // 6. 客戶與專案
+  const customerName = props['客戶']?.select?.name || undefined;
+  const projectName = props['專案名稱']?.select?.name || undefined;
+
+  // 7. 出差人員 (參與對象)
+  const travelers = props['參與對象']?.multi_select?.map((s: any) => s.name) || [];
+
+  // 8. TPM
+  const tpmList = props['TPM']?.multi_select?.map((s: any) => s.name) || [];
+  const tpm = tpmList.join(', ') || undefined;
+
+  // 9. 地點：若 Place 為空，可 fallback 到客戶名稱
+  const placeRaw = props['Place']?.place?.name || props['Place']?.name || '';
+  const location = placeRaw || customerName || '';
+
+  // 10. 便當數
+  const lunchBoxes = props['便當數量']?.number ?? undefined;
+
+  // 11. 出差重點 (notes)：
+  // 若「紀錄重點」為 "完成" 或頁面內有文字內容，拉取內文作為 notes
+  let notes: string | undefined = undefined;
+  const recordStatus = props['紀錄重點']?.status?.name;
+
+  try {
+    const blocks = await (notion.blocks.children.list as any)({
+      block_id: page.id,
+      page_size: 50,
+    });
+    const lines = (blocks.results || [])
+      .map((b: any) => {
+        const typeObj = b[b.type];
+        return typeObj?.rich_text?.map((t: any) => t.plain_text).join('') || '';
+      })
+      .filter((line: string) => line.trim().length > 0);
+
+    if (lines.length > 0) {
+      notes = lines.join('\n');
+    } else if (recordStatus === '完成') {
+      notes = '【Notion 標記已完成出差紀錄】';
+    }
+  } catch (err) {
+    // 忽略讀取內文錯誤
+    if (recordStatus === '完成') {
+      notes = '【Notion 標記已完成出差紀錄】';
+    }
+  }
 
   return {
     id: page.id.replace(/-/g, ''),
     subject,
-    startDate: startInfo.date,
-    startTime: startInfo.time || '09:00',
-    endDate: endInfo.date,
-    endTime: endInfo.time || '17:00',
-    location: location || '',
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    location,
     travelers,
-    customerName: customerName || undefined,
-    projectName: projectName || undefined,
+    customerName,
+    projectName,
     status,
     category,
-    notes: notes || undefined,
-    pm: pm || undefined,
-    tpm: tpm || undefined,
-    lunchBoxes: lunchBoxes ?? undefined,
+    notes,
+    tpm,
+    lunchBoxes,
     createdAt: page.created_time,
     updatedAt: page.last_edited_time,
   };
 }
 
 // ─────────────────────────────────────────────
-// 從 Notion dataSources 拉取所有行程（v5.x API）
+// 從 Notion 拉取所有行程（自動取得 dataSourceId 並分頁）
 // ─────────────────────────────────────────────
 export async function fetchAllNotionTrips(
   notion: NotionClient,
   databaseId: string
 ): Promise<PageObjectResponse[]> {
+  // 自動解析 targetDataSourceId
+  let targetDataSourceId = databaseId;
+  try {
+    const db = await (notion.databases.retrieve as any)({ database_id: databaseId });
+    if (db.data_sources?.[0]?.id) {
+      targetDataSourceId = db.data_sources[0].id;
+    }
+  } catch (e) {
+    // 若傳入的已經是 dataSourceId 則直接使用
+  }
+
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined = undefined;
 
   do {
-    // v5.x 使用 dataSources.query 取代舊版 databases.query
     const response: {
       results: unknown[];
       has_more: boolean;
       next_cursor: string | null;
     } = await (notion as any).dataSources.query({
-      data_source_id: databaseId,
+      data_source_id: targetDataSourceId,
       start_cursor: cursor,
       page_size: 100,
     });
