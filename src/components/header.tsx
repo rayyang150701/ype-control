@@ -1,7 +1,7 @@
 
 'use client';
 import { useState } from 'react';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar, ShieldCheck } from 'lucide-react';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,9 +18,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
-
 import { LoginDialog } from '@/components/dashboard/login-dialog';
 import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
+import { PermissionMatrixDialog } from '@/components/permission-matrix-dialog';
 
 export function Header() {
   const router = useRouter();
@@ -28,6 +28,7 @@ export function Header() {
   const { toast } = useToast();
   const { currentUser, role, roleInfo, permissions, isSuperAdmin, isAdmin, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
   const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
+  const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   
   const startTour = async () => {
     const { driver } = await import("driver.js");
@@ -206,14 +207,22 @@ export function Header() {
                   幫助
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={startTour}>
-                  <Route className="mr-2 h-4 w-4" />
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={startTour} className="cursor-pointer">
+                  <Route className="mr-2 h-4 w-4 text-blue-600" />
                   <span>功能導覽</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleDownload}>
-                  <Book className="mr-2 h-4 w-4" />
+                <DropdownMenuItem onClick={handleDownload} className="cursor-pointer">
+                  <Book className="mr-2 h-4 w-4 text-emerald-600" />
                   <span>下載操作手冊</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setIsPermissionDialogOpen(true)}
+                  className="cursor-pointer text-indigo-700 font-semibold focus:text-indigo-800 focus:bg-indigo-50"
+                >
+                  <ShieldCheck className="mr-2 h-4 w-4 text-indigo-600" />
+                  <span>系統權限管制表</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -420,6 +429,7 @@ export function Header() {
       </div>
 
       <LoginDialog isOpen={isLoginDialogOpen} setIsOpen={setIsLoginDialogOpen} />
+      <PermissionMatrixDialog isOpen={isPermissionDialogOpen} setIsOpen={setIsPermissionDialogOpen} />
       {isChangeMyPasswordOpen && currentUser && (
         <ResetPasswordDialog
           isOpen={isChangeMyPasswordOpen}
