@@ -13,7 +13,9 @@ interface UnreportedViewProps {
 export function UnreportedView({ trips, onFillReport }: UnreportedViewProps) {
   const unreportedTrips = useMemo(() => {
     return trips
-      .filter((t) => isTripEndedWithoutReport(t.endDate, t.endTime, t.notes))
+      .filter((t) =>
+        isTripEndedWithoutReport(t.endDate, t.endTime, t.notes, t.location, t.travelers)
+      )
       .sort(
         (a, b) =>
           new Date(b.endDate.replace(/-/g, '/')).getTime() -

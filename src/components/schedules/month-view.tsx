@@ -309,7 +309,13 @@ export function MonthView({
               {/* 行程列表 */}
               <div className="space-y-1">
                 {dayTrips.slice(0, 3).map((trip) => {
-                  const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+                  const isOverdue = isTripReportOverdue(
+                    trip.endDate,
+                    trip.endTime,
+                    trip.notes,
+                    trip.location,
+                    trip.travelers
+                  );
                   const hasReport = isTripReported(trip.notes);
                   return (
                     <button

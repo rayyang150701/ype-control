@@ -486,12 +486,18 @@ export function SchedulesClient({
   );
 
   const overdueCount = useMemo(
-    () => trips.filter((t) => isTripReportOverdue(t.endDate, t.endTime, t.notes)).length,
+    () =>
+      trips.filter((t) =>
+        isTripReportOverdue(t.endDate, t.endTime, t.notes, t.location, t.travelers)
+      ).length,
     [trips]
   );
 
   const unreportedCount = useMemo(
-    () => trips.filter((t) => isTripEndedWithoutReport(t.endDate, t.endTime, t.notes)).length,
+    () =>
+      trips.filter((t) =>
+        isTripEndedWithoutReport(t.endDate, t.endTime, t.notes, t.location, t.travelers)
+      ).length,
     [trips]
   );
 

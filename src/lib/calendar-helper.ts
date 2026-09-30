@@ -218,9 +218,23 @@ export const getDayName = (dayOfWeek: number): string => {
 export const isTripReportOverdue = (
   endDate: Date | string,
   endTime: string = '17:00',
-  notes?: string
+  notes?: string,
+  location?: string,
+  travelers?: string[]
 ): boolean => {
+  // 1. 若已有填寫出差報告/紀錄，不列入逾期
   if (notes && notes.trim().length > 0) {
+    return false;
+  }
+
+  // 2. 只要沒有地點、沒有人名，一律不納入待補件跟催（例如國定假日、放假連假或無出差對象之排程）
+  const hasLocation = Boolean(location && location.trim() && location.trim() !== '—');
+  const hasTravelers = Boolean(
+    travelers &&
+      travelers.length > 0 &&
+      travelers.some((t) => t && t.trim() && t.trim() !== '—')
+  );
+  if (!hasLocation && !hasTravelers) {
     return false;
   }
 
@@ -245,15 +259,28 @@ export const isTripReported = (notes?: string): boolean => {
 
 /**
  * 🔍 判斷行程是否已結束但尚未填寫出差紀錄（不受 3 天規則限制）
- * 條件：行程結束時間已過 且 notes 為空
+ * 條件：行程結束時間已過 且 notes 為空（同樣排除沒有地點也沒有人名之項目）
  */
 export const isTripEndedWithoutReport = (
   endDate: Date | string,
   endTime: string = '17:00',
-  notes?: string
+  notes?: string,
+  location?: string,
+  travelers?: string[]
 ): boolean => {
   if (notes && notes.trim().length > 0) {
     return false; // 已回報
+  }
+
+  // 排除沒有地點也沒有人名之項目
+  const hasLocation = Boolean(location && location.trim() && location.trim() !== '—');
+  const hasTravelers = Boolean(
+    travelers &&
+      travelers.length > 0 &&
+      travelers.some((t) => t && t.trim() && t.trim() !== '—')
+  );
+  if (!hasLocation && !hasTravelers) {
+    return false;
   }
 
   const d = typeof endDate === 'string' ? new Date(endDate.replace(/-/g, '/')) : new Date(endDate);

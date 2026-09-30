@@ -133,7 +133,13 @@ export function ScheduleListView({
             {/* 該日期下的行程列表 */}
             {group.trips.map((trip) => {
               const category = TRIP_CATEGORIES.find((c) => c.value === trip.category);
-              const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+              const isOverdue = isTripReportOverdue(
+                trip.endDate,
+                trip.endTime,
+                trip.notes,
+                trip.location,
+                trip.travelers
+              );
               const hasReport = isTripReported(trip.notes);
               const sConfig = isOverdue ? overdueConfig : statusConfig[trip.status] || statusConfig.pending;
 

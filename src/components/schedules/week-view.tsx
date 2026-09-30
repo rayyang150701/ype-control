@@ -418,7 +418,13 @@ export function WeekView({
                   </div>
                 ) : (
                   dayTrips.map((trip) => {
-                    const isOverdue = isTripReportOverdue(trip.endDate, trip.endTime, trip.notes);
+                    const isOverdue = isTripReportOverdue(
+                      trip.endDate,
+                      trip.endTime,
+                      trip.notes,
+                      trip.location,
+                      trip.travelers
+                    );
                     const hasReport = isTripReported(trip.notes);
                     return (
                       <button

@@ -50,7 +50,9 @@ export function TripDetailDialog({
   const { toast } = useToast();
 
   const category = trip ? TRIP_CATEGORIES.find((c) => c.value === trip.category) : undefined;
-  const isOverdue = trip ? isTripReportOverdue(trip.endDate, trip.endTime, trip.notes) : false;
+  const isOverdue = trip
+    ? isTripReportOverdue(trip.endDate, trip.endTime, trip.notes, trip.location, trip.travelers)
+    : false;
 
   const handleStatusToggle = () => {
     if (trip && onStatusChange) {
