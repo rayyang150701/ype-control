@@ -1,7 +1,7 @@
 
 'use client';
 import { useState } from 'react';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar, ShieldCheck } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar, ShieldCheck, History } from 'lucide-react';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LoginDialog } from '@/components/dashboard/login-dialog';
 import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
 import { PermissionMatrixDialog } from '@/components/permission-matrix-dialog';
+import { AuditLogDialog } from '@/components/audit-log/audit-log-dialog';
 
 export function Header() {
   const router = useRouter();
@@ -29,6 +30,11 @@ export function Header() {
   const { currentUser, role, roleInfo, permissions, isSuperAdmin, isAdmin, isGuest, isLoginDialogOpen, setIsLoginDialogOpen, logout } = useAdmin();
   const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
+  const [isAuditLogOpen, setIsAuditLogOpen] = useState(false);
+
+  // 僅開放給億威各部門、億威PM、管理者檢視修改履歷
+  const canViewAuditLog = ['admin', 'super_admin', 'management', 'execution'].includes(role);
+
   
   const startTour = async () => {
     const { driver } = await import("driver.js");
@@ -155,6 +161,20 @@ export function Header() {
         </div>
 
         <div className="flex items-center justify-end space-x-2">
+            {/* 修改履歷快捷按鈕 (僅限億威各部門、億威PM、管理者可檢視) */}
+            {canViewAuditLog && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAuditLogOpen(true)}
+                className="gap-1.5 text-xs font-semibold bg-amber-50/90 hover:bg-amber-100 text-amber-800 border-amber-300 shadow-2xs cursor-pointer active:scale-95"
+                title="檢視專案與週報修改履歷紀錄 (誰改了甚麼、改那些，一目了然)"
+              >
+                <History className="h-4 w-4 text-amber-700" />
+                <span>修改履歷</span>
+              </Button>
+            )}
+
             {/* AI分析快捷按鈕 (放置於幫助選單左側) */}
             {isAdmin ? (
               <Button
@@ -430,6 +450,14 @@ export function Header() {
 
       <LoginDialog isOpen={isLoginDialogOpen} setIsOpen={setIsLoginDialogOpen} />
       <PermissionMatrixDialog isOpen={isPermissionDialogOpen} setIsOpen={setIsPermissionDialogOpen} />
+      {canViewAuditLog && (
+        <AuditLogDialog
+          isOpen={isAuditLogOpen}
+          setIsOpen={setIsAuditLogOpen}
+          currentUserName={currentUser?.displayName || currentUser?.username}
+          currentUserRole={role}
+        />
+      )}
       {isChangeMyPasswordOpen && currentUser && (
         <ResetPasswordDialog
           isOpen={isChangeMyPasswordOpen}

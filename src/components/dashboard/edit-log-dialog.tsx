@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { updateProgressLog } from '@/lib/actions';
+import { useAdmin } from '@/components/admin-context';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -35,6 +36,7 @@ type EditLogDialogProps = {
 export function EditLogDialog({ isOpen, setIsOpen, projectId, subProjectId, log, onLogUpdated }: EditLogDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const { currentUser } = useAdmin();
 
   const {
     register,
@@ -53,12 +55,27 @@ export function EditLogDialog({ isOpen, setIsOpen, projectId, subProjectId, log,
   const onSubmit = (data: LogFormData) => {
     startTransition(async () => {
       try {
-        const updatedLog = await updateProgressLog(log.id, projectId, subProjectId, {
+        const operator = currentUser ? {
+          uid: currentUser.uid,
+          name: currentUser.displayName || currentUser.username || currentUser.email,
+          email: currentUser.email,
+          role: currentUser.role,
+          department: currentUser.department,
+        } : undefined;
+
+        const updatedLog = await updateProgressLog(
+          log.id, 
+          projectId, 
+          subProjectId, 
+          {
             ...data,
             roadblocks: data.roadblocks ?? '',
-        });
+          },
+          operator
+        );
         
         onLogUpdated(updatedLog);
+
   
         toast({ title: '週報更新成功' });
         setIsOpen(false);

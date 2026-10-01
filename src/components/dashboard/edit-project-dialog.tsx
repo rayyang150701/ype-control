@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { User, FullProject, SubProjectWithLatestLog, InternalProjectOption } from '@/types';
+import { useAdmin } from '@/components/admin-context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import {
@@ -71,6 +72,7 @@ type EditProjectDialogProps = {
 export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated }: EditProjectDialogProps) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const { currentUser } = useAdmin();
   const [users, setUsers] = useState<User[]>([]);
   const [internalProjects, setInternalProjects] = useState<InternalProjectOption[]>([]);
   const [openCalendar, setOpenCalendar] = useState<{ type: 'expected' | 'actual', index: number} | null>(null);
@@ -208,7 +210,15 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
   
   const handleResumeProject = (isParent: boolean, subProjectId?: string) => {
     startTransition(async () => {
-      const result = await resumeProject(project.id, isParent ? undefined : subProjectId);
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+
+      const result = await resumeProject(project.id, isParent ? undefined : subProjectId, operator);
       if (result.success) {
         toast({
           title: '專案已恢復',
@@ -230,7 +240,15 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
 
   const onSubmit = (data: ProjectFormData) => {
     startTransition(async () => {
-      const result = await updateProject(project.id, data, originalSubProjectIds);
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+
+      const result = await updateProject(project.id, data, originalSubProjectIds, operator);
       if (result.success) {
         toast({ title: result.message });
         const updatedProject = await getFullProjectById(project.id);

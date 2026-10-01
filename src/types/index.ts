@@ -254,4 +254,61 @@ export interface WeeklySnapshotData {
 
 export * from './businessTrip';
 
+// ==========================================
+// 修改履歷與稽核紀錄 (Audit Log / Change Log)
+// ==========================================
+
+export interface AuditOperator {
+  uid?: string;
+  name: string;
+  email?: string;
+  role?: string;
+  department?: string;
+}
+
+export interface AuditDiffItem {
+  field: string;
+  label: string;
+  oldValue: any;
+  newValue: any;
+}
+
+export type AuditActionType =
+  | 'PROGRESS_LOG_CREATE'   // 新增週報
+  | 'PROGRESS_LOG_UPDATE'   // 更新週報
+  | 'PROGRESS_LOG_DELETE'   // 刪除週報
+  | 'PROJECT_CREATE'        // 新增專案
+  | 'PROJECT_UPDATE'        // 編輯專案
+  | 'PROJECT_DELETE'        // 刪除專案
+  | 'PROJECT_ON_HOLD'       // 設定暫緩
+  | 'PROJECT_RESUME'        // 恢復專案
+  | 'PHASE_SCHEDULE_UPDATE' // 更新階段時程
+  | 'ACTION_ITEM_CREATE'    // 新增待辦
+  | 'ACTION_ITEM_UPDATE'    // 更新待辦
+  | 'ACTION_ITEM_DELETE'    // 刪除待辦
+  | 'TRIP_CREATE'           // 新增行程
+  | 'TRIP_UPDATE'           // 更新行程
+  | 'TRIP_DELETE'           // 刪除行程
+  | 'OTHER';
+
+export interface AuditLog {
+  id: string;
+  createdAt: string;
+  operatorId?: string;
+  operatorName: string;
+  operatorEmail?: string;
+  operatorRole?: string;
+  operatorDepartment?: string;
+  actionType: AuditActionType;
+  actionLabel: string;
+  projectId?: string;
+  projectName?: string;
+  targetId?: string;
+  targetName?: string;
+  summary: string;
+  diffs?: AuditDiffItem[];
+  metadata?: Record<string, any>;
+}
+
+
 

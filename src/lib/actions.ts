@@ -2,11 +2,18 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday, ProjectPhaseSchedules } from '@/types';
+import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday, ProjectPhaseSchedules, AuditLog, AuditDiffItem, AuditOperator } from '@/types';
+import { recordAuditLog, getAuditLogs } from '@/lib/audit';
 import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 import { DEFAULT_TAIWAN_HOLIDAYS } from '@/lib/calendar-helper';
 import { isTpmPerson, separatePmAndTpm } from '@/lib/tpm-helper';
+
+export async function getAuditLogsAction(params?: any) {
+    return await getAuditLogs(params);
+}
+
+
 
 /**
  * 格式化為 ISO 字串
@@ -904,15 +911,25 @@ export async function createProject(data: any) {
     }
 }
 
-export async function updateProject(projectId: string, data: any, originalSubProjectIds: string[]) {
+export async function updateProject(
+    projectId: string, 
+    data: any, 
+    originalSubProjectIds: string[],
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     try {
         // 取得現有 metadata 與現有欄位
         const { data: existingProj } = await supabase
             .from('projects')
-            .select('on_hold_notes, tpm_office_contact, yieh_phui_project_manager, egiga_contact')
+            .select('name, case_number, on_hold_notes, tpm_office_contact, yieh_phui_project_manager, egiga_contact')
             .eq('id', projectId)
             .single();
+        const { data: oldSubProjects } = await supabase
+            .from('sub_projects')
+            .select('id, name, expected_completion_date')
+            .eq('project_id', projectId);
+
         const currentMeta = parseProjectMeta(existingProj?.on_hold_notes);
         
         const clientName = data.clientName?.trim() || currentMeta.clientName || '燁輝';
@@ -1013,6 +1030,56 @@ export async function updateProject(projectId: string, data: any, originalSubPro
             }).eq('id', spUpdate.id);
             if (error) throw error;
         }
+
+        // 寫入修改履歷
+        try {
+            const projDiffs: AuditDiffItem[] = [];
+            if (existingProj) {
+                if (data.name && data.name !== existingProj.name) {
+                    projDiffs.push({ field: 'name', label: '專案名稱', oldValue: existingProj.name, newValue: data.name });
+                }
+                if (data.caseNumber && String(data.caseNumber).trim() !== existingProj.case_number) {
+                    projDiffs.push({ field: 'caseNumber', label: '專案案號', oldValue: existingProj.case_number, newValue: String(data.caseNumber).trim() });
+                }
+                if (tpmOfficeContact !== (existingProj.tpm_office_contact || '')) {
+                    projDiffs.push({ field: 'tpmOfficeContact', label: 'TPM 窗口', oldValue: existingProj.tpm_office_contact || '(未指定)', newValue: tpmOfficeContact || '(未指定)' });
+                }
+            }
+
+            if (oldSubProjects && Array.isArray(data.subProjects)) {
+                for (const spData of data.subProjects) {
+                    if (spData.id) {
+                        const oldSp = oldSubProjects.find(osp => osp.id === spData.id);
+                        if (oldSp) {
+                            const oldDate = oldSp.expected_completion_date ? format(new Date(oldSp.expected_completion_date), 'yyyy/MM/dd') : '未設定';
+                            const newDate = spData.expectedCompletionDate ? format(new Date(spData.expectedCompletionDate), 'yyyy/MM/dd') : '未設定';
+                            if (oldDate !== newDate) {
+                                projDiffs.push({
+                                    field: `subProject_${spData.id}_date`,
+                                    label: `${spData.name || oldSp.name} 預計完成日`,
+                                    oldValue: oldDate,
+                                    newValue: newDate,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            await recordAuditLog({
+                operator,
+                actionType: 'PROJECT_UPDATE',
+                actionLabel: '編輯專案',
+                projectId,
+                projectName: `[${data.caseNumber || existingProj?.case_number || ''}] ${data.name || existingProj?.name || ''}`,
+                summary: `更新專案基本資訊與時程${projDiffs.length > 0 ? ` (${projDiffs.map(d => d.label).join('、')})` : ''}`,
+                diffs: projDiffs.length > 0 ? projDiffs : [
+                    { field: 'info', label: '更新內容', oldValue: '原有資訊', newValue: '已更新儲存' }
+                ],
+            });
+        } catch (e) {
+            console.warn('記錄專案更新履歷失敗:', e);
+        }
         
         revalidatePath('/dashboard');
         revalidatePath('/internal-tasks');
@@ -1025,9 +1092,14 @@ export async function updateProject(projectId: string, data: any, originalSubPro
 
 // --- 週報管理 ---
 
-export async function addProgressLog(projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
+export async function addProgressLog(
+    projectId: string, 
+    subProjectId: string, 
+    logData: any,
+    operator?: AuditOperator
+): Promise<ProgressLog> {
     const supabase = getSupabaseClient();
-    const userId = 'admin-user'; 
+    const userId = operator?.uid || 'admin-user'; 
     
     const payload = {
         firebase_id: crypto.randomUUID(),
@@ -1043,6 +1115,32 @@ export async function addProgressLog(projectId: string, subProjectId: string, lo
 
     const { data: newLog, error } = await supabase.from('progress_logs').insert(payload).select().single();
     if (error) throw error;
+
+    // 寫入修改履歷
+    try {
+        const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', projectId).single();
+        const { data: sub } = await supabase.from('sub_projects').select('name').eq('id', subProjectId).single();
+        const projTitle = proj ? `[${proj.case_number}] ${proj.name}` : undefined;
+        await recordAuditLog({
+            operator,
+            actionType: 'PROGRESS_LOG_CREATE',
+            actionLabel: '新增週報',
+            projectId,
+            projectName: projTitle,
+            targetId: subProjectId,
+            targetName: sub?.name || '子專案',
+            summary: `新增 ${logData.reportingPeriod} 週報進度 (${logData.completionPercentage}%)`,
+            diffs: [
+                { field: 'completionPercentage', label: '完成度', oldValue: '-', newValue: `${logData.completionPercentage}%` },
+                { field: 'reportingPeriod', label: '提報區間', oldValue: '-', newValue: logData.reportingPeriod },
+                { field: 'executionSummary', label: '本週執行摘要', oldValue: '-', newValue: logData.executionSummary },
+                { field: 'nextWeekPlan', label: '下週工作計畫', oldValue: '-', newValue: logData.nextWeekPlan },
+                { field: 'roadblocks', label: '遭遇問題及風險', oldValue: '-', newValue: logData.roadblocks || '無' },
+            ],
+        });
+    } catch (e) {
+        console.warn('記錄週報新增履歷失敗:', e);
+    }
 
     if (Number(logData.completionPercentage) === 100) {
         try {
@@ -1071,8 +1169,22 @@ export async function addProgressLog(projectId: string, subProjectId: string, lo
     } as ProgressLog;
 }
 
-export async function updateProgressLog(logId: string, projectId: string, subProjectId: string, logData: any): Promise<ProgressLog> {
+export async function updateProgressLog(
+    logId: string, 
+    projectId: string, 
+    subProjectId: string, 
+    logData: any,
+    operator?: AuditOperator
+): Promise<ProgressLog> {
     const supabase = getSupabaseClient();
+
+    // 取得舊資料以供比對
+    let oldLog: any = null;
+    try {
+        const { data } = await supabase.from('progress_logs').select('*').eq('id', logId).single();
+        oldLog = data;
+    } catch {}
+
     const { data: updatedLog, error } = await supabase.from('progress_logs').update({
         reporting_period: logData.reportingPeriod,
         execution_summary: logData.executionSummary,
@@ -1083,6 +1195,65 @@ export async function updateProgressLog(logId: string, projectId: string, subPro
     }).eq('id', logId).select().single();
 
     if (error) throw error;
+
+    // 計算前後差異並寫入修改履歷
+    try {
+        const diffs: AuditDiffItem[] = [];
+        if (oldLog) {
+            if (Number(oldLog.completion_percentage) !== Number(logData.completionPercentage)) {
+                diffs.push({
+                    field: 'completionPercentage',
+                    label: '總體完成度',
+                    oldValue: `${oldLog.completion_percentage}%`,
+                    newValue: `${logData.completionPercentage}%`,
+                });
+            }
+            if (oldLog.execution_summary !== logData.executionSummary) {
+                diffs.push({
+                    field: 'executionSummary',
+                    label: '本週執行摘要',
+                    oldValue: oldLog.execution_summary || '(空白)',
+                    newValue: logData.executionSummary || '(空白)',
+                });
+            }
+            if (oldLog.next_week_plan !== logData.nextWeekPlan) {
+                diffs.push({
+                    field: 'nextWeekPlan',
+                    label: '下週工作計畫',
+                    oldValue: oldLog.next_week_plan || '(空白)',
+                    newValue: logData.nextWeekPlan || '(空白)',
+                });
+            }
+            if ((oldLog.roadblocks || '') !== (logData.roadblocks || '')) {
+                diffs.push({
+                    field: 'roadblocks',
+                    label: '遭遇問題及風險',
+                    oldValue: oldLog.roadblocks || '無',
+                    newValue: logData.roadblocks || '無',
+                });
+            }
+        }
+
+        const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', projectId).single();
+        const { data: sub } = await supabase.from('sub_projects').select('name').eq('id', subProjectId).single();
+        const projTitle = proj ? `[${proj.case_number}] ${proj.name}` : undefined;
+
+        await recordAuditLog({
+            operator,
+            actionType: 'PROGRESS_LOG_UPDATE',
+            actionLabel: '更新週報',
+            projectId,
+            projectName: projTitle,
+            targetId: subProjectId,
+            targetName: sub?.name || '子專案',
+            summary: `更新 ${logData.reportingPeriod} 週報${diffs.some(d => d.field === 'completionPercentage') ? ` (進度調整至 ${logData.completionPercentage}%)` : ''}`,
+            diffs: diffs.length > 0 ? diffs : [
+                { field: 'info', label: '更新內容', oldValue: '原週報內容', newValue: '已儲存更新' }
+            ],
+        });
+    } catch (e) {
+        console.warn('記錄週報更新履歷失敗:', e);
+    }
 
     if (Number(logData.completionPercentage) === 100) {
         try {
@@ -1111,13 +1282,26 @@ export async function updateProgressLog(logId: string, projectId: string, subPro
     } as ProgressLog;
 }
 
-export async function deleteProgressLog(logId: string) {
+export async function deleteProgressLog(logId: string, operator?: AuditOperator) {
     const supabase = getSupabaseClient();
+    try {
+        const { data: logInfo } = await supabase.from('progress_logs').select('reporting_period, sub_project_id').eq('id', logId).single();
+        await recordAuditLog({
+            operator,
+            actionType: 'PROGRESS_LOG_DELETE',
+            actionLabel: '刪除週報',
+            targetId: logId,
+            summary: `刪除 ${logInfo?.reporting_period || ''} 週報紀錄`,
+            diffs: [{ field: 'status', label: '操作狀態', oldValue: '已提報', newValue: '已刪除' }],
+        });
+    } catch {}
+
     const { error } = await supabase.from('progress_logs').delete().eq('id', logId);
     if (error) throw error;
     revalidatePath('/dashboard');
     return { success: true, message: '週報已成功刪除！' };
 }
+
 
 export async function deleteSubProjects(projectId: string, subProjectIds: string[]) {
     const supabase = getSupabaseClient();
@@ -1143,7 +1327,12 @@ export async function deleteSubProjects(projectId: string, subProjectIds: string
     revalidatePath('/dashboard');
 }
 
-export async function setProjectOnHold(projectId: string, subProjectIds: string[], onHoldData: any) {
+export async function setProjectOnHold(
+    projectId: string, 
+    subProjectIds: string[], 
+    onHoldData: any,
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     try {
         const onHoldPayload = {
@@ -1164,6 +1353,27 @@ export async function setProjectOnHold(projectId: string, subProjectIds: string[
             await supabase.from('sub_projects').update({ is_on_hold: true }).in('id', subProjectIds);
         }
 
+        // 寫入修改履歷
+        try {
+            const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', projectId).single();
+            await recordAuditLog({
+                operator,
+                actionType: 'PROJECT_ON_HOLD',
+                actionLabel: '設定暫緩',
+                projectId,
+                projectName: proj ? `[${proj.case_number}] ${proj.name}` : undefined,
+                summary: `設定專案暫緩，原因：${onHoldData.reason}`,
+                diffs: [
+                    { field: 'status', label: '專案狀態', oldValue: '進行中 (active)', newValue: '暫緩中 (on-hold)' },
+                    { field: 'reason', label: '暫緩原因', oldValue: '-', newValue: onHoldData.reason },
+                    { field: 'startDate', label: '開始日期', oldValue: '-', newValue: onHoldData.startDate ? format(new Date(onHoldData.startDate), 'yyyy/MM/dd') : '-' },
+                    { field: 'notes', label: '備註說明', oldValue: '-', newValue: onHoldData.notes || '無' },
+                ],
+            });
+        } catch (e) {
+            console.warn('記錄專案暫緩履歷失敗:', e);
+        }
+
         revalidatePath('/dashboard');
         return { success: true, message: '已成功設定暫緩！' };
     } catch (e) {
@@ -1171,18 +1381,45 @@ export async function setProjectOnHold(projectId: string, subProjectIds: string[
     }
 }
 
-export async function resumeProject(projectId: string, subProjectId?: string) {
+export async function resumeProject(
+    projectId: string, 
+    subProjectId?: string,
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     if (subProjectId) {
         await supabase.from('sub_projects').update({ is_on_hold: false }).eq('id', subProjectId);
     } else {
         await supabase.from('projects').update({ status: 'active', is_on_hold: false }).eq('id', projectId);
     }
+
+    // 寫入修改履歷
+    try {
+        const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', projectId).single();
+        await recordAuditLog({
+            operator,
+            actionType: 'PROJECT_RESUME',
+            actionLabel: '恢復專案',
+            projectId,
+            projectName: proj ? `[${proj.case_number}] ${proj.name}` : undefined,
+            summary: `恢復專案為進行中狀態`,
+            diffs: [
+                { field: 'status', label: '專案狀態', oldValue: '暫緩中 (on-hold)', newValue: '進行中 (active)' },
+            ],
+        });
+    } catch (e) {
+        console.warn('記錄專案恢復履歷失敗:', e);
+    }
+
     revalidatePath('/dashboard');
     return { success: true, message: '專案已恢復！' };
 }
 
-export async function resumeProjects(projectIds: string[], subProjectsByProject: any) {
+export async function resumeProjects(
+    projectIds: string[], 
+    subProjectsByProject: any,
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     if (projectIds.length > 0) {
         await supabase.from('projects').update({ is_on_hold: false, status: 'active' }).in('id', projectIds);
@@ -1197,9 +1434,25 @@ export async function resumeProjects(projectIds: string[], subProjectsByProject:
         await supabase.from('sub_projects').update({ is_on_hold: false }).in('id', allSubProjectIdsToResume);
     }
 
+    // 寫入修改履歷
+    try {
+        await recordAuditLog({
+            operator,
+            actionType: 'PROJECT_RESUME',
+            actionLabel: '批次恢復專案',
+            summary: `批次恢復 ${projectIds.length} 個專案與相關子專案為進行中狀態`,
+            diffs: [
+                { field: 'status', label: '專案狀態', oldValue: '暫緩中 (on-hold)', newValue: '進行中 (active)' },
+            ],
+        });
+    } catch (e) {
+        console.warn('記錄批次專案恢復履歷失敗:', e);
+    }
+
     revalidatePath('/dashboard');
-    return { success: true, message: '專案已成功恢復！' };
+    return { success: true, message: '所有選中專案已成功恢復！' };
 }
+
 
 /**
  * 核心資料處理引擎：案號去重、最新週報判定(本週優先)、專案大到小排序、子項目 1,2,3 排序

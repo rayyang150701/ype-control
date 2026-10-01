@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { addProgressLog } from '@/lib/actions';
+import { useAdmin } from '@/components/admin-context';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -39,6 +40,7 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const { toast } = useToast();
+  const { currentUser } = useAdmin();
   const { latestLog } = subProject;
 
   const {
@@ -85,14 +87,23 @@ export function NewLogDialog({ isOpen, setIsOpen, subProject, onLogAdded }: NewL
           roadblocks: data.roadblocks ?? '',
           reportingPeriod,
         };
+
+        const operator = currentUser ? {
+          uid: currentUser.uid,
+          name: currentUser.displayName || currentUser.username || currentUser.email,
+          email: currentUser.email,
+          role: currentUser.role,
+          department: currentUser.department,
+        } : undefined;
   
-        const newLog = await addProgressLog(subProject.projectId, subProject.id, newLogData);
+        const newLog = await addProgressLog(subProject.projectId, subProject.id, newLogData, operator);
         
         onLogAdded(newLog, subProject.id);
   
         toast({ title: '週報新增成功' });
         setIsOpen(false);
       } catch (e) {
+
         console.error(e);
         toast({ title: '錯誤', description: '新增週報失敗', variant: 'destructive' });
       }
