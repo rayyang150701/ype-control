@@ -64,7 +64,7 @@ export function LinkedInternalProgressDialog({
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProjectActionItem | null>(null);
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
-  const { isAdmin, isEditor } = useAdmin();
+  const { isAdmin, isEditor, currentUser } = useAdmin();
   const canEdit = isAdmin || isEditor;
   const { toast } = useToast();
 
@@ -218,7 +218,14 @@ export function LinkedInternalProgressDialog({
     );
 
     try {
-      const res = await updateActionItem(item.id, { status: newStatus });
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+      const res = await updateActionItem(item.id, { status: newStatus, operator });
       if (res.success) {
         toast({
           title: newStatus === 'completed' ? '已標記為結案！' : '已重新開啟待辦',

@@ -17,16 +17,11 @@ import {
   RefreshCw,
   User,
   Filter,
-  ArrowRight,
-  Calendar,
   Layers,
   Copy,
   Check,
   AlertCircle,
   Clock,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { getAuditLogs, type AuditLogsResponse } from '@/lib/audit';
 import type { AuditLog, AuditActionType } from '@/types';
@@ -45,21 +40,6 @@ const ACTION_CATEGORY_MAP: Record<string, { label: string; color: string; types:
     color: 'bg-slate-100 text-slate-800 border-slate-300',
     types: [],
   },
-  progress: {
-    label: '週報進度',
-    color: 'bg-blue-50 text-blue-700 border-blue-200',
-    types: ['PROGRESS_LOG_CREATE', 'PROGRESS_LOG_UPDATE', 'PROGRESS_LOG_DELETE'],
-  },
-  project: {
-    label: '專案資料與時程',
-    color: 'bg-purple-50 text-purple-700 border-purple-200',
-    types: ['PROJECT_CREATE', 'PROJECT_UPDATE', 'PROJECT_DELETE', 'PHASE_SCHEDULE_UPDATE'],
-  },
-  status: {
-    label: '暫緩與恢復',
-    color: 'bg-amber-50 text-amber-700 border-amber-200',
-    types: ['PROJECT_ON_HOLD', 'PROJECT_RESUME'],
-  },
   task: {
     label: '待辦事項',
     color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -69,6 +49,21 @@ const ACTION_CATEGORY_MAP: Record<string, { label: string; color: string; types:
     label: '行事曆行程',
     color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     types: ['TRIP_CREATE', 'TRIP_UPDATE', 'TRIP_DELETE'],
+  },
+  progress: {
+    label: '週報進度',
+    color: 'bg-blue-50 text-blue-700 border-blue-200',
+    types: ['PROGRESS_LOG_CREATE', 'PROGRESS_LOG_UPDATE', 'PROGRESS_LOG_DELETE'],
+  },
+  project: {
+    label: '專案與時程',
+    color: 'bg-purple-50 text-purple-700 border-purple-200',
+    types: ['PROJECT_CREATE', 'PROJECT_UPDATE', 'PROJECT_DELETE', 'PHASE_SCHEDULE_UPDATE'],
+  },
+  status: {
+    label: '暫緩與恢復',
+    color: 'bg-amber-50 text-amber-700 border-amber-200',
+    types: ['PROJECT_ON_HOLD', 'PROJECT_RESUME'],
   },
 };
 
@@ -214,7 +209,6 @@ export function AuditLogDialog({
   const [selectedProject, setSelectedProject] = useState<string>('all');
   const [selectedOperator, setSelectedOperator] = useState<string>('all');
   const [copiedSql, setCopiedSql] = useState(false);
-  const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>({});
 
   const fetchLogs = () => {
     startTransition(async () => {
@@ -278,20 +272,15 @@ export function AuditLogDialog({
         return false;
       }
 
-      // 關鍵字搜尋 (專案名稱、操作人、摘要、細項)
+      // 關鍵字搜尋 (專案名稱、操作人、摘要、標籤、標的)
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase().trim();
         const matchProject = log.projectName?.toLowerCase().includes(q);
         const matchOperator = log.operatorName?.toLowerCase().includes(q) || log.operatorEmail?.toLowerCase().includes(q);
         const matchSummary = log.summary?.toLowerCase().includes(q);
         const matchLabel = log.actionLabel?.toLowerCase().includes(q);
-        const matchDiff = log.diffs?.some(
-          (d) =>
-            d.label.toLowerCase().includes(q) ||
-            String(d.oldValue).toLowerCase().includes(q) ||
-            String(d.newValue).toLowerCase().includes(q)
-        );
-        if (!matchProject && !matchOperator && !matchSummary && !matchLabel && !matchDiff) {
+        const matchTarget = log.targetName?.toLowerCase().includes(q);
+        if (!matchProject && !matchOperator && !matchSummary && !matchLabel && !matchTarget) {
           return false;
         }
       }
@@ -299,13 +288,6 @@ export function AuditLogDialog({
       return true;
     });
   }, [logs, selectedCategory, selectedProject, selectedOperator, searchQuery]);
-
-  const toggleExpand = (logId: string) => {
-    setExpandedDiffs((prev) => ({
-      ...prev,
-      [logId]: !prev[logId],
-    }));
-  };
 
   const handleCopySql = () => {
     const sql = `-- 在 Supabase SQL Editor 執行以下語法以建立修改履歷資料表:
@@ -367,7 +349,7 @@ CREATE POLICY "Allow insert audit_logs" ON public.audit_logs FOR INSERT WITH CHE
                 )}
               </div>
               <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                完整追蹤誰在何時修改了專案、週報、待辦與行事曆行程資訊，提供「修改前 ➔ 修改後」一目了然的對照紀錄。
+                即時追蹤同仁在何時修改了專案、週報、待辦與行程，掌握「時間、人員、事件大方向」。
               </DialogDescription>
             </div>
           </div>
@@ -497,50 +479,52 @@ CREATE POLICY "Allow insert audit_logs" ON public.audit_logs FOR INSERT WITH CHE
             filteredLogs.map((log) => {
               const actionBadge = getActionBadgeProps(log.actionType);
               const roleBadge = getRoleBadge(log.operatorRole, log.operatorDepartment);
-              const isExpanded = expandedDiffs[log.id] ?? true;
-              const hasDiffs = log.diffs && log.diffs.length > 0;
 
               return (
                 <div
                   key={log.id}
-                  className="bg-white rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all p-4 space-y-2.5"
+                  className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all p-3.5 space-y-2"
                 >
-                  {/* 第一行：時間、專案標籤、動作標籤、操作人標籤 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <div className="flex flex-wrap items-center gap-2">
+                  {/* 第一行：時間、動作標籤、專案、人員 */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs border-b border-slate-100 pb-2">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                       {/* 時間標籤 */}
-                      <span className="text-xs font-mono font-medium text-slate-500 flex items-center gap-1">
+                      <span className="font-mono text-slate-500 font-medium flex items-center gap-1 shrink-0">
                         <Clock className="h-3.5 w-3.5 text-slate-400" />
-                        {log.createdAt ? format(new Date(log.createdAt), 'yyyy/MM/dd HH:mm') : '-'}
-                        <span className="text-[11px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded ml-0.5">
+                        <span>{log.createdAt ? format(new Date(log.createdAt), 'yyyy/MM/dd HH:mm') : '-'}</span>
+                        <span className="text-[11px] text-amber-700 font-semibold bg-amber-50 border border-amber-200/60 px-1.5 py-0.2 rounded ml-0.5">
                           {formatRelativeTime(log.createdAt)}
                         </span>
                       </span>
 
-                      {/* 動作標籤 */}
-                      <Badge variant="outline" className={`text-xs px-2 py-0.5 font-semibold ${actionBadge.className}`}>
+                      {/* 動作分類標籤 */}
+                      <Badge variant="outline" className={`text-xs px-2 py-0.5 font-semibold shrink-0 ${actionBadge.className}`}>
                         {actionBadge.label}
                       </Badge>
 
                       {/* 專案名稱 */}
-                      {log.projectName && (
-                        <span className="text-xs font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <Layers className="h-3 w-3 text-slate-500" />
-                          {log.projectName}
+                      {log.projectName ? (
+                        <span className="font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1 truncate max-w-[280px]" title={log.projectName}>
+                          <Layers className="h-3 w-3 text-slate-500 shrink-0" />
+                          <span className="truncate">{log.projectName}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-[11px]">
+                          未指定專案
                         </span>
                       )}
 
-                      {/* 子專案或標的 */}
+                      {/* 子專案或標的 (若有) */}
                       {log.targetName && log.targetName !== log.projectName && (
-                        <span className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                        <span className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.2 rounded truncate max-w-[200px]" title={log.targetName}>
                           {log.targetName}
                         </span>
                       )}
                     </div>
 
                     {/* 操作人員資訊 */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-slate-800 flex items-center gap-1">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="font-semibold text-slate-800 flex items-center gap-1">
                         <User className="h-3.5 w-3.5 text-slate-400" />
                         {log.operatorName}
                       </span>
@@ -549,80 +533,17 @@ CREATE POLICY "Allow insert audit_logs" ON public.audit_logs FOR INSERT WITH CHE
                           ({log.operatorEmail})
                         </span>
                       )}
-                      <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${roleBadge.className}`}>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${roleBadge.className}`}>
                         {roleBadge.label}
                       </Badge>
                     </div>
                   </div>
 
-                  {/* 第二行：主要摘要說明 */}
-                  <div className="text-xs md:text-sm font-semibold text-slate-800">
-                    {log.summary}
+                  {/* 第二行：事件大方向 (核心內容一目了然) */}
+                  <div className="text-xs sm:text-sm font-semibold text-slate-900 flex items-start gap-1.5 pl-0.5">
+                    <span className="text-amber-500 shrink-0 mt-0.5 select-none font-bold">▸</span>
+                    <span className="break-words leading-relaxed">{log.summary}</span>
                   </div>
-
-                  {/* 第三行：修改前後比對 Diff (一目了然) */}
-                  {hasDiffs && (
-                    <div className="pt-1">
-                      <div className="rounded-lg border border-slate-200/90 overflow-hidden bg-slate-50/60">
-                        <div className="px-3 py-1.5 bg-slate-100/80 border-b border-slate-200/80 flex items-center justify-between text-xs text-slate-600 font-semibold">
-                          <span>異動項目對照 ({log.diffs!.length} 項變更)</span>
-                          <button
-                            onClick={() => toggleExpand(log.id)}
-                            className="text-slate-500 hover:text-slate-800 flex items-center gap-0.5 text-[11px] font-normal"
-                          >
-                            {isExpanded ? (
-                              <>
-                                <span>收合細節</span> <ChevronUp className="h-3 w-3" />
-                              </>
-                            ) : (
-                              <>
-                                <span>展開細節</span> <ChevronDown className="h-3 w-3" />
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {isExpanded && (
-                          <div className="divide-y divide-slate-200/70 p-1">
-                            {log.diffs!.map((diff, idx) => (
-                              <div key={idx} className="p-2.5 text-xs grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
-                                {/* 欄位名稱 */}
-                                <div className="md:col-span-3 font-semibold text-slate-700 flex items-center gap-1.5">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
-                                  <span>{diff.label || diff.field}</span>
-                                </div>
-
-                                {/* 變更前 ➔ 變更後 對照 */}
-                                <div className="md:col-span-9 flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                                  {/* 修改前 */}
-                                  <div className="flex-1 w-full bg-rose-50/80 border border-rose-200 rounded p-1.5 text-slate-700">
-                                    <span className="text-[10px] font-bold text-rose-600 uppercase block mb-0.5">
-                                      修改前
-                                    </span>
-                                    <div className="text-rose-900 line-through decoration-rose-400 break-words whitespace-pre-wrap">
-                                      {diff.oldValue || '(空白)'}
-                                    </div>
-                                  </div>
-
-                                  <ArrowRight className="h-4 w-4 text-slate-400 shrink-0 hidden sm:block" />
-
-                                  {/* 修改後 */}
-                                  <div className="flex-1 w-full bg-emerald-50/80 border border-emerald-300 rounded p-1.5 text-slate-800">
-                                    <span className="text-[10px] font-bold text-emerald-700 uppercase block mb-0.5">
-                                      修改後
-                                    </span>
-                                    <div className="text-emerald-950 font-semibold break-words whitespace-pre-wrap">
-                                      {diff.newValue || '(空白)'}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })

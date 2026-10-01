@@ -1843,6 +1843,7 @@ export async function createActionItem(data: {
     lessonLearnt?: string;
     attachments?: ActionItemAttachment[];
     updatedAt?: string | null;
+    operator?: AuditOperator;
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -1919,6 +1920,24 @@ export async function createActionItem(data: {
             projectCategory: (projData?.status === 'poc' || projData?.status === 'evaluation') ? '評估案' : '已開案',
         };
 
+        // 寫入修改履歷
+        try {
+            const projTitle = projData ? (projData.case_number ? `[${projData.case_number}] ${projData.name}` : projData.name) : '未指定專案';
+            const op = data.operator || (data.owner ? { name: data.owner } : undefined);
+            await recordAuditLog({
+                operator: op,
+                actionType: 'ACTION_ITEM_CREATE',
+                actionLabel: '新增待辦',
+                projectId: data.projectId,
+                projectName: projTitle,
+                targetId: inserted.id,
+                targetName: data.title,
+                summary: `新增待辦事項「${data.title}」${data.owner ? ` (負責人: ${data.owner})` : ''}`,
+            });
+        } catch (auditErr) {
+            console.warn('[AuditLog] 記錄新增待辦履歷失敗:', auditErr);
+        }
+
         revalidatePath('/internal-tasks');
         return { success: true, message: '待辦事項已建立！', data: newItem };
     } catch (err: any) {
@@ -1939,6 +1958,7 @@ export async function updateActionItem(id: string, data: Partial<{
     lessonLearnt: string;
     attachments: ActionItemAttachment[];
     updatedAt: string | null;
+    operator?: AuditOperator;
 }>) {
     const supabase = getSupabaseClient();
     try {
@@ -2051,6 +2071,52 @@ export async function updateActionItem(id: string, data: Partial<{
 
         const { attachments: extractedAtt, cleanNotes: extractedNotes } = extractAttachments(updated);
 
+        // 寫入修改履歷
+        try {
+            const projId = updated?.project_id || existing?.project_id;
+            let projTitle = '未指定專案';
+            if (projId) {
+                const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', projId).maybeSingle();
+                if (proj) {
+                    projTitle = proj.case_number ? `[${proj.case_number}] ${proj.name}` : proj.name;
+                }
+            }
+
+            const itemTitle = updated?.title || data.title || existing?.title || '待辦事項';
+            const op = data.operator || (updated?.owner ? { name: updated.owner } : (existing?.owner ? { name: existing.owner } : undefined));
+
+            let actionDesc = `更新待辦事項「${itemTitle}」`;
+            if (data.status && existing && data.status !== existing.status) {
+                const statusNames: Record<string, string> = {
+                    pending: '待處理',
+                    in_progress: '進行中',
+                    completed: '已完成',
+                    blocked: '卡關/等待中',
+                    cancelled: '已取消',
+                };
+                actionDesc = `更新待辦事項「${itemTitle}」狀態為【${statusNames[data.status] || data.status}】`;
+            } else if (data.owner && existing && data.owner !== existing.owner) {
+                actionDesc = `變更待辦事項「${itemTitle}」負責人為【${data.owner}】`;
+            } else if (data.dueDate && existing && data.dueDate !== existing.due_date) {
+                actionDesc = `調整待辦事項「${itemTitle}」截止日為【${data.dueDate}】`;
+            } else if (data.phase && existing && data.phase !== existing.phase) {
+                actionDesc = `變更待辦事項「${itemTitle}」階段為【${data.phase}】`;
+            }
+
+            await recordAuditLog({
+                operator: op,
+                actionType: 'ACTION_ITEM_UPDATE',
+                actionLabel: '更新待辦',
+                projectId: projId,
+                projectName: projTitle,
+                targetId: id,
+                targetName: itemTitle,
+                summary: actionDesc,
+            });
+        } catch (auditErr) {
+            console.warn('[AuditLog] 記錄更新待辦履歷失敗:', auditErr);
+        }
+
         revalidatePath('/internal-tasks');
         return { 
             success: true, 
@@ -2083,7 +2149,7 @@ export async function updateActionItem(id: string, data: Partial<{
     }
 }
 
-export async function deleteActionItem(id: string) {
+export async function deleteActionItem(id: string, operator?: AuditOperator) {
     const supabase = getSupabaseClient();
     try {
         const { data: deletedRows, error } = await supabase
@@ -2095,6 +2161,30 @@ export async function deleteActionItem(id: string) {
         if (error) throw error;
         if (!deletedRows || deletedRows.length === 0) {
             throw new Error('刪除失敗：資料庫權限不足未能真正刪除。請確認 Vercel 環境變數是否已加入 SUPABASE_SERVICE_ROLE_KEY！');
+        }
+
+        // 寫入修改履歷
+        try {
+            const item = deletedRows[0];
+            let projTitle = '未指定專案';
+            if (item?.project_id) {
+                const { data: proj } = await supabase.from('projects').select('name, case_number').eq('id', item.project_id).maybeSingle();
+                if (proj) {
+                    projTitle = proj.case_number ? `[${proj.case_number}] ${proj.name}` : proj.name;
+                }
+            }
+            await recordAuditLog({
+                operator,
+                actionType: 'ACTION_ITEM_DELETE',
+                actionLabel: '刪除待辦',
+                projectId: item?.project_id,
+                projectName: projTitle,
+                targetId: id,
+                targetName: item?.title || '待辦事項',
+                summary: `刪除待辦事項「${item?.title || id}」`,
+            });
+        } catch (auditErr) {
+            console.warn('[AuditLog] 記錄刪除待辦履歷失敗:', auditErr);
         }
 
         // 同步自 Google 雲端硬碟將該待辦附帶的附件移至垃圾桶

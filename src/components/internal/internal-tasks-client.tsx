@@ -74,7 +74,7 @@ export function InternalTasksClient({
   users = [],
   clients = [],
 }: InternalTasksClientProps) {
-  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen, permissions } = useAdmin();
+  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen, permissions, currentUser } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -751,7 +751,14 @@ export function InternalTasksClient({
   const handleDelete = async (id: string) => {
     if (!confirm('確定要刪除這筆待辦歷程嗎？此操作無法還原，關聯雲端附件亦將同步移除。\n\n🛡️ 安全保證：此操作僅刪除該筆內部待辦事項，【絕對不會】影響任何燁輝管制總表專案與週報紀錄！')) return;
     try {
-      const res = await deleteActionItem(id);
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+      const res = await deleteActionItem(id, operator);
       if (res.success) {
         setActionItems((prev) => prev.filter((i) => i.id !== id));
         toast({ title: '已成功刪除' });
@@ -774,7 +781,14 @@ export function InternalTasksClient({
     }
     const newStatus = item.status === 'completed' ? 'in_progress' : 'completed';
     try {
-      const res = await updateActionItem(item.id, { status: newStatus });
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+      const res = await updateActionItem(item.id, { status: newStatus, operator });
       if (res.success) {
         setActionItems((prev) =>
           prev.map((i) => (i.id === item.id ? { ...i, status: newStatus } : i))

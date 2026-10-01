@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
+import { useAdmin } from '@/components/admin-context';
 import { TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
@@ -58,6 +59,7 @@ export function ActionItemDialog({
   actionItems = [],
   onSuccess,
 }: ActionItemDialogProps) {
+  const { currentUser } = useAdmin();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
@@ -393,6 +395,14 @@ export function ActionItemDialog({
         }
       }
 
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+
       if (item?.id) {
         const res = await updateActionItem(item.id, {
           title,
@@ -406,6 +416,7 @@ export function ActionItemDialog({
           notes: cleanNotes,
           lessonLearnt,
           attachments,
+          operator,
         });
         if (res.success) {
           toast({ title: '更新成功', description: '待辦歷程已成功儲存' });
@@ -428,6 +439,7 @@ export function ActionItemDialog({
           notes: cleanNotes,
           lessonLearnt,
           attachments,
+          operator,
         });
         if (res.success) {
           toast({ title: '新增成功', description: '待辦事項已建立！' });
