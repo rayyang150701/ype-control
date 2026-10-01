@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { PMLearningCourse, PMLearningViewMode, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
+import { PMLearningCourse, PMLearningViewMode, DEFAULT_PM_CATEGORIES, PMLearningContentType } from '@/types/pm-learning';
 import { User, Client } from '@/types';
 import { useAdmin } from '@/components/admin-context';
 import { TeamView } from './team-view';
@@ -45,12 +45,14 @@ export function PMLearningClient({
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<PMLearningViewMode>('team');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [createDialogInitialType, setCreateDialogInitialType] = useState<PMLearningContentType>('course');
   const [courseToEdit, setCourseToEdit] = useState<PMLearningCourse | null>(null);
   const [defaultAssignedUserId, setDefaultAssignedUserId] = useState<string | undefined>(undefined);
 
-  // 開啟建立對話框，可指定預設受訓成員 (如個人工作區點選時預設指派自己)
-  const handleOpenCreateDialog = (targetUserId?: string) => {
+  // 開啟建立對話框，可指定預設受訓成員與預設載體型態 (如文章/影音/閱讀)
+  const handleOpenCreateDialog = (targetUserId?: string, initialType: PMLearningContentType = 'course') => {
     setDefaultAssignedUserId(targetUserId);
+    setCreateDialogInitialType(initialType);
     setCourseToEdit(null);
     setIsCreateDialogOpen(true);
   };
@@ -250,13 +252,14 @@ export function PMLearningClient({
           currentUser={currentUser}
           categories={categories}
           onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
-          onOpenCreateDialog={() => handleOpenCreateDialog()}
+          onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
           onEditCourse={(c) => {
             setCourseToEdit(c);
             setIsCreateDialogOpen(true);
           }}
           onCourseDeleted={handleCourseDeleted}
           onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
+          onCourseUpdated={handleCourseUpdated}
         />
       )}
 
@@ -274,7 +277,7 @@ export function PMLearningClient({
           categories={categories}
           onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
           onCourseUpdated={handleCourseUpdated}
-          onOpenCreateDialog={(uid) => handleOpenCreateDialog(uid)}
+          onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
           onEditCourse={(c) => {
             setCourseToEdit(c);
             setIsCreateDialogOpen(true);
@@ -308,6 +311,7 @@ export function PMLearningClient({
         defaultAssignedUserId={defaultAssignedUserId}
         availableCategories={categories}
         onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
+        initialType={createDialogInitialType}
         onSuccess={handleCourseSaved}
       />
 

@@ -1,7 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { PMLearningCourse, PMLearningMemberProgress, PMLearningAttachment } from '@/types/pm-learning';
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  PMLearningCourse,
+  PMLearningMemberProgress,
+  PMLearningAttachment,
+  PMLearningContentType,
+  PMLearningTimelinessType,
+  CONTENT_TYPE_CONFIG,
+} from '@/types/pm-learning';
 import { User, CurrentUser } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +48,10 @@ import {
   X,
   Search,
   Filter,
+  Bot,
+  Zap,
+  Bookmark,
+  Video,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -51,6 +62,7 @@ import {
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
+import { ArticleReaderDialog } from './article-reader-dialog';
 
 interface MyLearningViewProps {
   courses: PMLearningCourse[];
@@ -61,7 +73,7 @@ interface MyLearningViewProps {
   categories?: string[];
   onOpenCategoryManager?: () => void;
   onCourseUpdated: (course: PMLearningCourse) => void;
-  onOpenCreateDialog: (defaultUserId?: string) => void;
+  onOpenCreateDialog: (defaultUserId?: string, initialType?: PMLearningContentType) => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onCourseDeleted: (courseId: string) => void;
 }
@@ -151,11 +163,44 @@ export function MyLearningView({
   // 全域展開/收合控制
   const [expandAllState, setExpandAllState] = useState<boolean>(false);
 
+  // 載體型態切換分頁 (全部 | 課程 | 文章 | 影音 | 閱讀)
+  const [selectedContentType, setSelectedContentType] = useState<'all' | PMLearningContentType>('all');
+  const [selectedIssueDate, setSelectedIssueDate] = useState<string>('全部');
+  const [selectedTimeliness, setSelectedTimeliness] = useState<string>('全部');
+
+  // 文章閱讀視窗狀態
+  const [readerCourse, setReaderCourse] = useState<PMLearningCourse | null>(null);
+  const [isReaderOpen, setIsReaderOpen] = useState(false);
+
+  const handleOpenReader = (c: PMLearningCourse) => {
+    setReaderCourse(c);
+    setIsReaderOpen(true);
+  };
+
   // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
   const [selectedStatus, setSelectedStatus] = useState<string>('全部');
+
+  // 各載體數量統計
+  const contentTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: myCourses.length, course: 0, article: 0, video: 0, book: 0 };
+    myCourses.forEach((c) => {
+      const t = c.type || 'course';
+      if (counts[t] !== undefined) counts[t]++;
+    });
+    return counts;
+  }, [myCourses]);
+
+  // 所有可用出刊年月選項 (文章專用)
+  const allIssueDates = useMemo(() => {
+    const set = new Set<string>();
+    myCourses.forEach((c) => {
+      if (c.issueDate?.trim()) set.add(c.issueDate.trim());
+    });
+    return ['全部', ...Array.from(set).sort().reverse()];
+  }, [myCourses]);
 
   // 所有可用領域選項
   const allCategories = useMemo(() => {
@@ -179,13 +224,19 @@ export function MyLearningView({
 
   const isFiltered =
     searchQuery.trim() !== '' ||
+    selectedContentType !== 'all' ||
     selectedCategory !== '全部' ||
+    selectedIssueDate !== '全部' ||
+    selectedTimeliness !== '全部' ||
     selectedPlatform !== '全部' ||
     selectedStatus !== '全部';
 
   const handleResetFilters = () => {
     setSearchQuery('');
+    setSelectedContentType('all');
     setSelectedCategory('全部');
+    setSelectedIssueDate('全部');
+    setSelectedTimeliness('全部');
     setSelectedPlatform('全部');
     setSelectedStatus('全部');
   };
@@ -193,34 +244,67 @@ export function MyLearningView({
   // 篩選後課程清單 (同時保留自訂排序)
   const filteredCourses = useMemo(() => {
     return sortedMyCourses.filter((course) => {
-      // 1. 關鍵字比對 (搜尋名稱、平台/講師、說明、筆記、章節單元)
+      // 0. 載體型態篩選
+      if (selectedContentType !== 'all' && (course.type || 'course') !== selectedContentType) {
+        return false;
+      }
+
+      // 1. 關鍵字比對 (搜尋名稱、平台/講師、說明、筆記、章節單元、出刊、內文)
       const q = searchQuery.toLowerCase().trim();
       if (q) {
         const prog = course.memberProgress[activeMember?.uid || ''];
         const matchTitle = course.title.toLowerCase().includes(q);
         const matchPlatform = (course.instructorOrPlatform || '').toLowerCase().includes(q);
+        const matchSource = (course.source || '').toLowerCase().includes(q);
         const matchDesc = (course.description || '').toLowerCase().includes(q);
         const matchCategory = (course.category || '').toLowerCase().includes(q);
+        const matchContent = (course.content || '').toLowerCase().includes(q);
+        const matchIssue = (course.issueDate || '').toLowerCase().includes(q);
         const matchNotes = (prog?.notes || '').toLowerCase().includes(q);
         const matchChecklist = (prog?.checklist || []).some((item) =>
           item.title.toLowerCase().includes(q)
         );
-        if (!matchTitle && !matchPlatform && !matchDesc && !matchCategory && !matchNotes && !matchChecklist) {
+        if (
+          !matchTitle &&
+          !matchPlatform &&
+          !matchSource &&
+          !matchDesc &&
+          !matchCategory &&
+          !matchContent &&
+          !matchIssue &&
+          !matchNotes &&
+          !matchChecklist
+        ) {
           return false;
         }
       }
 
-      // 2. 課程領域篩選
+      // 2. 領域篩選 (保留隨選搜尋核心主題)
       if (selectedCategory !== '全部' && course.category !== selectedCategory) {
         return false;
       }
 
-      // 3. 平台 / 講師篩選
+      // 3. 出刊年月篩選 (文章專屬)
+      if (selectedIssueDate !== '全部' && course.issueDate !== selectedIssueDate) {
+        return false;
+      }
+
+      // 4. 時效性篩選
+      if (selectedTimeliness !== '全部') {
+        if (selectedTimeliness === 'time_sensitive' && course.timelinessType !== 'time_sensitive') {
+          return false;
+        }
+        if (selectedTimeliness === 'evergreen' && course.timelinessType !== 'evergreen') {
+          return false;
+        }
+      }
+
+      // 5. 平台 / 講師篩選
       if (selectedPlatform !== '全部' && course.instructorOrPlatform !== selectedPlatform) {
         return false;
       }
 
-      // 4. 學習狀態篩選
+      // 6. 學習狀態篩選
       if (selectedStatus !== '全部') {
         const prog = course.memberProgress[activeMember?.uid || ''];
         const p = prog?.progressPercent ?? 0;
@@ -232,7 +316,17 @@ export function MyLearningView({
 
       return true;
     });
-  }, [sortedMyCourses, searchQuery, selectedCategory, selectedPlatform, selectedStatus, activeMember?.uid]);
+  }, [
+    sortedMyCourses,
+    searchQuery,
+    selectedContentType,
+    selectedCategory,
+    selectedIssueDate,
+    selectedTimeliness,
+    selectedPlatform,
+    selectedStatus,
+    activeMember?.uid,
+  ]);
 
   // 個人視角：上下移動調整課程順序並儲存
   const handleMoveCourse = async (courseId: string, direction: 'up' | 'down') => {
@@ -433,139 +527,250 @@ export function MyLearningView({
         </div>
       )}
 
-      {/* 搜尋與篩選工具列 (依照課程領域、平台、狀態進行篩選，保留關鍵字查詢) */}
+      {/* 四大載體切換分頁 + 搜尋與篩選工具列 */}
       {sortedMyCourses.length > 0 && (
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            {/* 關鍵字搜尋 */}
-            <div className="relative min-w-[200px] max-w-sm flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜尋課程名稱、平台、筆記或關鍵字..."
-                className="pl-9 pr-7 h-9 text-xs"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                  title="清除關鍵字"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* 課程領域下拉篩選 */}
-            <div className="flex items-center gap-1.5">
-              <Tag className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="全部">全部領域類別</option>
-                {allCategories
-                  .filter((c) => c !== '全部')
-                  .map((c) => (
-                    <option key={c} value={c}>
-                      領域: {c}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {/* 平台 / 講師下拉篩選 */}
-            <div className="flex items-center gap-1.5">
-              <BookOpen className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
-              <select
-                value={selectedPlatform}
-                onChange={(e) => setSelectedPlatform(e.target.value)}
-                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="全部">全部平台 / 講師</option>
-                {allPlatforms
-                  .filter((p) => p !== '全部')
-                  .map((p) => (
-                    <option key={p} value={p}>
-                      平台: {p}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {/* 學習狀態下拉篩選 */}
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="全部">全部修習狀態</option>
-              <option value="進行中">⚡ 積極進行中</option>
-              <option value="已完訓">✅ 已完訓結業</option>
-              <option value="待開始">📌 尚未開始 (0%)</option>
-            </select>
-
-            {/* 重設篩選按鈕 */}
-            {isFiltered && (
-              <Button
+        <div className="space-y-3">
+          {/* 1. 四大載體切換分頁列 (全部 | 線上課程 | 知識文章 | 影音資源 | 個人閱讀) */}
+          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+              <button
                 type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleResetFilters}
-                className="h-9 px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 gap-1 font-semibold"
-                title="重設所有篩選條件"
+                onClick={() => setSelectedContentType('all')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  selectedContentType === 'all'
+                    ? 'bg-white text-indigo-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>清除篩選</span>
-              </Button>
-            )}
-          </div>
+                <span>🌐 全部載體</span>
+                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700">
+                  {contentTypeCounts.all}
+                </span>
+              </button>
 
-          {/* 右側：全部展開 / 全部收合按鈕 */}
-          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              {(['course', 'article', 'video', 'book'] as PMLearningContentType[]).map((type) => {
+                const cfg = CONTENT_TYPE_CONFIG[type];
+                const count = contentTypeCounts[type] || 0;
+                const isSelected = selectedContentType === type;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setSelectedContentType(type)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      isSelected
+                        ? 'bg-white text-indigo-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{cfg.icon}</span>
+                    <span>{cfg.label}</span>
+                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 新增項目快捷按鈕 */}
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              onClick={() => setExpandAllState((prev) => !prev)}
-              className="h-9 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold shadow-2xs"
+              onClick={() =>
+                onOpenCreateDialog(
+                  activeMember?.uid,
+                  selectedContentType !== 'all' ? selectedContentType : 'course'
+                )
+              }
+              className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1 shadow-2xs"
             >
-              {expandAllState ? (
-                <>
-                  <ChevronUp className="h-3.5 w-3.5" />
-                  <span>全部收合 ▴</span>
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                  <span>全部展開 ▾</span>
-                </>
-              )}
+              <Plus className="h-3.5 w-3.5" />
+              <span>
+                {selectedContentType === 'article'
+                  ? '新增知識文章'
+                  : selectedContentType === 'video'
+                  ? '新增影音資源'
+                  : selectedContentType === 'book'
+                  ? '新增閱讀筆記'
+                  : '新增自選項目'}
+              </span>
             </Button>
+          </div>
+
+          {/* 2. 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
+          <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
+            <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5 text-indigo-600" />
+              主題領域隨選:
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {allCategories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                    selectedCategory === cat
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. 關鍵字搜尋與細部下拉選單列 */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 flex-1">
+              {/* 關鍵字搜尋 */}
+              <div className="relative min-w-[200px] max-w-sm flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜尋標題、專欄/講師、內文、期別或筆記..."
+                  className="pl-9 pr-7 h-9 text-xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    title="清除關鍵字"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* 出刊月份/期別下拉 (有文章或全部時顯示) */}
+              {(selectedContentType === 'all' || selectedContentType === 'article') &&
+                allIssueDates.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-indigo-500 hidden sm:inline" />
+                    <select
+                      value={selectedIssueDate}
+                      onChange={(e) => setSelectedIssueDate(e.target.value)}
+                      className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="全部">全部出刊月份</option>
+                      {allIssueDates
+                        .filter((d) => d !== '全部')
+                        .map((d) => (
+                          <option key={d} value={d}>
+                            📅 出刊: {d}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+              {/* 時效性質下拉 (文章時顯示) */}
+              {(selectedContentType === 'all' || selectedContentType === 'article') && (
+                <select
+                  value={selectedTimeliness}
+                  onChange={(e) => setSelectedTimeliness(e.target.value)}
+                  className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="全部">全部時效性</option>
+                  <option value="time_sensitive">⚡ 時效趨勢 (近期關鍵)</option>
+                  <option value="evergreen">🌱 常青知識 (長期適用)</option>
+                </select>
+              )}
+
+              {/* 平台 / 講師下拉篩選 */}
+              <div className="flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
+                <select
+                  value={selectedPlatform}
+                  onChange={(e) => setSelectedPlatform(e.target.value)}
+                  className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="全部">全部來源 / 平台</option>
+                  {allPlatforms
+                    .filter((p) => p !== '全部')
+                    .map((p) => (
+                      <option key={p} value={p}>
+                        來源: {p}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* 學習狀態下拉篩選 */}
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="全部">全部修習狀態</option>
+                <option value="進行中">⚡ 積極進行中</option>
+                <option value="已完訓">✅ 已完訓結業</option>
+                <option value="待開始">📌 尚未開始 (0%)</option>
+              </select>
+
+              {/* 重設篩選按鈕 */}
+              {isFiltered && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetFilters}
+                  className="h-9 px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 gap-1 font-semibold"
+                  title="重設所有篩選條件"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>清除篩選</span>
+                </Button>
+              )}
+            </div>
+
+            {/* 右側：全部展開 / 全部收合按鈕 */}
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandAllState((prev) => !prev)}
+                className="h-9 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold shadow-2xs"
+              >
+                {expandAllState ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    <span>全部收合 ▴</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span>全部展開 ▾</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 課程列表計數與排序提示 */}
+      {/* 項目列表計數與提示 */}
       {sortedMyCourses.length > 0 && (
         <div className="flex items-center justify-between px-1">
           <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
             <span>
-              已排定學習課程清單 (
+              已排定 PM 成長地圖項目 (
               {isFiltered ? (
                 <span className="text-indigo-600 font-extrabold">
-                  符合條件 {filteredCourses.length} / 全體 {sortedMyCourses.length} 門
+                  符合條件 {filteredCourses.length} / 全體 {sortedMyCourses.length} 筆
                 </span>
               ) : (
-                `${sortedMyCourses.length} 門`
+                `${sortedMyCourses.length} 筆`
               )}
               )
             </span>
             <span className="text-slate-400 font-normal hidden sm:inline">
-              · 可使用 ▲ ▼ 調整個人上下排列順序，點選「展開詳情」編輯細節
+              · 可依領域標籤快速切換主題，文章支援點擊「閱讀全文」查看內文與 AI 分析
             </span>
           </div>
 
@@ -581,9 +786,9 @@ export function MyLearningView({
       {sortedMyCourses.length > 0 && filteredCourses.length === 0 && (
         <div className="text-center py-14 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
           <Filter className="h-9 w-9 text-slate-300 mx-auto" />
-          <h4 className="text-sm font-semibold text-slate-700">找不到符合篩選條件的學習課程</h4>
+          <h4 className="text-sm font-semibold text-slate-700">找不到符合篩選條件的學習項目</h4>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            目前設定的關鍵字、課程領域、平台或狀態無匹配課程，請嘗試調整條件或點擊下方按鈕清除篩選。
+            目前設定的關鍵字、領域標籤、月份或載體無匹配項目，請嘗試調整條件或點擊下方按鈕清除篩選。
           </p>
           <Button
             type="button"
@@ -598,9 +803,9 @@ export function MyLearningView({
         </div>
       )}
 
-      {/* 個人課程卡片式呈現 (Card View，預設收起下層詳細內容，進度%與日期置於標題旁) */}
+      {/* 個人卡片式呈現 */}
       <div className="space-y-4">
-        {filteredCourses.map((course, idx) => {
+        {filteredCourses.map((course) => {
           const overallIndex = sortedMyCourses.findIndex((c) => c.id === course.id);
           const isFirst = overallIndex === 0;
           const isLast = overallIndex === sortedMyCourses.length - 1;
@@ -618,10 +823,30 @@ export function MyLearningView({
               onUpdateCourse={onCourseUpdated}
               onEditCourse={onEditCourse}
               onDeleteCourse={handleDeleteCourse}
+              onOpenReader={handleOpenReader}
             />
           );
         })}
       </div>
+
+      {/* 知識文章沉浸式閱讀視窗 (支援 AI 摘要與筆記) */}
+      <ArticleReaderDialog
+        isOpen={isReaderOpen}
+        onClose={() => {
+          setIsReaderOpen(false);
+          setReaderCourse(null);
+        }}
+        course={readerCourse}
+        currentUserId={activeMember?.uid}
+        onEdit={(c) => {
+          setIsReaderOpen(false);
+          onEditCourse(c);
+        }}
+        onCourseUpdated={(c) => {
+          setReaderCourse(c);
+          onCourseUpdated(c);
+        }}
+      />
     </div>
   );
 }
@@ -638,6 +863,7 @@ function PersonalCourseCard({
   onUpdateCourse,
   onEditCourse,
   onDeleteCourse,
+  onOpenReader,
 }: {
   course: PMLearningCourse;
   userId: string;
@@ -649,6 +875,7 @@ function PersonalCourseCard({
   onUpdateCourse: (course: PMLearningCourse) => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onDeleteCourse: (courseId: string, title: string) => void;
+  onOpenReader: (course: PMLearningCourse) => void;
 }) {
   const { toast } = useToast();
   const memberProgress: PMLearningMemberProgress = course.memberProgress[userId] || {
@@ -900,8 +1127,19 @@ function PersonalCourseCard({
             </div>
 
             <div className="space-y-2 flex-1 min-w-0">
-              {/* 第一行：標題 + 分類 + 狀態 + 進度% + 日期 + 時數 */}
+              {/* 第一行：載體型態 + 標題 + 領域 + 出刊期別 + 時效性 + 狀態 + 進度% + 日期 + 時數 */}
               <div className="flex flex-wrap items-center gap-2">
+                {/* 載體型態 Badge */}
+                {(() => {
+                  const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'];
+                  return (
+                    <Badge className={`text-xs shrink-0 ${typeConfig.badgeClass}`}>
+                      <span className="mr-1">{typeConfig.icon}</span>
+                      {typeConfig.label}
+                    </Badge>
+                  );
+                })()}
+
                 <span className="font-bold text-slate-900 text-base sm:text-lg leading-snug">
                   {course.title}
                 </span>
@@ -909,6 +1147,34 @@ function PersonalCourseCard({
                 <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200 font-medium shrink-0">
                   {course.category}
                 </Badge>
+
+                {/* 文章出刊期別 */}
+                {course.issueDate && (
+                  <Badge variant="outline" className="text-xs bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono shrink-0">
+                    <Calendar className="w-3 h-3 mr-1 text-indigo-500" />
+                    {course.issueDate} 期
+                  </Badge>
+                )}
+
+                {/* 文章時效性標籤 */}
+                {course.type === 'article' && (
+                  course.timelinessType === 'time_sensitive' ? (
+                    <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[11px] shrink-0">
+                      ⚡ 時效趨勢
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 text-[11px] shrink-0">
+                      常青知識
+                    </Badge>
+                  )
+                )}
+
+                {/* AI 導讀完成標記 */}
+                {course.aiAnalysis?.summary && (
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[11px] shrink-0">
+                    🤖 AI 導讀已完成
+                  </Badge>
+                )}
 
                 {/* 狀態 Badge */}
                 <Badge
@@ -920,7 +1186,7 @@ function PersonalCourseCard({
                       : 'bg-slate-100 text-slate-600 border-slate-200'
                   }`}
                 >
-                  {isFinished ? '✅ 已完訓' : progressVal > 0 ? `⚡ 修習中` : '📌 待啟動'}
+                  {isFinished ? '✅ 已研讀完畢' : progressVal > 0 ? `⚡ 研讀中` : '📌 待啟動'}
                 </Badge>
 
                 {/* 進度 % (明確放在課程名稱旁邊) */}
@@ -946,7 +1212,7 @@ function PersonalCourseCard({
                   </span>
                 )}
 
-                {/* 培訓時數 (明確放在名稱旁邊，並支援直接填寫/修改時數) */}
+                {/* 研習時數 */}
                 <div className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-200 shrink-0">
                   <Clock className="h-3.5 w-3.5 text-amber-600" />
                   {isEditingHours ? (
@@ -999,8 +1265,25 @@ function PersonalCourseCard({
             </div>
           </div>
 
-          {/* 右側操作群：傳送門 + 編輯 + 展開/收合切換按鈕 */}
+          {/* 右側操作群：閱讀全文 + 傳送門 + 編輯 + 展開/收合切換按鈕 */}
           <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-center pl-7 lg:pl-0">
+            {/* 知識文章「閱讀全文」按鈕 */}
+            {(course.type === 'article' || course.content) && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenReader(course);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>📄 閱讀全文</span>
+                {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300 ml-0.5" />}
+              </Button>
+            )}
+
             {/* 外部傳送門按鈕 */}
             {course.externalUrl && (
               <a
@@ -1009,7 +1292,9 @@ function PersonalCourseCard({
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
               >
-                <span>🚀 外部傳送門</span>
+                <span>
+                  🚀 {course.type === 'video' ? '觀看影音' : course.type === 'article' ? '原文網址' : '外部傳送門'}
+                </span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
@@ -1023,7 +1308,7 @@ function PersonalCourseCard({
                   size="sm"
                   onClick={() => onEditCourse(course)}
                   className="h-8 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
-                  title="主管理員 / 建立者：可調整此課程名稱、講師平台、傳送門與起訖日"
+                  title="主管理員 / 建立者：可調整名稱、來源、傳送門與期程"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">編輯</span>
@@ -1035,14 +1320,14 @@ function PersonalCourseCard({
                   size="sm"
                   onClick={() => onDeleteCourse(course.id, course.title)}
                   className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                  title="刪除此課程"
+                  title="刪除此項目"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
             )}
 
-            {/* 展開 / 收合詳情按鈕 (紅框下預設收起) */}
+            {/* 展開 / 收合詳情按鈕 */}
             <Button
               type="button"
               variant="outline"
@@ -1073,12 +1358,27 @@ function PersonalCourseCard({
           <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-600">
               <div>
-                <span className="font-semibold text-slate-700">培訓平台 / 講師：</span>
-                <span className="text-indigo-600 font-bold">{course.instructorOrPlatform}</span>
+                <span className="font-semibold text-slate-700">
+                  {course.type === 'article'
+                    ? '專欄來源 / 出版媒體：'
+                    : course.type === 'video'
+                    ? '頻道 / 講者 / 平台：'
+                    : course.type === 'book'
+                    ? '作者 / 出版社：'
+                    : '培訓平台 / 講師：'}
+                </span>
+                <span className="text-indigo-600 font-bold">
+                  {course.source || course.instructorOrPlatform}
+                </span>
               </div>
+              {course.issueDate && (
+                <div className="font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                  📅 {course.issueDate} 期
+                </div>
+              )}
               {course.createdBy && (
                 <div className="text-[11px] text-slate-400">
-                  {course.createdBy === 'system' ? '（系統內建課程）' : '（成員自訂課程）'}
+                  {course.createdBy === 'system' ? '（系統內建）' : '（成員建立）'}
                 </div>
               )}
             </div>
@@ -1088,6 +1388,85 @@ function PersonalCourseCard({
               </p>
             )}
           </div>
+
+          {/* 文章專屬：來源與期別導讀卡 */}
+          {course.type === 'article' && (
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="bg-emerald-600 text-white text-xs">
+                    📄 付費知識文章 (全文已收錄)
+                  </Badge>
+                  {course.issueDate && (
+                    <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 font-mono text-xs">
+                      📅 {course.issueDate} 出刊
+                    </Badge>
+                  )}
+                  {course.timelinessType === 'time_sensitive' ? (
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
+                      ⚡ 時效趨勢 (近期關鍵)
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-xs">
+                      🌱 常青知識
+                    </Badge>
+                  )}
+                </div>
+
+                <Button
+                  size="sm"
+                  onClick={() => onOpenReader(course)}
+                  className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>開啟沉浸式閱讀視窗</span>
+                  {course.aiAnalysis?.summary && <Sparkles className="w-3 h-3 text-amber-300" />}
+                </Button>
+              </div>
+
+              {course.aiAnalysis?.summary ? (
+                <div className="bg-white rounded-lg p-3 border border-emerald-100 text-xs text-slate-700 space-y-1.5">
+                  <div className="font-bold text-emerald-950 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>AI 導讀重點速覽：</span>
+                  </div>
+                  <p className="line-clamp-3 leading-relaxed text-slate-700">
+                    {course.aiAnalysis.summary}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-600">
+                  {course.description || '本文已完整收錄於系統中，點選上方「開啟沉浸式閱讀視窗」可全文閱讀與執行 AI 導讀。'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 影音專屬：重點時間標籤與筆記 */}
+          {course.type === 'video' && course.videoTimestampNotes && (
+            <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-200 space-y-2">
+              <div className="font-bold text-rose-950 text-xs flex items-center gap-1.5">
+                <Video className="w-3.5 h-3.5 text-rose-600" />
+                <span>重點時間標籤與筆記：</span>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-rose-100 text-xs">
+                <MarkdownPreview content={course.videoTimestampNotes} />
+              </div>
+            </div>
+          )}
+
+          {/* 個人閱讀專屬：核心金句與落地行動清單 */}
+          {course.type === 'book' && course.bookQuotesAndReflections && (
+            <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-200 space-y-2">
+              <div className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                <Bookmark className="w-3.5 h-3.5 text-amber-600" />
+                <span>核心金句與落地行動清單 (Action Plan)：</span>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-amber-100 text-xs">
+                <MarkdownPreview content={course.bookQuotesAndReflections} />
+              </div>
+            </div>
+          )}
 
           {/* 1. 進度條（手動拉 % 或一鍵勾選完成） */}
           <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 space-y-3">

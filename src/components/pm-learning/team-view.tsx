@@ -1,7 +1,12 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { PMLearningCourse, PMTeamDisplayMode } from '@/types/pm-learning';
+import {
+  PMLearningCourse,
+  PMTeamDisplayMode,
+  PMLearningContentType,
+  CONTENT_TYPE_CONFIG,
+} from '@/types/pm-learning';
 import { User, CurrentUser } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,11 +34,18 @@ import {
   Paperclip,
   ShieldCheck,
   Tag,
+  Video,
+  Bookmark,
+  Zap,
+  Bot,
+  X,
+  RotateCcw,
 } from 'lucide-react';
 import { deletePMLearningCourse } from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
+import { ArticleReaderDialog } from './article-reader-dialog';
 
 interface TeamViewProps {
   courses: PMLearningCourse[];
@@ -41,10 +53,11 @@ interface TeamViewProps {
   currentUser?: CurrentUser | null;
   categories?: string[];
   onOpenCategoryManager?: () => void;
-  onOpenCreateDialog: () => void;
+  onOpenCreateDialog: (defaultUserId?: string, initialType?: PMLearningContentType) => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onCourseDeleted: (courseId: string) => void;
   onSelectMemberInPersonalView: (userId: string) => void;
+  onCourseUpdated?: (course: PMLearningCourse) => void;
 }
 
 export function TeamView({
@@ -57,22 +70,35 @@ export function TeamView({
   onEditCourse,
   onCourseDeleted,
   onSelectMemberInPersonalView,
+  onCourseUpdated,
 }: TeamViewProps) {
   const { toast } = useToast();
   const [displayMode, setDisplayMode] = useState<PMTeamDisplayMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedContentType, setSelectedContentType] = useState<'all' | PMLearningContentType>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedIssueDate, setSelectedIssueDate] = useState<string>('全部');
+  const [selectedTimeliness, setSelectedTimeliness] = useState<string>('全部');
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
   const [expandedCourseIds, setExpandedCourseIds] = useState<string[]>([]);
 
-  // 展開/收合單堂課程的成員明細
+  // 知識文章沉浸式閱讀視窗狀態
+  const [readerCourse, setReaderCourse] = useState<PMLearningCourse | null>(null);
+  const [isReaderOpen, setIsReaderOpen] = useState(false);
+
+  const handleOpenReader = (c: PMLearningCourse) => {
+    setReaderCourse(c);
+    setIsReaderOpen(true);
+  };
+
+  // 展開/收合單堂項目的成員明細
   const toggleExpand = (courseId: string) => {
     setExpandedCourseIds((prev) =>
       prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId]
     );
   };
 
-  // 計算每堂課程的團隊平均完成率
+  // 計算每項學習資源的團隊平均完成率
   const getCourseTeamStats = (course: PMLearningCourse) => {
     const assignedIds = course.assignedUserIds || [];
     if (assignedIds.length === 0) {
@@ -119,6 +145,25 @@ export function TeamView({
     };
   }, [courses]);
 
+  // 各載體數量統計
+  const contentTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: courses.length, course: 0, article: 0, video: 0, book: 0 };
+    courses.forEach((c) => {
+      const t = c.type || 'course';
+      if (counts[t] !== undefined) counts[t]++;
+    });
+    return counts;
+  }, [courses]);
+
+  // 所有可用出刊年月選項 (文章專用)
+  const allIssueDates = useMemo(() => {
+    const set = new Set<string>();
+    courses.forEach((c) => {
+      if (c.issueDate?.trim()) set.add(c.issueDate.trim());
+    });
+    return ['全部', ...Array.from(set).sort().reverse()];
+  }, [courses]);
+
   // 所有分類選項
   const allCategories = useMemo(() => {
     const set = new Set<string>(categories || []);
@@ -128,38 +173,101 @@ export function TeamView({
     return ['全部', ...Array.from(set)];
   }, [courses, categories]);
 
-  // 篩選後課程清單
+  // 篩選啟用判定
+  const isFiltered =
+    searchQuery.trim() !== '' ||
+    selectedContentType !== 'all' ||
+    selectedCategory !== '全部' ||
+    selectedIssueDate !== '全部' ||
+    selectedTimeliness !== '全部' ||
+    selectedMemberFilter !== 'all';
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedContentType('all');
+    setSelectedCategory('全部');
+    setSelectedIssueDate('全部');
+    setSelectedTimeliness('全部');
+    setSelectedMemberFilter('all');
+  };
+
+  // 篩選後清單
   const filteredCourses = useMemo(() => {
     return courses.filter((course) => {
-      // 關鍵字比對
+      // 0. 載體型態篩選
+      if (selectedContentType !== 'all' && (course.type || 'course') !== selectedContentType) {
+        return false;
+      }
+
+      // 1. 關鍵字比對
       const q = searchQuery.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        course.title.toLowerCase().includes(q) ||
-        course.instructorOrPlatform.toLowerCase().includes(q) ||
-        (course.description || '').toLowerCase().includes(q) ||
-        course.assignedUserNames.some((n) => n.toLowerCase().includes(q));
+      if (q) {
+        const matchTitle = course.title.toLowerCase().includes(q);
+        const matchInstructor = (course.instructorOrPlatform || '').toLowerCase().includes(q);
+        const matchSource = (course.source || '').toLowerCase().includes(q);
+        const matchDesc = (course.description || '').toLowerCase().includes(q);
+        const matchContent = (course.content || '').toLowerCase().includes(q);
+        const matchIssue = (course.issueDate || '').toLowerCase().includes(q);
+        const matchMembers = course.assignedUserNames.some((n) => n.toLowerCase().includes(q));
+        if (
+          !matchTitle &&
+          !matchInstructor &&
+          !matchSource &&
+          !matchDesc &&
+          !matchContent &&
+          !matchIssue &&
+          !matchMembers
+        ) {
+          return false;
+        }
+      }
 
-      // 分類比對
-      const matchCategory = selectedCategory === '全部' || course.category === selectedCategory;
+      // 2. 領域比對 (核心主題隨選)
+      if (selectedCategory !== '全部' && course.category !== selectedCategory) {
+        return false;
+      }
 
-      // 成員篩選比對
-      const matchMember =
-        selectedMemberFilter === 'all' || course.assignedUserIds.includes(selectedMemberFilter);
+      // 3. 出刊年月比對 (文章專屬)
+      if (selectedIssueDate !== '全部' && course.issueDate !== selectedIssueDate) {
+        return false;
+      }
 
-      return matchSearch && matchCategory && matchMember;
+      // 4. 時效性比對
+      if (selectedTimeliness !== '全部') {
+        if (selectedTimeliness === 'time_sensitive' && course.timelinessType !== 'time_sensitive') {
+          return false;
+        }
+        if (selectedTimeliness === 'evergreen' && course.timelinessType !== 'evergreen') {
+          return false;
+        }
+      }
+
+      // 5. 成員篩選比對
+      if (selectedMemberFilter !== 'all' && !course.assignedUserIds.includes(selectedMemberFilter)) {
+        return false;
+      }
+
+      return true;
     });
-  }, [courses, searchQuery, selectedCategory, selectedMemberFilter]);
+  }, [
+    courses,
+    searchQuery,
+    selectedContentType,
+    selectedCategory,
+    selectedIssueDate,
+    selectedTimeliness,
+    selectedMemberFilter,
+  ]);
 
-  // 刪除課程確認
+  // 刪除確認
   const handleDelete = async (courseId: string, title: string) => {
-    if (!window.confirm(`確定要刪除「${title}」這門培訓課程嗎？此動作無法復原。`)) {
+    if (!window.confirm(`確定要刪除「${title}」這個學習項目嗎？此動作無法復原。`)) {
       return;
     }
     try {
       const res = await deletePMLearningCourse(courseId);
       if (res.success) {
-        toast({ title: '已刪除課程', description: `課程「${title}」已成功移除` });
+        toast({ title: '已刪除項目', description: `項目「${title}」已成功移除` });
         onCourseDeleted(courseId);
       } else {
         toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
@@ -175,11 +283,11 @@ export function TeamView({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">總培訓課程</span>
+            <span className="text-xs font-medium">總學習與知識庫</span>
             <BookOpen className="h-4 w-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-bold text-slate-800">{teamOverallKPI.totalCourses}</div>
-          <div className="text-[11px] text-slate-400 mt-1">涵蓋專案治理與技術深度</div>
+          <div className="text-[11px] text-slate-400 mt-1">涵蓋課程、文章、影音與心得</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-blue-50/30">
@@ -189,7 +297,7 @@ export function TeamView({
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold text-blue-700">{teamOverallKPI.overallAvgPercent}%</span>
-            <span className="text-xs text-blue-600/80">({courses.length} 堂課平均)</span>
+            <span className="text-xs text-blue-600/80">({courses.length} 個項目平均)</span>
           </div>
           <div className="mt-2">
             <Progress value={teamOverallKPI.overallAvgPercent} className="h-1.5 bg-blue-100" />
@@ -198,7 +306,7 @@ export function TeamView({
 
         <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-emerald-50/30">
           <div className="flex items-center justify-between text-emerald-700 mb-1">
-            <span className="text-xs font-semibold">已結訓人次</span>
+            <span className="text-xs font-semibold">已結訓 / 完讀人次</span>
             <Award className="h-4 w-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-emerald-700">{teamOverallKPI.totalCertifications}</div>
@@ -207,11 +315,119 @@ export function TeamView({
 
         <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-amber-50/30">
           <div className="flex items-center justify-between text-amber-700 mb-1">
-            <span className="text-xs font-semibold">積極推進中課程</span>
+            <span className="text-xs font-semibold">積極推進中項目</span>
             <Clock className="h-4 w-4 text-amber-600" />
           </div>
           <div className="text-2xl font-bold text-amber-700">{teamOverallKPI.inProgressCourses}</div>
-          <div className="text-[11px] text-amber-600/80 mt-1">團隊全員持續修習中</div>
+          <div className="text-[11px] text-amber-600/80 mt-1">團隊全員持續修習研讀中</div>
+        </div>
+      </div>
+
+      {/* 四大載體切換分頁列 (全部 | 線上課程 | 知識文章 | 影音資源 | 個人閱讀) */}
+      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setSelectedContentType('all')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              selectedContentType === 'all'
+                ? 'bg-white text-indigo-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>🌐 全部載體</span>
+            <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700">
+              {contentTypeCounts.all}
+            </span>
+          </button>
+
+          {(['course', 'article', 'video', 'book'] as PMLearningContentType[]).map((type) => {
+            const cfg = CONTENT_TYPE_CONFIG[type];
+            const count = contentTypeCounts[type] || 0;
+            const isSelected = selectedContentType === type;
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSelectedContentType(type)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  isSelected
+                    ? 'bg-white text-indigo-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{cfg.icon}</span>
+                <span>{cfg.label}</span>
+                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 頂部快捷新增按鈕 */}
+        <div className="flex items-center gap-2">
+          {onOpenCategoryManager && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onOpenCategoryManager}
+              className="h-8 px-2.5 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 shadow-2xs hidden sm:flex"
+              title="維護、新增或編輯領域清單"
+            >
+              <Tag className="h-3.5 w-3.5 text-indigo-600" />
+              <span>維護領域</span>
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={() =>
+              onOpenCreateDialog(
+                undefined,
+                selectedContentType !== 'all' ? selectedContentType : 'course'
+              )
+            }
+            className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1 shadow-2xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>
+              {selectedContentType === 'article'
+                ? '新增知識文章'
+                : selectedContentType === 'video'
+                ? '新增影音資源'
+                : selectedContentType === 'book'
+                ? '新增閱讀書目'
+                : '新增培訓項目 / 指派'}
+            </span>
+          </Button>
+        </div>
+      </div>
+
+      {/* 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
+      <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
+        <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
+          <Tag className="w-3.5 h-3.5 text-indigo-600" />
+          主題領域隨選:
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {allCategories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                selectedCategory === cat
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -224,29 +440,61 @@ export function TeamView({
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋課程名稱、平台、成員..."
-              className="pl-9 h-9 text-xs"
+              placeholder="搜尋名稱、專欄/講師、內文、期別或成員..."
+              className="pl-9 pr-7 h-9 text-xs"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                title="清除關鍵字"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
-          {/* 分類篩選 */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            {allCategories.map((c) => (
-              <option key={c} value={c}>
-                類別: {c}
-              </option>
-            ))}
-          </select>
+          {/* 出刊月份/期別下拉 (文章專用) */}
+          {(selectedContentType === 'all' || selectedContentType === 'article') &&
+            allIssueDates.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-indigo-500 hidden sm:inline" />
+                <select
+                  value={selectedIssueDate}
+                  onChange={(e) => setSelectedIssueDate(e.target.value)}
+                  className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="全部">全部出刊月份</option>
+                  {allIssueDates
+                    .filter((d) => d !== '全部')
+                    .map((d) => (
+                      <option key={d} value={d}>
+                        📅 出刊: {d}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+          {/* 時效性質下拉 */}
+          {(selectedContentType === 'all' || selectedContentType === 'article') && (
+            <select
+              value={selectedTimeliness}
+              onChange={(e) => setSelectedTimeliness(e.target.value)}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="全部">全部時效性</option>
+              <option value="time_sensitive">⚡ 時效趨勢 (近期關鍵)</option>
+              <option value="evergreen">🌱 常青知識 (長期適用)</option>
+            </select>
+          )}
 
           {/* 成員篩選 */}
           <select
             value={selectedMemberFilter}
             onChange={(e) => setSelectedMemberFilter(e.target.value)}
-            className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
             <option value="all">所有指派成員</option>
             {pmoMembers.map((m) => (
@@ -255,6 +503,21 @@ export function TeamView({
               </option>
             ))}
           </select>
+
+          {/* 重設篩選按鈕 */}
+          {isFiltered && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-9 px-2.5 text-xs text-slate-500 hover:text-slate-800 gap-1"
+              title="清除所有篩選條件"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>重設</span>
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 self-end md:self-auto">
@@ -288,47 +551,33 @@ export function TeamView({
 
           {/* 主管理員權限提示 */}
           {isCourseManager(currentUser) && (
-            <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold hidden sm:flex">
+            <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold hidden lg:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-              <span>主管理員編輯權限 (jamesyang / admin)</span>
+              <span>管理員權限</span>
             </Badge>
           )}
-
-          {/* 維護課程領域按鈕 */}
-          {onOpenCategoryManager && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onOpenCategoryManager}
-              className="h-9 px-3 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1.5 shadow-2xs"
-              title="維護、新增、編輯或重新命名課程領域清單"
-            >
-              <Tag className="h-3.5 w-3.5 text-indigo-600" />
-              <span>維護課程領域</span>
-            </Button>
-          )}
-
-          {/* 新增課程按鈕 */}
-          <Button
-            type="button"
-            onClick={onOpenCreateDialog}
-            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5 shadow-2xs font-semibold"
-          >
-            <Plus className="h-4 w-4" />
-            <span>新增課程 / 指派成員</span>
-          </Button>
         </div>
       </div>
 
       {/* 查無結果提示 */}
       {filteredCourses.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200">
-          <BookOpen className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-slate-700">找不到符合條件的培訓課程</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            試著更換搜尋關鍵字，或點擊上方「新增課程 / 指派成員」建立新的培訓項目。
+        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
+          <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
+          <h3 className="text-sm font-semibold text-slate-700">找不到符合條件的項目</h3>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            試著更換篩選條件、清除關鍵字，或點擊上方按鈕新增學習項目。
           </p>
+          {isFiltered && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleResetFilters}
+              className="text-xs"
+            >
+              清除所有篩選條件
+            </Button>
+          )}
         </div>
       )}
 
@@ -338,31 +587,70 @@ export function TeamView({
           {filteredCourses.map((course) => {
             const stats = getCourseTeamStats(course);
             const isExpanded = expandedCourseIds.includes(course.id);
+            const carrierType = course.type || 'course';
+            const carrierCfg = CONTENT_TYPE_CONFIG[carrierType];
+            const isArticle = carrierType === 'article';
 
             return (
               <div
                 key={course.id}
                 className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all overflow-hidden"
               >
-                {/* 課程列表主列 */}
+                {/* 列表主列 */}
                 <div className="p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                  {/* 左側：課程名稱、類別與平台 */}
+                  {/* 左側：載體、名稱、類別與平台 */}
                   <div className="space-y-1.5 flex-1 min-w-[280px]">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-slate-900 text-base hover:text-indigo-600 transition-colors">
-                        {course.title}
+                      {/* 載體標籤 */}
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${carrierCfg.badgeClass}`}
+                      >
+                        <span>{carrierCfg.icon}</span>
+                        <span>{carrierCfg.label}</span>
                       </span>
+
+                      {/* 出刊年月 (文章) */}
+                      {course.issueDate && (
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-slate-50 text-slate-700 border-slate-200 font-mono gap-1"
+                        >
+                          <Calendar className="h-3 w-3 text-slate-500" />
+                          <span>{course.issueDate}</span>
+                        </Badge>
+                      )}
+
+                      {/* 時效標籤 */}
+                      {course.timelinessType === 'time_sensitive' && (
+                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          <Zap className="h-3 w-3 text-amber-500" />
+                          時效
+                        </span>
+                      )}
+
+                      {/* 領域標籤 */}
                       {course.category && (
-                        <Badge variant="outline" className="text-[11px] bg-indigo-50/80 text-indigo-700 border-indigo-200 font-medium">
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-indigo-50/80 text-indigo-700 border-indigo-200 font-medium"
+                        >
                           {course.category}
                         </Badge>
                       )}
+
+                      <span className="font-bold text-slate-900 text-base hover:text-indigo-600 transition-colors">
+                        {course.title}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                       <div className="flex items-center gap-1">
-                        <span className="font-medium text-slate-700">講師/平台：</span>
-                        <span className="text-indigo-600 font-medium">{course.instructorOrPlatform}</span>
+                        <span className="font-medium text-slate-700">
+                          {isArticle ? '專欄/來源：' : carrierType === 'video' ? '影音平台：' : carrierType === 'book' ? '作者/出版：' : '講師/平台：'}
+                        </span>
+                        <span className="text-indigo-600 font-medium">
+                          {course.source || course.instructorOrPlatform}
+                        </span>
                       </div>
 
                       {(course.startDate || course.endDate) && (
@@ -374,6 +662,24 @@ export function TeamView({
                         </div>
                       )}
 
+                      {/* 閱讀全文按鈕 (文章型態) */}
+                      {isArticle && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReader(course)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
+                        >
+                          <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>閱讀全文</span>
+                          {course.aiAnalysis && (
+                            <span className="text-[10px] px-1 py-0.2 rounded bg-purple-100 text-purple-700 font-bold ml-0.5">
+                              🤖 AI 摘要
+                            </span>
+                          )}
+                        </button>
+                      )}
+
+                      {/* 外部傳送門 */}
                       {course.externalUrl && (
                         <a
                           href={course.externalUrl}
@@ -382,7 +688,9 @@ export function TeamView({
                           className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
                         >
                           <ExternalLink className="h-3 w-3" />
-                          <span>課程傳送門 ↗</span>
+                          <span>
+                            {isArticle ? '原始文章 ↗' : carrierType === 'video' ? '觀看影音 ↗' : '外部傳送門 ↗'}
+                          </span>
                         </a>
                       )}
                     </div>
@@ -397,7 +705,10 @@ export function TeamView({
                     <div className="flex flex-wrap gap-1.5">
                       {course.assignedUserIds.map((uid) => {
                         const prog = course.memberProgress[uid];
-                        const name = prog?.userName || course.assignedUserNames[course.assignedUserIds.indexOf(uid)] || '成員';
+                        const name =
+                          prog?.userName ||
+                          course.assignedUserNames[course.assignedUserIds.indexOf(uid)] ||
+                          '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
 
@@ -429,16 +740,22 @@ export function TeamView({
                   <div className="w-full lg:w-48 space-y-1.5 shrink-0 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-bold text-slate-700">團隊整體完成率</span>
-                      <span className={`font-bold ${stats.avgPercent >= 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                      <span
+                        className={`font-bold ${
+                          stats.avgPercent >= 100 ? 'text-emerald-600' : 'text-indigo-600'
+                        }`}
+                      >
                         {stats.avgPercent}%
                       </span>
                     </div>
                     <Progress
                       value={stats.avgPercent}
-                      className={`h-2 ${stats.avgPercent >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100'}`}
+                      className={`h-2 ${
+                        stats.avgPercent >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100'
+                      }`}
                     />
                     <div className="text-[10px] text-slate-400 text-right">
-                      {stats.completedCount} / {stats.totalCount} 位已完訓
+                      {stats.completedCount} / {stats.totalCount} 位已完訓/完讀
                     </div>
                   </div>
 
@@ -452,7 +769,7 @@ export function TeamView({
                           size="sm"
                           onClick={() => onEditCourse(course)}
                           className="h-8 px-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
-                          title="編輯課程資訊 (主管理員/建立者可修改內容)"
+                          title="編輯內容 (主管理員/建立者可修改內容)"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </Button>
@@ -462,7 +779,7 @@ export function TeamView({
                           size="sm"
                           onClick={() => handleDelete(course.id, course.title)}
                           className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                          title="刪除課程"
+                          title="刪除項目"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -600,6 +917,7 @@ export function TeamView({
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
+                    onOpenReader={handleOpenReader}
                   />
                 ))}
             </div>
@@ -613,10 +931,12 @@ export function TeamView({
                 團隊積極推進中 (進行中)
               </span>
               <Badge className="text-[10px] bg-blue-100 text-blue-800 border-blue-200">
-                {filteredCourses.filter((c) => {
-                  const p = getCourseTeamStats(c).avgPercent;
-                  return p > 0 && p < 100;
-                }).length}
+                {
+                  filteredCourses.filter((c) => {
+                    const p = getCourseTeamStats(c).avgPercent;
+                    return p > 0 && p < 100;
+                  }).length
+                }
               </Badge>
             </div>
 
@@ -635,6 +955,7 @@ export function TeamView({
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
+                    onOpenReader={handleOpenReader}
                   />
                 ))}
             </div>
@@ -664,12 +985,32 @@ export function TeamView({
                     onEdit={() => onEditCourse(course)}
                     onDelete={() => handleDelete(course.id, course.title)}
                     onSelectMember={onSelectMemberInPersonalView}
+                    onOpenReader={handleOpenReader}
                   />
                 ))}
             </div>
           </div>
         </div>
       )}
+
+      {/* 知識文章沉浸式閱讀視窗 (支援 AI 摘要與筆記) */}
+      <ArticleReaderDialog
+        isOpen={isReaderOpen}
+        onClose={() => {
+          setIsReaderOpen(false);
+          setReaderCourse(null);
+        }}
+        course={readerCourse}
+        currentUserId={currentUser?.uid}
+        onEdit={(c) => {
+          setIsReaderOpen(false);
+          onEditCourse(c);
+        }}
+        onCourseUpdated={(c) => {
+          setReaderCourse(c);
+          if (onCourseUpdated) onCourseUpdated(c);
+        }}
+      />
     </div>
   );
 }
@@ -682,6 +1023,7 @@ function KanbanCourseCard({
   onEdit,
   onDelete,
   onSelectMember,
+  onOpenReader,
 }: {
   course: PMLearningCourse;
   stats: { avgPercent: number; completedCount: number; totalCount: number };
@@ -689,20 +1031,41 @@ function KanbanCourseCard({
   onEdit: () => void;
   onDelete: () => void;
   onSelectMember: (uid: string) => void;
+  onOpenReader: (course: PMLearningCourse) => void;
 }) {
+  const carrierType = course.type || 'course';
+  const carrierCfg = CONTENT_TYPE_CONFIG[carrierType];
+  const isArticle = carrierType === 'article';
+
   return (
     <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs hover:shadow-xs transition-shadow space-y-2.5">
       <div className="flex items-start justify-between gap-1.5">
-        <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
-          {course.category || '專案管理'}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1">
+          <span
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold border ${carrierCfg.badgeClass}`}
+          >
+            <span>{carrierCfg.icon}</span>
+            <span>{carrierCfg.label}</span>
+          </span>
+
+          {course.issueDate && (
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono">
+              {course.issueDate}
+            </span>
+          )}
+
+          <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
+            {course.category || '專案管理'}
+          </Badge>
+        </div>
+
         {canEdit && (
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 shrink-0">
             <button
               type="button"
               onClick={onEdit}
               className="text-slate-400 hover:text-indigo-600 p-1 rounded"
-              title="編輯課程"
+              title="編輯項目"
             >
               <Edit3 className="h-3 w-3" />
             </button>
@@ -710,7 +1073,7 @@ function KanbanCourseCard({
               type="button"
               onClick={onDelete}
               className="text-slate-400 hover:text-rose-600 p-1 rounded"
-              title="刪除課程"
+              title="刪除項目"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -723,8 +1086,20 @@ function KanbanCourseCard({
       </h4>
 
       <div className="text-[11px] text-slate-500 flex items-center justify-between">
-        <span className="truncate max-w-[140px]">{course.instructorOrPlatform}</span>
-        {course.externalUrl && (
+        <span className="truncate max-w-[140px]">
+          {course.source || course.instructorOrPlatform}
+        </span>
+
+        {isArticle ? (
+          <button
+            type="button"
+            onClick={() => onOpenReader(course)}
+            className="text-indigo-600 hover:underline font-bold flex items-center gap-0.5 text-[11px]"
+          >
+            <FileText className="h-3 w-3 text-indigo-600" />
+            閱讀全文
+          </button>
+        ) : course.externalUrl ? (
           <a
             href={course.externalUrl}
             target="_blank"
@@ -733,7 +1108,7 @@ function KanbanCourseCard({
           >
             傳送門 <ExternalLink className="h-2.5 w-2.5" />
           </a>
-        )}
+        ) : null}
       </div>
 
       <div className="space-y-1">
