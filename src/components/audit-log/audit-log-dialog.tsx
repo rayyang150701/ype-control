@@ -65,6 +65,11 @@ const ACTION_CATEGORY_MAP: Record<string, { label: string; color: string; types:
     color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     types: ['ACTION_ITEM_CREATE', 'ACTION_ITEM_UPDATE', 'ACTION_ITEM_DELETE'],
   },
+  schedule: {
+    label: '行事曆行程',
+    color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    types: ['TRIP_CREATE', 'TRIP_UPDATE', 'TRIP_DELETE'],
+  },
 };
 
 // 格式化相對時間 (繁中)
@@ -111,10 +116,17 @@ function getActionBadgeProps(type: AuditActionType) {
       return { label: '更新待辦', className: 'bg-sky-100 text-sky-800 border-sky-300' };
     case 'ACTION_ITEM_DELETE':
       return { label: '刪除待辦', className: 'bg-slate-100 text-slate-800 border-slate-300' };
+    case 'TRIP_CREATE':
+      return { label: '新增行程', className: 'bg-indigo-100 text-indigo-800 border-indigo-300' };
+    case 'TRIP_UPDATE':
+      return { label: '更新行程', className: 'bg-sky-100 text-sky-800 border-sky-300' };
+    case 'TRIP_DELETE':
+      return { label: '刪除行程', className: 'bg-rose-100 text-rose-800 border-rose-300' };
     default:
       return { label: '系統操作', className: 'bg-slate-100 text-slate-700 border-slate-300' };
   }
 }
+
 
 // 取得部門/角色標籤外觀
 function getRoleBadge(role?: string, department?: string) {
@@ -355,7 +367,7 @@ CREATE POLICY "Allow insert audit_logs" ON public.audit_logs FOR INSERT WITH CHE
                 )}
               </div>
               <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                完整追蹤誰在何時修改了專案、週報與待辦資訊，提供「修改前 ➔ 修改後」一目了然的對照紀錄。
+                完整追蹤誰在何時修改了專案、週報、待辦與行事曆行程資訊，提供「修改前 ➔ 修改後」一目了然的對照紀錄。
               </DialogDescription>
             </div>
           </div>

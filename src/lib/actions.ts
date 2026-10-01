@@ -3049,7 +3049,10 @@ export async function getBusinessTrips(filter?: TripFilter): Promise<BusinessTri
 /**
  * 建立全新出差行程
  */
-export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>) {
+export async function createBusinessTrip(
+    tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>,
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     try {
         const nowIso = new Date().toISOString();
@@ -3090,6 +3093,28 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
             .single();
 
         if (!error && data) {
+            // 寫入修改履歷
+            try {
+                await recordAuditLog({
+                    operator,
+                    actionType: 'TRIP_CREATE',
+                    actionLabel: '新增行程',
+                    projectId: tripData.projectId,
+                    projectName: tripData.projectName || '未指定專案',
+                    targetName: tripData.subject,
+                    summary: `新增行事曆行程：${tripData.subject} (${tripData.startDate}${tripData.endDate && tripData.endDate !== tripData.startDate ? ` ~ ${tripData.endDate}` : ''})`,
+                    diffs: [
+                        { field: 'subject', label: '行程主旨', oldValue: '-', newValue: tripData.subject },
+                        { field: 'date', label: '行程日期', oldValue: '-', newValue: `${tripData.startDate}${tripData.endDate && tripData.endDate !== tripData.startDate ? ` ~ ${tripData.endDate}` : ''}` },
+                        { field: 'time', label: '時間時段', oldValue: '-', newValue: `${tripData.startTime || '09:00'} ~ ${tripData.endTime || '17:00'}` },
+                        { field: 'location', label: '地點', oldValue: '-', newValue: tripData.location || '-' },
+                        { field: 'travelers', label: '出差/參與人員', oldValue: '-', newValue: Array.isArray(tripData.travelers) ? tripData.travelers.join('、') : '-' },
+                    ],
+                });
+            } catch (e) {
+                console.warn('記錄出差行程新增履歷失敗:', e);
+            }
+
             revalidatePath('/schedules');
             return {
                 success: true,
@@ -3121,6 +3146,7 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
             };
         }
 
+
         // 備援儲存機制
         const newTrip: BusinessTrip = {
             ...tripData,
@@ -3149,10 +3175,15 @@ export async function createBusinessTrip(tripData: Omit<BusinessTrip, 'id' | 'cr
 /**
  * 更新出差行程
  */
-export async function updateBusinessTrip(id: string, tripData: Partial<BusinessTrip>) {
+export async function updateBusinessTrip(
+    id: string, 
+    tripData: Partial<BusinessTrip>,
+    operator?: AuditOperator
+) {
     const supabase = getSupabaseClient();
     try {
         const nowIso = new Date().toISOString();
+        const { data: cur } = await supabase.from('business_trips').select('*').eq('id', id).maybeSingle();
         const updatePayload: any = { updated_at: nowIso };
 
         if (tripData.subject !== undefined) updatePayload.subject = tripData.subject;
@@ -3174,7 +3205,6 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
         if (tripData.notes !== undefined || tripData.meetingUrl !== undefined || tripData.pm !== undefined) {
             let baseNotes = tripData.notes !== undefined ? tripData.notes : '';
             if (tripData.notes === undefined || tripData.meetingUrl === undefined || tripData.pm === undefined) {
-                const { data: cur } = await supabase.from('business_trips').select('notes').eq('id', id).maybeSingle();
                 const curNotes = cur?.notes || '';
                 const matchMeeting = curNotes.match(/<!--MEETING_URL:(.*?)-->/);
                 const matchPm = curNotes.match(/<!--PM:(.*?)-->/);
@@ -3216,6 +3246,57 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
             .single();
 
         if (!error && data) {
+            // 寫入修改履歷
+            try {
+                const tripDiffs: AuditDiffItem[] = [];
+                if (cur) {
+                    if (tripData.subject !== undefined && tripData.subject !== cur.subject) {
+                        tripDiffs.push({ field: 'subject', label: '行程主旨', oldValue: cur.subject, newValue: tripData.subject });
+                    }
+                    const oldStart = cur.start_date ? String(cur.start_date).slice(0, 10) : '';
+                    const oldEnd = cur.end_date ? String(cur.end_date).slice(0, 10) : '';
+                    const newStart = tripData.startDate !== undefined ? tripData.startDate : oldStart;
+                    const newEnd = tripData.endDate !== undefined ? tripData.endDate : oldEnd;
+                    if (newStart !== oldStart || newEnd !== oldEnd) {
+                        tripDiffs.push({
+                            field: 'date',
+                            label: '行程日期',
+                            oldValue: `${oldStart}${oldEnd && oldEnd !== oldStart ? ` ~ ${oldEnd}` : ''}`,
+                            newValue: `${newStart}${newEnd && newEnd !== newStart ? ` ~ ${newEnd}` : ''}`,
+                        });
+                    }
+                    if (tripData.location !== undefined && tripData.location !== cur.location) {
+                        tripDiffs.push({ field: 'location', label: '地點', oldValue: cur.location || '(未填)', newValue: tripData.location || '(未填)' });
+                    }
+                    if (tripData.travelers !== undefined) {
+                        const oldTrav = Array.isArray(cur.travelers) ? cur.travelers.join('、') : (typeof cur.travelers === 'string' ? JSON.parse(cur.travelers || '[]').join('、') : '');
+                        const newTrav = Array.isArray(tripData.travelers) ? tripData.travelers.join('、') : '';
+                        if (oldTrav !== newTrav) {
+                            tripDiffs.push({ field: 'travelers', label: '出差/參與同仁', oldValue: oldTrav || '(無)', newValue: newTrav || '(無)' });
+                        }
+                    }
+                    if (tripData.status !== undefined && tripData.status !== cur.status) {
+                        tripDiffs.push({ field: 'status', label: '狀態', oldValue: cur.status === 'confirmed' ? '已確認' : '待確認', newValue: tripData.status === 'confirmed' ? '已確認' : '待確認' });
+                    }
+                }
+
+                await recordAuditLog({
+                    operator,
+                    actionType: 'TRIP_UPDATE',
+                    actionLabel: '更新行程',
+                    projectId: tripData.projectId || cur?.project_id,
+                    projectName: tripData.projectName || cur?.project_name || '未指定專案',
+                    targetId: id,
+                    targetName: tripData.subject || cur?.subject,
+                    summary: `更新行事曆行程：${tripData.subject || cur?.subject || ''}${tripDiffs.length > 0 ? ` (${tripDiffs.map(d => d.label).join('、')})` : ''}`,
+                    diffs: tripDiffs.length > 0 ? tripDiffs : [
+                        { field: 'info', label: '更新內容', oldValue: '原有行程資訊', newValue: '儲存更新' }
+                    ],
+                });
+            } catch (e) {
+                console.warn('記錄出差行程更新履歷失敗:', e);
+            }
+
             revalidatePath('/schedules');
             const notesRaw = data.notes || '';
             const match = notesRaw.match(/<!--MEETING_URL:(.*?)-->/);
@@ -3285,11 +3366,12 @@ export async function updateBusinessTrip(id: string, tripData: Partial<BusinessT
 /**
  * 刪除出差行程
  */
-export async function deleteBusinessTrip(id: string) {
+export async function deleteBusinessTrip(id: string, operator?: AuditOperator) {
     const supabase = getSupabaseClient();
     try {
+        const { data: tripData } = await supabase.from('business_trips').select('subject, start_date, location, project_id, project_name, notion_page_id').eq('id', id).maybeSingle();
+
         // 若此行程來自 Notion，將其 notion_page_id 記錄至已刪除清單，避免後續同步重複加回
-        const { data: tripData } = await supabase.from('business_trips').select('notion_page_id').eq('id', id).maybeSingle();
         if (tripData?.notion_page_id) {
             const { data: blacklistRow } = await supabase
                 .from('clients')
@@ -3316,7 +3398,29 @@ export async function deleteBusinessTrip(id: string) {
         }
 
         const { error } = await supabase.from('business_trips').delete().eq('id', id);
+        if (error) throw error;
         
+        // 寫入修改履歷
+        try {
+            await recordAuditLog({
+                operator,
+                actionType: 'TRIP_DELETE',
+                actionLabel: '刪除行程',
+                projectId: tripData?.project_id,
+                projectName: tripData?.project_name || '未指定專案',
+                targetId: id,
+                targetName: tripData?.subject,
+                summary: `刪除行事曆行程：${tripData?.subject || id}`,
+                diffs: [
+                    { field: 'status', label: '行程狀態', oldValue: '已排定', newValue: '已刪除' },
+                    { field: 'date', label: '原定日期', oldValue: `${tripData?.start_date ? String(tripData.start_date).slice(0, 10) : ''}`, newValue: '-' },
+                    { field: 'location', label: '地點', oldValue: tripData?.location || '-', newValue: '-' },
+                ],
+            });
+        } catch (e) {
+            console.warn('記錄出差行程刪除履歷失敗:', e);
+        }
+
         // 同步處理備援
         const currentList = await getBusinessTrips();
         const updatedList = currentList.filter((t) => t.id !== id);
@@ -3338,9 +3442,14 @@ export async function deleteBusinessTrip(id: string) {
 /**
  * 切換出差行程狀態 (已確認 <-> 待確認)
  */
-export async function updateBusinessTripStatus(id: string, status: 'confirmed' | 'pending') {
-    return await updateBusinessTrip(id, { status });
+export async function updateBusinessTripStatus(
+    id: string, 
+    status: 'confirmed' | 'pending',
+    operator?: AuditOperator
+) {
+    return await updateBusinessTrip(id, { status }, operator);
 }
+
 
 /**
  * 取得假日清單 (自動合併台灣法定假日與使用者自訂假日)

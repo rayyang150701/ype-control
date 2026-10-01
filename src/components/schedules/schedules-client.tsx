@@ -72,7 +72,7 @@ export function SchedulesClient({
 }: SchedulesClientProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
+  const { permissions, isLoaded, setIsLoginDialogOpen, currentUser } = useAdmin();
 
   // 視圖切換狀態
   const [viewType, setViewType] = useState<CalendarViewType>('month');
@@ -341,8 +341,16 @@ export function SchedulesClient({
     tripData: Omit<BusinessTrip, 'id' | 'createdAt' | 'updatedAt'>,
     batchDates?: string[]
   ) => {
+    const operator = currentUser ? {
+      uid: currentUser.uid,
+      name: currentUser.displayName || currentUser.username || currentUser.email,
+      email: currentUser.email,
+      role: currentUser.role,
+      department: currentUser.department,
+    } : undefined;
+
     if (selectedTrip) {
-      const res = await updateBusinessTrip(selectedTrip.id, tripData);
+      const res = await updateBusinessTrip(selectedTrip.id, tripData, operator);
       if (res.success) {
         toast({ title: '更新成功', description: '行程資料已成功更新' });
         setShowTripForm(false);
@@ -360,7 +368,7 @@ export function SchedulesClient({
           ...tripData,
           startDate: dateStr,
           endDate: dateStr,
-        });
+        }, operator);
         if (res.success) {
           successCount++;
         } else {
@@ -386,7 +394,7 @@ export function SchedulesClient({
       setSelectedDate(null);
       await reloadData();
     } else {
-      const res = await createBusinessTrip(tripData);
+      const res = await createBusinessTrip(tripData, operator);
       if (res.success) {
         toast({ title: '建立成功', description: '新出差行程已成功建立' });
         setShowTripForm(false);
@@ -414,7 +422,15 @@ export function SchedulesClient({
     if (!confirm(`確定要刪除「${target.subject}」這筆出差行程嗎？`)) return;
 
     try {
-      const res = await deleteBusinessTrip(target.id);
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+
+      const res = await deleteBusinessTrip(target.id, operator);
       if (res.success) {
         toast({ title: '刪除成功', description: res.message });
         setShowTripDetail(false);
@@ -441,7 +457,15 @@ export function SchedulesClient({
     if (!selectedTrip) return;
 
     try {
-      const res = await updateBusinessTripStatus(selectedTrip.id, newStatus);
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+
+      const res = await updateBusinessTripStatus(selectedTrip.id, newStatus, operator);
       if (res.success) {
         toast({
           title: '狀態已變更',
@@ -456,6 +480,7 @@ export function SchedulesClient({
       toast({ variant: 'destructive', title: '操作失敗', description: err.message });
     }
   };
+
 
   // 匯出 CSV (以 UTF-8 BOM 格式)
   const handleExportCSV = () => {
