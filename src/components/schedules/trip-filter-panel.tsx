@@ -148,11 +148,13 @@ export function TripFilterPanel({
               className="w-full h-8 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
             >
               <option value="">全部客戶</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.code ? `(${c.code})` : ''}
-                </option>
-              ))}
+              {clients
+                .filter((c) => !c.name?.startsWith('__'))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.code ? `(${c.code})` : ''}
+                  </option>
+                ))}
             </select>
           </div>
 

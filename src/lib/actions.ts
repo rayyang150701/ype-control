@@ -537,7 +537,7 @@ export async function getClients(): Promise<Client[]> {
         }
 
         const clientList: Client[] = data
-            .filter((doc: any) => !doc.name?.startsWith('__SYSTEM_'))
+            .filter((doc: any) => !doc.name?.startsWith('__'))
             .map((doc: any) => ({
             id: doc.id,
             name: doc.name,

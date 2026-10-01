@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Settings, AlertTriangle, CalendarDays } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, Holiday } from '@/types/businessTrip';
-import { getMonthDays, isSameDay, isTripReportOverdue, isTripReported, findHoliday } from '@/lib/calendar-helper';
+import { getMonthDays, isSameDay, isTripReportOverdue, isTripReported, findHoliday, isYiehPhuiTrip } from '@/lib/calendar-helper';
 
 interface DisplaySettings {
   showCustomer: boolean;
@@ -317,19 +317,26 @@ export function MonthView({
                     trip.travelers
                   );
                   const hasReport = isTripReported(trip.notes);
+                  const isYiehPhui = isYiehPhuiTrip(trip.customerName);
                   return (
                     <button
                       key={trip.id}
                       onClick={() => onTripClick(trip)}
-                      className="w-full text-left px-2 py-1 rounded text-xs hover:shadow transition border border-black/5"
+                      className={`w-full text-left px-2 py-1 rounded text-xs hover:shadow transition border ${
+                        isYiehPhui
+                          ? 'border-sky-300 ring-1 ring-sky-200'
+                          : 'border-black/5'
+                      }`}
                       style={{
-                        backgroundColor: `${getCategoryColor(trip.category)}18`,
+                        backgroundColor: isYiehPhui ? '#e0f2fe' : `${getCategoryColor(trip.category)}18`,
                         borderLeft: `3px solid ${getCategoryColor(trip.category)}`,
                       }}
                       title={`${trip.subject}${trip.pm ? `\n負責PM: ${trip.pm}` : ''}${trip.tpm ? `\nTPM: ${trip.tpm}` : ''}\n${trip.travelers.join(', ')}\n${trip.startTime}-${trip.endTime}${hasReport ? '\n✅ 已填寫出差紀錄' : ''}${isOverdue ? '\n⚠️ 出差報告逾期未填' : ''}`}
                     >
                       {/* 主題與警示 */}
-                      <div className="font-semibold text-gray-900 truncate flex items-center gap-1">
+                      <div className={`font-semibold truncate flex items-center gap-1 ${
+                        isYiehPhui ? 'text-sky-950 font-bold' : 'text-gray-900'
+                      }`}>
                         <span className="truncate">{trip.subject}</span>
                         {hasReport && (
                           <span className="text-emerald-600 shrink-0 text-[10px]" title="已回報">✅</span>
@@ -349,7 +356,9 @@ export function MonthView({
 
                       {/* 動態顯示資訊 */}
                       {displaySettings.showCustomer && trip.customerName && (
-                        <div className="text-gray-600 truncate text-[11px]">
+                        <div className={`truncate text-[11px] ${
+                          isYiehPhui ? 'text-sky-800 font-bold' : 'text-gray-600'
+                        }`}>
                           🏢 {trip.customerName}
                         </div>
                       )}

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Settings, Printer, AlertTriangle, CalendarDays } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, WeekInfo, Holiday } from '@/types/businessTrip';
-import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, isTripReported, findHoliday, getCurrentWeek } from '@/lib/calendar-helper';
+import { getWeekDays, getDayName, isSameDay, formatWeekChinese, isTripReportOverdue, isTripReported, findHoliday, getCurrentWeek, isYiehPhuiTrip } from '@/lib/calendar-helper';
 
 interface DisplaySettings {
   showCustomer: boolean;
@@ -134,6 +134,10 @@ export function WeekView({
             border: 1px solid #e2e8f0 !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
+          }
+          .week-print-card.is-yiehphui {
+            background-color: #f0f9ff !important;
+            border-color: #bae6fd !important;
           }
         }
       `}</style>
@@ -426,17 +430,24 @@ export function WeekView({
                       trip.travelers
                     );
                     const hasReport = isTripReported(trip.notes);
+                    const isYiehPhui = isYiehPhuiTrip(trip.customerName);
                     return (
                       <button
                         key={trip.id}
                         onClick={() => onTripClick(trip)}
-                        className="week-print-card w-full text-left p-2.5 rounded-lg hover:shadow-md transition border bg-white cursor-pointer print:p-1.5 print:mb-1 print:border-slate-300 print:shadow-none"
+                        className={`week-print-card w-full text-left p-2.5 rounded-lg hover:shadow-md transition border cursor-pointer print:p-1.5 print:mb-1 print:shadow-none ${
+                          isYiehPhui
+                            ? 'bg-sky-50/90 hover:bg-sky-100/90 border-sky-300 is-yiehphui print:border-sky-300 shadow-2xs'
+                            : 'bg-white hover:bg-gray-50/80 border-gray-200 print:border-slate-300'
+                        }`}
                         style={{
                           borderLeft: `4px solid ${getCategoryColor(trip.category)}`,
                         }}
                       >
                         {/* 主題與狀態標籤 */}
-                        <div className="font-semibold text-sm text-gray-900 mb-1 flex items-start justify-between gap-1 print:text-[11px] print:mb-0.5">
+                        <div className={`font-semibold text-sm mb-1 flex items-start justify-between gap-1 print:text-[11px] print:mb-0.5 ${
+                          isYiehPhui ? 'text-sky-950 font-bold' : 'text-gray-900'
+                        }`}>
                           <span className="line-clamp-2 print:line-clamp-2">{trip.subject}</span>
                           <div className="flex items-center gap-1 shrink-0 print:hidden">
                             {hasReport && (
@@ -465,11 +476,13 @@ export function WeekView({
                         </div>
 
                         {/* 動態顯示詳細資訊 */}
-                        <div className="space-y-1 text-xs text-gray-600 print:space-y-0.5 print:text-[9.5px]">
+                        <div className={`space-y-1 text-xs print:space-y-0.5 print:text-[9.5px] ${
+                          isYiehPhui ? 'text-sky-900/80' : 'text-gray-600'
+                        }`}>
                           {displaySettings.showCustomer && trip.customerName && (
                             <div className="flex items-center gap-1 truncate">
                               <span className="text-gray-400 shrink-0">🏢</span>
-                              <span className="truncate">{trip.customerName}</span>
+                              <span className={`truncate ${isYiehPhui ? 'text-sky-800 font-bold' : ''}`}>{trip.customerName}</span>
                             </div>
                           )}
 

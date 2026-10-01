@@ -82,7 +82,7 @@ export function SchedulesClient({
 
   // 資料狀態
   const [trips, setTrips] = useState<BusinessTrip[]>(initialTrips);
-  const [clients] = useState<Client[]>(initialClients);
+  const [clients] = useState<Client[]>(() => initialClients.filter((c) => !c.name?.startsWith('__')));
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [users] = useState<User[]>(initialUsers);
   const [holidays, setHolidays] = useState<Holiday[]>(initialHolidays);

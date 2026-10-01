@@ -315,9 +315,10 @@ function ClientCombobox({
   }, []);
 
   const filtered = useMemo(() => {
+    const validClients = clients.filter((c) => c.name && !c.name.startsWith('__'));
     const q = query.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) => {
+    if (!q) return validClients;
+    return validClients.filter((c) => {
       const name = (c.name || '').toLowerCase();
       const code = (c.code || '').toLowerCase();
       return name.includes(q) || code.includes(q);

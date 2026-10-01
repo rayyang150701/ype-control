@@ -387,3 +387,13 @@ export const DEFAULT_TAIWAN_HOLIDAYS: Holiday[] = [
   { id: 'h-2027-09-15', name: '中秋節', date: '2027-09-15', isStatutory: true, category: '國定假日' },
   { id: 'h-2027-10-10', name: '國慶日', date: '2027-10-10', isStatutory: true, category: '國定假日' },
 ];
+
+/**
+ * 判斷是否為燁輝或燁輝燕巢客戶行程（行事曆需以淡藍色突顯）
+ */
+export const isYiehPhuiTrip = (customerName?: string): boolean => {
+  if (!customerName) return false;
+  const trimmed = customerName.trim();
+  return trimmed === '燁輝' || trimmed === '燁輝燕巢';
+};
+

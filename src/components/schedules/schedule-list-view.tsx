@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Edit, Trash2, CalendarOff, Users } from 'lucide-react';
 import { BusinessTrip, TRIP_CATEGORIES, Holiday } from '@/types/businessTrip';
-import { isTripReportOverdue, isTripReported, findHoliday } from '@/lib/calendar-helper';
+import { isTripReportOverdue, isTripReported, findHoliday, isYiehPhuiTrip } from '@/lib/calendar-helper';
 
 interface ScheduleListViewProps {
   trips: BusinessTrip[];
@@ -146,12 +146,17 @@ export function ScheduleListView({
               // 人員縮寫與數量
               const travelers = trip.travelers ? trip.travelers.slice(0, 3) : [];
               const extraCount = trip.travelers ? Math.max(0, trip.travelers.length - 3) : 0;
+              const isYiehPhui = isYiehPhuiTrip(trip.customerName);
 
               return (
                 <div
                   key={trip.id}
                   onClick={() => onTripClick(trip)}
-                  className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-3.5 border-x border-b border-gray-200 bg-white hover:bg-blue-50/40 transition-colors cursor-pointer group items-center"
+                  className={`grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-6 py-3.5 border-x border-b transition-colors cursor-pointer group items-center ${
+                    isYiehPhui
+                      ? 'bg-sky-50/70 hover:bg-sky-100/70 border-sky-200'
+                      : 'border-gray-200 bg-white hover:bg-blue-50/40'
+                  }`}
                 >
                   {/* 專案 / 客戶 */}
                   <div className="md:col-span-3 flex items-center gap-3 min-w-0">
@@ -163,7 +168,7 @@ export function ScheduleListView({
                       <p className="text-sm font-semibold text-gray-900 truncate">
                         {trip.projectName || '—'}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className={`text-xs truncate ${isYiehPhui ? 'text-sky-800 font-bold' : 'text-gray-500'}`}>
                         {trip.customerName || '未指定客戶'}
                       </p>
                     </div>
