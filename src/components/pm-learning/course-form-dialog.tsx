@@ -164,8 +164,8 @@ export function CourseFormDialog({
       setExternalUrl('');
 
       const today = new Date();
-      const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-      setArticleIssueDate(currentYearMonth);
+      const currentDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      setArticleIssueDate(currentDate);
       setTimelinessType('evergreen');
       setArticleContent('');
       setArticleSource('');
@@ -540,12 +540,12 @@ export function CourseFormDialog({
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold flex items-center gap-1 text-emerald-950">
                   <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                  出刊年月 / 期別 (便於時效與月份控管)
+                  發表日期 (年月日)
                 </Label>
                 <Input
+                  type="date"
                   value={articleIssueDate}
                   onChange={(e) => setArticleIssueDate(e.target.value)}
-                  placeholder="例如：2026-10 或 2026年第 142 期"
                   className="bg-white"
                 />
               </div>

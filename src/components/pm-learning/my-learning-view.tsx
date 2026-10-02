@@ -199,7 +199,10 @@ export function MyLearningView({
   const allIssueDates = useMemo(() => {
     const set = new Set<string>();
     myCourses.forEach((c) => {
-      if (c.issueDate?.trim()) set.add(c.issueDate.trim());
+      if (c.issueDate?.trim()) {
+        const ym = c.issueDate.trim().substring(0, 7);
+        set.add(ym);
+      }
     });
     return ['全部', ...Array.from(set).sort().reverse()];
   }, [myCourses]);
@@ -293,8 +296,9 @@ export function MyLearningView({
       }
 
       // 3. 出刊年月篩選 (文章專屬)
-      if (selectedIssueDate !== '全部' && course.issueDate !== selectedIssueDate) {
-        return false;
+      if (selectedIssueDate !== '全部') {
+        const ym = (course.issueDate || '').trim().substring(0, 7);
+        if (ym !== selectedIssueDate) return false;
       }
 
       // 4. 時效性篩選
@@ -956,12 +960,34 @@ function PersonalCourseCard({
   const currentChecklistKey = JSON.stringify(rawProgress?.checklist || []);
   const currentAttachmentsKey = JSON.stringify(rawProgress?.attachments || []);
 
+  const prevProgressRef = React.useRef(currentProgressPercent);
+  const prevNotesRef = React.useRef(currentNotes);
+  const prevChecklistKeyRef = React.useRef(currentChecklistKey);
+  const prevAttachmentsKeyRef = React.useRef(currentAttachmentsKey);
+
   useEffect(() => {
-    setProgressVal(currentProgressPercent);
-    setNotesText(currentNotes);
-    setChecklist(Array.isArray(rawProgress?.checklist) ? rawProgress.checklist : []);
-    setAttachments(Array.isArray(rawProgress?.attachments) ? rawProgress.attachments : []);
-  }, [currentProgressPercent, currentNotes, currentChecklistKey, currentAttachmentsKey]);
+    let changed = false;
+    if (prevProgressRef.current !== currentProgressPercent) {
+      setProgressVal(currentProgressPercent);
+      prevProgressRef.current = currentProgressPercent;
+      changed = true;
+    }
+    if (prevNotesRef.current !== currentNotes) {
+      setNotesText(currentNotes);
+      prevNotesRef.current = currentNotes;
+      changed = true;
+    }
+    if (prevChecklistKeyRef.current !== currentChecklistKey) {
+      setChecklist(Array.isArray(rawProgress?.checklist) ? rawProgress.checklist : []);
+      prevChecklistKeyRef.current = currentChecklistKey;
+      changed = true;
+    }
+    if (prevAttachmentsKeyRef.current !== currentAttachmentsKey) {
+      setAttachments(Array.isArray(rawProgress?.attachments) ? rawProgress.attachments : []);
+      prevAttachmentsKeyRef.current = currentAttachmentsKey;
+      changed = true;
+    }
+  }, [currentProgressPercent, currentNotes, currentChecklistKey, currentAttachmentsKey, rawProgress]);
 
   // 儲存快速時數修改
   const handleSaveHours = async () => {
@@ -1188,7 +1214,7 @@ function PersonalCourseCard({
                 {course.issueDate && (
                   <Badge variant="outline" className="text-xs bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono shrink-0">
                     <Calendar className="w-3 h-3 mr-1 text-indigo-500" />
-                    {course.issueDate} 期
+                    {course.issueDate.substring(0, 7)} 期
                   </Badge>
                 )}
 
@@ -1410,7 +1436,7 @@ function PersonalCourseCard({
               </div>
               {course.issueDate && (
                 <div className="font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                  📅 {course.issueDate} 期
+                  📅 {course.issueDate.substring(0, 7)} 期
                 </div>
               )}
               {course.createdBy && (
@@ -1436,7 +1462,7 @@ function PersonalCourseCard({
                   </Badge>
                   {course.issueDate && (
                     <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 font-mono text-xs">
-                      📅 {course.issueDate} 出刊
+                      📅 {course.issueDate.substring(0, 7)} 出刊
                     </Badge>
                   )}
                   {course.timelinessType === 'time_sensitive' ? (

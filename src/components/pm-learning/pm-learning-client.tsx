@@ -151,14 +151,19 @@ export function PMLearningClient({
 
   // 當 pmoMembers 載入或更新時，若尚未手動指定，優先鎖定預設為 James
   useEffect(() => {
-    if (!isManualSelection) {
+    if (!isManualSelection && pmoMembers.length > 0) {
       const james = findJamesMember(pmoMembers);
+      let targetId = '';
       if (james) {
-        setActiveUserId(james.uid);
+        targetId = james.uid;
       } else if (currentUser && pmoMembers.some((m) => m.uid === currentUser.uid)) {
-        setActiveUserId(currentUser.uid);
-      } else if (pmoMembers.length > 0 && !activeUserId) {
-        setActiveUserId(pmoMembers[0].uid);
+        targetId = currentUser.uid;
+      } else if (!activeUserId) {
+        targetId = pmoMembers[0].uid;
+      }
+      
+      if (targetId && activeUserId !== targetId) {
+        setActiveUserId(targetId);
       }
     }
   }, [currentUser, pmoMembers, isManualSelection, activeUserId]);
