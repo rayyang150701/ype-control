@@ -896,19 +896,23 @@ function PersonalCourseCard({
   onOpenReader: (course: PMLearningCourse) => void;
 }) {
   const { toast } = useToast();
-  const memberProgress: PMLearningMemberProgress = (course.memberProgress || {})[userId] || {
-    userId,
-    userName: '成員',
-    progressPercent: 0,
-    isCompleted: false,
-    notes: '',
-    checklist: (Array.isArray(course.defaultChecklist) ? course.defaultChecklist : []).map((item, idx) => ({
-      id: `chk-${idx}`,
-      title: item,
-      completed: false,
-    })),
-    attachments: [],
-  };
+  const rawProgress = (course.memberProgress || {})[userId];
+  const memberProgress: PMLearningMemberProgress = useMemo(() => {
+    if (rawProgress) return rawProgress;
+    return {
+      userId,
+      userName: '成員',
+      progressPercent: 0,
+      isCompleted: false,
+      notes: '',
+      checklist: (Array.isArray(course.defaultChecklist) ? course.defaultChecklist : []).map((item, idx) => ({
+        id: `chk-${idx}`,
+        title: item,
+        completed: false,
+      })),
+      attachments: [],
+    };
+  }, [rawProgress, userId, course.defaultChecklist]);
 
   // 控制整張卡片下半部是否展開（使用者要求紅框下預設收起）
   const [isCardExpanded, setIsCardExpanded] = useState<boolean>(defaultExpanded);
@@ -946,13 +950,18 @@ function PersonalCourseCard({
   // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程建立者)
   const canEdit = canUserEditCourse(currentUser, course.createdBy);
 
-  // 同步外部變更
+  // 同步外部變更：使用穩定的欄位純值比較，徹底杜絕因物件參考變動引發的無窮重新渲染
+  const currentProgressPercent = rawProgress?.progressPercent ?? 0;
+  const currentNotes = rawProgress?.notes ?? '';
+  const currentChecklistKey = JSON.stringify(rawProgress?.checklist || []);
+  const currentAttachmentsKey = JSON.stringify(rawProgress?.attachments || []);
+
   useEffect(() => {
-    setProgressVal(memberProgress.progressPercent || 0);
-    setNotesText(memberProgress.notes || '');
-    setChecklist(Array.isArray(memberProgress.checklist) ? memberProgress.checklist : []);
-    setAttachments(Array.isArray(memberProgress.attachments) ? memberProgress.attachments : []);
-  }, [memberProgress]);
+    setProgressVal(currentProgressPercent);
+    setNotesText(currentNotes);
+    setChecklist(Array.isArray(rawProgress?.checklist) ? rawProgress.checklist : []);
+    setAttachments(Array.isArray(rawProgress?.attachments) ? rawProgress.attachments : []);
+  }, [currentProgressPercent, currentNotes, currentChecklistKey, currentAttachmentsKey]);
 
   // 儲存快速時數修改
   const handleSaveHours = async () => {

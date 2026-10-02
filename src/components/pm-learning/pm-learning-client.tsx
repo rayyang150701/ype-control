@@ -57,7 +57,12 @@ class PMErrorBoundary extends React.Component<
           <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
             系統已成功攔截渲染錯誤，您的變更已妥善儲存。請點擊下方按鈕重新載入畫面。
           </p>
-          <div className="pt-2">
+          {this.state.error && (
+            <div className="text-left bg-rose-50 text-rose-800 p-3 rounded-lg text-xs font-mono max-w-xl mx-auto overflow-auto border border-rose-200">
+              <p className="font-bold">{this.state.error.name}: {this.state.error.message}</p>
+            </div>
+          )}
+          <div className="pt-2 flex items-center justify-center gap-2">
             <Button
               size="sm"
               onClick={() => {
