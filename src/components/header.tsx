@@ -1,7 +1,7 @@
 
 'use client';
 import { useState } from 'react';
-import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar, ShieldCheck, History } from 'lucide-react';
+import { LogOut, User, Users, HelpCircle, Book, Route, Lock, Unlock, Building2, Bot, KeyRound, Calendar, ShieldCheck, History, Phone } from 'lucide-react';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,7 @@ import { LoginDialog } from '@/components/dashboard/login-dialog';
 import { ResetPasswordDialog } from '@/components/users/reset-password-dialog';
 import { PermissionMatrixDialog } from '@/components/permission-matrix-dialog';
 import { AuditLogDialog } from '@/components/audit-log/audit-log-dialog';
+import { PhoneDirectoryDialog } from '@/components/phone-directory-dialog';
 
 export function Header() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export function Header() {
   const [isChangeMyPasswordOpen, setIsChangeMyPasswordOpen] = useState(false);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   const [isAuditLogOpen, setIsAuditLogOpen] = useState(false);
+  const [isPhoneDirectoryOpen, setIsPhoneDirectoryOpen] = useState(false);
 
   // 僅開放給億威各部門、億威PM、管理者檢視修改履歷
   const canViewAuditLog = ['admin', 'super_admin', 'management', 'execution'].includes(role);
@@ -235,6 +237,11 @@ export function Header() {
                 <DropdownMenuItem onClick={handleDownload} className="cursor-pointer">
                   <Book className="mr-2 h-4 w-4 text-emerald-600" />
                   <span>下載操作手冊</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsPhoneDirectoryOpen(true)} className="cursor-pointer">
+                  <Phone className="mr-2 h-4 w-4 text-orange-600" />
+                  <span>億威電話分機表</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -468,6 +475,7 @@ export function Header() {
           }}
         />
       )}
+      <PhoneDirectoryDialog isOpen={isPhoneDirectoryOpen} setIsOpen={setIsPhoneDirectoryOpen} />
     </header>
   );
 }
