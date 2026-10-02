@@ -34,11 +34,11 @@ interface PMLearningClientProps {
 
 class PMErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean; error: Error | null; errorInfo: React.ErrorInfo | null }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -47,31 +47,81 @@ class PMErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('PM Learning Hub 畫面渲染捕捉異常:', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
   render() {
     if (this.state.hasError) {
+      const fullDetails = [
+        `Error: ${this.state.error?.name || 'Error'}: ${this.state.error?.message || ''}`,
+        '',
+        '--- Error Stack ---',
+        this.state.error?.stack || 'No stack available',
+        '',
+        '--- Component Stack ---',
+        this.state.errorInfo?.componentStack || 'No component stack available',
+      ].join('\n');
+
       return (
-        <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center space-y-3 shadow-xs my-4">
+        <div className="bg-white rounded-2xl border border-rose-200 p-6 sm:p-8 text-center space-y-4 shadow-xs my-4 max-w-4xl mx-auto">
           <div className="text-rose-600 font-bold text-base">⚠️ 畫面載入發生暫時性顯示問題</div>
           <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-            系統已成功攔截渲染錯誤，您的變更已妥善儲存。請點擊下方按鈕重新載入畫面。
+            系統已攔截渲染錯誤。下方提供即時除錯追蹤棧 (Component Stack)，可直接查看具體出錯之組件位置：
           </p>
           {this.state.error && (
-            <div className="text-left bg-rose-50 text-rose-800 p-3 rounded-lg text-xs font-mono max-w-xl mx-auto overflow-auto border border-rose-200">
-              <p className="font-bold">{this.state.error.name}: {this.state.error.message}</p>
+            <div className="text-left bg-slate-900 text-slate-100 p-4 rounded-xl text-xs font-mono max-w-3xl mx-auto overflow-auto border border-slate-800 space-y-3 shadow-inner">
+              <div className="text-rose-400 font-bold text-sm">
+                {this.state.error.name}: {this.state.error.message}
+              </div>
+
+              {this.state.errorInfo?.componentStack && (
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-emerald-400 font-semibold text-xs mb-1">
+                    📌 發生錯誤的組件調用棧 (Component Stack)：
+                  </div>
+                  <pre className="text-[11px] font-mono text-emerald-300 bg-black/40 p-3 rounded border border-slate-800 whitespace-pre-wrap max-h-56 overflow-y-auto leading-relaxed">
+                    {this.state.errorInfo.componentStack}
+                  </pre>
+                </div>
+              )}
+
+              {this.state.error.stack && (
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-amber-400 font-semibold text-xs mb-1">
+                    🔍 原始 JS 調用堆疊 (Error Stack)：
+                  </div>
+                  <pre className="text-[10px] font-mono text-slate-400 bg-black/40 p-3 rounded border border-slate-800 whitespace-pre-wrap max-h-40 overflow-y-auto leading-relaxed">
+                    {this.state.error.stack}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
-          <div className="pt-2 flex items-center justify-center gap-2">
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
             <Button
               size="sm"
               onClick={() => {
-                this.setState({ hasError: false, error: null });
+                try {
+                  navigator.clipboard.writeText(fullDetails);
+                  alert('已複製錯誤堆疊資訊至剪貼簿！');
+                } catch {
+                  // fallback
+                }
+              }}
+              variant="outline"
+              className="text-xs border-slate-300 text-slate-700 hover:bg-slate-100"
+            >
+              📋 複製錯誤堆疊 (Copy Stack)
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                this.setState({ hasError: false, error: null, errorInfo: null });
                 window.location.reload();
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
             >
-              重新整理畫面
+              🔄 重新整理畫面
             </Button>
           </div>
         </div>

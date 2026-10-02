@@ -833,20 +833,21 @@ export function MyLearningView({
           const isLast = overallIndex === sortedMyCourses.length - 1;
 
           return (
-            <PersonalCourseCard
-              key={course.id}
-              course={course}
-              userId={activeMember?.uid || ''}
-              currentUser={currentUser}
-              isFirst={isFirst}
-              isLast={isLast}
-              defaultExpanded={expandAllState}
-              onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
-              onUpdateCourse={onCourseUpdated}
-              onEditCourse={onEditCourse}
-              onDeleteCourse={handleDeleteCourse}
-              onOpenReader={handleOpenReader}
-            />
+            <PersonalCardErrorBoundary key={course.id} courseTitle={course.title}>
+              <PersonalCourseCard
+                course={course}
+                userId={activeMember?.uid || ''}
+                currentUser={currentUser}
+                isFirst={isFirst}
+                isLast={isLast}
+                defaultExpanded={expandAllState}
+                onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
+                onUpdateCourse={onCourseUpdated}
+                onEditCourse={onEditCourse}
+                onDeleteCourse={handleDeleteCourse}
+                onOpenReader={handleOpenReader}
+              />
+            </PersonalCardErrorBoundary>
           );
         })}
       </div>
@@ -871,6 +872,50 @@ export function MyLearningView({
       />
     </div>
   );
+}
+
+// 單張卡片獨立 Error Boundary，杜絕單一卡片異常讓整頁崩潰，並精確定位問題卡片
+class PersonalCardErrorBoundary extends React.Component<
+  { courseTitle: string; children: React.ReactNode },
+  { hasError: boolean; error: Error | null; errorInfo: React.ErrorInfo | null }
+> {
+  constructor(props: { courseTitle: string; children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(`課程「${this.props.courseTitle}」卡片渲染異常:`, error, errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-5 text-xs text-amber-900 space-y-2.5 shadow-2xs my-2">
+          <div className="flex items-center justify-between">
+            <div className="font-bold flex items-center gap-2 text-sm text-amber-900">
+              <span className="p-1 rounded bg-amber-100 text-amber-700">⚠️</span>
+              <span>課程「{this.props.courseTitle}」卡片渲染發生問題 (已安全隔離，其餘卡片正常運行)</span>
+            </div>
+          </div>
+          <div className="bg-white/80 p-3 rounded-lg border border-amber-200/60 font-mono text-[11px] text-rose-800 space-y-1">
+            <p className="font-semibold">{this.state.error?.name}: {this.state.error?.message}</p>
+            {this.state.errorInfo?.componentStack && (
+              <pre className="text-[10px] text-slate-700 whitespace-pre-wrap max-h-36 overflow-y-auto mt-1 pt-1 border-t border-amber-200/40">
+                {this.state.errorInfo.componentStack}
+              </pre>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // 單堂課程的個人專屬卡片元件 (支援折疊收合，進度%、日期、時數明確放於名稱旁)
