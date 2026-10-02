@@ -159,7 +159,10 @@ export function TeamView({
   const allIssueDates = useMemo(() => {
     const set = new Set<string>();
     courses.forEach((c) => {
-      if (c.issueDate?.trim()) set.add(c.issueDate.trim());
+      if (c.issueDate?.trim()) {
+        const ym = c.issueDate.trim().substring(0, 7);
+        set.add(ym);
+      }
     });
     return ['全部', ...Array.from(set).sort().reverse()];
   }, [courses]);
@@ -232,8 +235,9 @@ export function TeamView({
       }
 
       // 3. 出刊年月比對 (文章專屬)
-      if (selectedIssueDate !== '全部' && course.issueDate !== selectedIssueDate) {
-        return false;
+      if (selectedIssueDate !== '全部') {
+        const ym = (course.issueDate || '').trim().substring(0, 7);
+        if (ym !== selectedIssueDate) return false;
       }
 
       // 4. 時效性比對
@@ -613,14 +617,14 @@ export function TeamView({
                         <span>{carrierCfg.label}</span>
                       </span>
 
-                      {/* 出刊年月 (文章) */}
+                      {/* 發布日期 (文章) */}
                       {course.issueDate && (
                         <Badge
                           variant="outline"
                           className="text-[11px] bg-slate-50 text-slate-700 border-slate-200 font-mono gap-1"
                         >
                           <Calendar className="h-3 w-3 text-slate-500" />
-                          <span>{course.issueDate}</span>
+                          <span>發布日期: {course.issueDate}</span>
                         </Badge>
                       )}
 
@@ -1055,7 +1059,7 @@ function KanbanCourseCard({
 
           {course.issueDate && (
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono">
-              {course.issueDate}
+              發布: {course.issueDate}
             </span>
           )}
 
