@@ -418,8 +418,10 @@ export function PMLearningClient({
             onCourseUpdated={handleCourseUpdated}
           />
         )}
+      </PMErrorBoundary>
 
-        {/* 課程新增 / 編輯對話框 */}
+      {/* 課程新增 / 編輯對話框 (僅在開啟時掛載，杜絕未開啟時 Radix UI 占據 DOM 與生命週期循環) */}
+      {isCreateDialogOpen && (
         <CourseFormDialog
           isOpen={isCreateDialogOpen}
           onClose={() => {
@@ -436,8 +438,10 @@ export function PMLearningClient({
           initialType={createDialogInitialType}
           onSuccess={handleCourseSaved}
         />
+      )}
 
-        {/* 課程領域管理維護對話框 */}
+      {/* 課程領域管理維護對話框 (僅在開啟時掛載) */}
+      {isCategoryDialogOpen && (
         <CategoryManagerDialog
           isOpen={isCategoryDialogOpen}
           onClose={() => setIsCategoryDialogOpen(false)}
@@ -449,7 +453,7 @@ export function PMLearningClient({
             setCourses(fresh);
           }}
         />
-      </PMErrorBoundary>
+      )}
     </div>
   );
 }

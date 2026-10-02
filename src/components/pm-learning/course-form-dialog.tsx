@@ -72,6 +72,8 @@ export function CourseFormDialog({
   onOpenCategoryManager,
   initialType = 'course',
 }: CourseFormDialogProps) {
+  if (!isOpen) return null;
+
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -202,7 +204,7 @@ export function CourseFormDialog({
         '第三單元：心得產出與應用驗收',
       ]);
     }
-  }, [courseToEdit, isOpen, pmoMembers, defaultAssignedUserId, availableCategories, initialType]);
+  }, [courseToEdit?.id, isOpen]);
 
   const handleToggleMember = (uid: string) => {
     setAssignedUserIds((prev) =>
@@ -283,9 +285,9 @@ export function CourseFormDialog({
         const res = await updatePMLearningCourse(courseToEdit.id, payload);
 
         if (res.success && res.data) {
-          toast({ title: '更新成功', description: `已更新「${title}」` });
-          onSuccess(res.data);
           onClose();
+          onSuccess(res.data);
+          toast({ title: '更新成功', description: `已更新「${title}」` });
         } else {
           toast({ title: '更新失敗', description: res.message, variant: 'destructive' });
         }
@@ -297,9 +299,9 @@ export function CourseFormDialog({
         });
 
         if (res.success && res.data) {
-          toast({ title: '建立成功', description: `已新增「${title}」並指派成員` });
-          onSuccess(res.data);
           onClose();
+          onSuccess(res.data);
+          toast({ title: '建立成功', description: `已新增「${title}」並指派成員` });
         } else {
           toast({ title: '建立失敗', description: res.message, variant: 'destructive' });
         }
