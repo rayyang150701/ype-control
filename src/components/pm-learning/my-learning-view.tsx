@@ -1522,7 +1522,9 @@ function PersonalCourseCard({
                 rel="noopener noreferrer"
                 className="h-8 w-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-all active:scale-95 inline-flex items-center justify-center shrink-0"
                 title={
-                  course.type === 'video'
+                  course.externalUrl.includes('drive.google.com')
+                    ? '📁 開啟 Google 雲端硬碟教材 / 共用資料夾'
+                    : course.type === 'video'
                     ? '🚀 前往觀看外部影音'
                     : course.type === 'article'
                     ? '🔗 前往原始文章網址'

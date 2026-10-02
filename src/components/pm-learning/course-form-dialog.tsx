@@ -569,7 +569,7 @@ export function CourseFormDialog({
             </div>
           )}
 
-          {/* 外部連結 (文章原文網址 / 影音播放連結 / 官方課程教室) */}
+          {/* 外部連結 (文章原文網址 / 影音播放連結 / 官方課程教室 / Google 雲端硬碟) */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold flex items-center gap-1">
               <ExternalLink className="h-3.5 w-3.5 text-blue-600" />
@@ -577,14 +577,20 @@ export function CourseFormDialog({
                 ? '原文網頁出處 (選填，保留可連結回付費專欄)'
                 : contentType === 'video'
                 ? '影音觀看外部連結 (YouTube / Webinar / Podcast)'
-                : '外部傳送門連結 (線上教室 / 官方教材)'}
+                : '外部傳送門連結 (線上教室 / 官方教材 / Google 雲端硬碟)'}
             </Label>
             <Input
               type="url"
               value={externalUrl}
               onChange={(e) => setExternalUrl(e.target.value)}
-              placeholder="例如：https://..."
+              placeholder="例如：https://drive.google.com/... 或 https://..."
             />
+            {externalUrl.includes('drive.google.com') && (
+              <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                <span>📁</span>
+                <span>已設定為 Google 雲端硬碟！提醒：請確保該資料夾或檔案已開啟「知道連結的使用者皆可查看」共用權限。</span>
+              </p>
+            )}
           </div>
 
           {/* 文章專屬：完整內文編輯器 (Markdown) */}

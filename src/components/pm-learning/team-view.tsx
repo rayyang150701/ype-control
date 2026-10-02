@@ -698,7 +698,13 @@ export function TeamView({
                         >
                           <ExternalLink className="h-3 w-3" />
                           <span>
-                            {isArticle ? '原始文章 ↗' : carrierType === 'video' ? '觀看影音 ↗' : '外部傳送門 ↗'}
+                            {course.externalUrl?.includes('drive.google.com')
+                              ? '雲端硬碟教材 ↗'
+                              : isArticle
+                              ? '原始文章 ↗'
+                              : carrierType === 'video'
+                              ? '觀看影音 ↗'
+                              : '外部傳送門 ↗'}
                           </span>
                         </a>
                       )}
