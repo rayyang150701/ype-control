@@ -954,40 +954,36 @@ function PersonalCourseCard({
   // 判斷當前使用者對此課程是否具備編輯權限 (主管理員 jamesyang, admin，或該課程建立者)
   const canEdit = canUserEditCourse(currentUser, course.createdBy);
 
-  // 同步外部變更：使用穩定的欄位純值比較，徹底杜絕因物件參考變動引發的無窮重新渲染
+  // 同步外部變更：只依賴純值/序列化字串，完全不放物件參考進依賴陣列
+  // 這是 Error #185 的根源修復：rawProgress 是不穩定的物件參考，每次 course 變動都不同
   const currentProgressPercent = rawProgress?.progressPercent ?? 0;
   const currentNotes = rawProgress?.notes ?? '';
   const currentChecklistKey = JSON.stringify(rawProgress?.checklist || []);
   const currentAttachmentsKey = JSON.stringify(rawProgress?.attachments || []);
 
-  const prevProgressRef = React.useRef(currentProgressPercent);
-  const prevNotesRef = React.useRef(currentNotes);
-  const prevChecklistKeyRef = React.useRef(currentChecklistKey);
-  const prevAttachmentsKeyRef = React.useRef(currentAttachmentsKey);
+  useEffect(() => {
+    setProgressVal(currentProgressPercent);
+  }, [currentProgressPercent]);
 
   useEffect(() => {
-    let changed = false;
-    if (prevProgressRef.current !== currentProgressPercent) {
-      setProgressVal(currentProgressPercent);
-      prevProgressRef.current = currentProgressPercent;
-      changed = true;
+    setNotesText(currentNotes);
+  }, [currentNotes]);
+
+  useEffect(() => {
+    try {
+      setChecklist(JSON.parse(currentChecklistKey));
+    } catch {
+      setChecklist([]);
     }
-    if (prevNotesRef.current !== currentNotes) {
-      setNotesText(currentNotes);
-      prevNotesRef.current = currentNotes;
-      changed = true;
+  }, [currentChecklistKey]);
+
+  useEffect(() => {
+    try {
+      setAttachments(JSON.parse(currentAttachmentsKey));
+    } catch {
+      setAttachments([]);
     }
-    if (prevChecklistKeyRef.current !== currentChecklistKey) {
-      setChecklist(Array.isArray(rawProgress?.checklist) ? rawProgress.checklist : []);
-      prevChecklistKeyRef.current = currentChecklistKey;
-      changed = true;
-    }
-    if (prevAttachmentsKeyRef.current !== currentAttachmentsKey) {
-      setAttachments(Array.isArray(rawProgress?.attachments) ? rawProgress.attachments : []);
-      prevAttachmentsKeyRef.current = currentAttachmentsKey;
-      changed = true;
-    }
-  }, [currentProgressPercent, currentNotes, currentChecklistKey, currentAttachmentsKey, rawProgress]);
+  }, [currentAttachmentsKey]);
 
   // 儲存快速時數修改
   const handleSaveHours = async () => {
