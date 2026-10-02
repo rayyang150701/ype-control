@@ -15,7 +15,7 @@ export default async function PMLearningPage() {
   ]);
 
   return (
-    <div className="container mx-auto px-4 py-6">
+    <div className="w-full max-w-[1750px] mx-auto px-3 sm:px-6 py-4">
       <Suspense fallback={<div className="py-12 text-center text-muted-foreground font-medium">載入 PM 學習地圖資料中...</div>}>
         <PMLearningClient
           initialCourses={courses}

@@ -54,6 +54,7 @@ import {
   Zap,
   Bookmark,
   Video,
+  HelpCircle,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -492,16 +493,16 @@ export function MyLearningView({
   const isAdminOrJames = isCourseManager(currentUser);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* 頂部人員切換與身分識別區 (限定億威電子 PMO 部門) */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-lg flex items-center justify-center shadow-2xs shrink-0">
+      <div className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-sm flex items-center justify-center shadow-2xs shrink-0">
             {(activeMember?.displayName || activeMember?.email || 'PM').slice(0, 1).toUpperCase()}
           </div>
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-900">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h2 className="text-base font-bold text-slate-900">
                 {activeMember?.displayName || activeMember?.email} 的個人工作區
               </h2>
               <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-semibold">
@@ -510,26 +511,26 @@ export function MyLearningView({
               {isAdminOrJames && (
                 <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold">
                   <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-                  <span>管理員編輯權限 (jamesyang / admin)</span>
+                  <span>管理員權限</span>
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              可點擊課程標題旁展開詳情、手動調整學習進度、維護時數、自訂上下移動排序。
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              點擊展開詳情、手動調整學習進度、維護時數、自訂上下移動排序。
             </p>
           </div>
         </div>
 
         {/* 右側操作群：切換成員 + 個人自行新增課程按鈕 */}
-        <div className="flex flex-wrap items-center gap-2.5 self-stretch md:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto">
           {/* 人員切換下拉選單 */}
-          <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-            <UserIcon className="h-4 w-4 text-slate-500 ml-1.5" />
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+            <UserIcon className="h-3.5 w-3.5 text-slate-500" />
             <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">切換成員:</span>
             <select
               value={activeMember?.uid}
               onChange={(e) => onActiveUserIdChange(e.target.value)}
-              className="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="h-7 px-2 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               {(pmoMembers || []).map((m) => (
                 <option key={m.uid} value={m.uid}>
@@ -545,11 +546,11 @@ export function MyLearningView({
               type="button"
               variant="outline"
               onClick={onOpenCategoryManager}
-              className="h-9 px-3 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1.5 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 shadow-2xs"
               title="維護、新增、編輯或重新命名課程領域清單"
             >
               <Tag className="h-3.5 w-3.5 text-indigo-600" />
-              <span>維護領域類別</span>
+              <span>維護領域</span>
             </Button>
           )}
 
@@ -557,38 +558,38 @@ export function MyLearningView({
           <Button
             type="button"
             onClick={() => onOpenCreateDialog(activeMember?.uid)}
-            className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1.5 shadow-2xs"
+            className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1 shadow-2xs"
             title="個人可自行新增自選學習課程，並自動納入個人工作區與團隊學習地圖"
           >
             <Plus className="h-4 w-4" />
-            <span>+ 自行新增學習課程</span>
+            <span>新增學習項目</span>
           </Button>
         </div>
       </div>
 
       {/* 個人成果與時數指標列 (Personal KPI Bar) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-        <div className="bg-white p-3 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-slate-500">已指派課程</span>
-          <div className="text-xl font-bold text-slate-800 mt-0.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/80">
+        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
+          <span className="text-[11px] font-semibold text-slate-500">已指派項目</span>
+          <div className="text-lg font-bold text-slate-800 mt-0.5">
             {personalStats.total} 堂{' '}
             <span className="text-xs font-normal text-slate-400">({personalStats.totalHours} 小時)</span>
           </div>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-indigo-100">
+        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
           <span className="text-[11px] font-semibold text-amber-600">積極進行中</span>
-          <div className="text-xl font-bold text-amber-600 mt-0.5">{personalStats.inProgress} 堂</div>
+          <div className="text-lg font-bold text-amber-600 mt-0.5">{personalStats.inProgress} 堂</div>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-indigo-100">
+        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
           <span className="text-[11px] font-semibold text-blue-600">已完訓結業</span>
-          <div className="text-xl font-bold text-blue-600 mt-0.5">
+          <div className="text-lg font-bold text-blue-600 mt-0.5">
             {personalStats.completed} 堂{' '}
             <span className="text-xs font-normal text-blue-600/80">({personalStats.completedHours}h)</span>
           </div>
         </div>
-        <div className="bg-white p-3 rounded-lg border border-indigo-100">
+        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-indigo-600">個人總完訓率</span>
+            <span className="text-[11px] font-semibold text-indigo-600">個人完訓率</span>
             <span className="text-xs font-bold text-indigo-700">
               {personalStats.avgPercent}%{' '}
               <span className="text-[10px] text-slate-400 font-normal">
@@ -596,7 +597,7 @@ export function MyLearningView({
               </span>
             </span>
           </div>
-          <Progress value={personalStats.avgPercent} className="h-2 mt-2 bg-indigo-100" />
+          <Progress value={personalStats.avgPercent} className="h-2 mt-1.5 bg-indigo-100" />
         </div>
       </div>
 
@@ -623,21 +624,21 @@ export function MyLearningView({
 
       {/* 四大載體切換分頁 + 搜尋與篩選工具列 */}
       {sortedMyCourses.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {/* 1. 四大載體切換分頁列 (全部 | 線上課程 | 知識文章 | 影音資源 | 個人閱讀) */}
-          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+          <div className="bg-white p-1.5 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
               <button
                 type="button"
                 onClick={() => setSelectedContentType('all')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
                   selectedContentType === 'all'
                     ? 'bg-white text-indigo-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>🌐 全部載體</span>
-                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700">
+                <span>🌐 全部</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
                   {contentTypeCounts.all}
                 </span>
               </button>
@@ -651,7 +652,7 @@ export function MyLearningView({
                     key={type}
                     type="button"
                     onClick={() => setSelectedContentType(type)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
                       isSelected
                         ? 'bg-white text-indigo-900 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -659,7 +660,7 @@ export function MyLearningView({
                   >
                     <span>{cfg.icon}</span>
                     <span>{cfg.label}</span>
-                    <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
                       {count}
                     </span>
                   </button>
@@ -677,26 +678,26 @@ export function MyLearningView({
                   selectedContentType !== 'all' ? selectedContentType : 'course'
                 )
               }
-              className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1 shadow-2xs"
+              className="h-7 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1 shadow-2xs"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>
                 {selectedContentType === 'article'
-                  ? '新增知識文章'
+                  ? '新增文章'
                   : selectedContentType === 'video'
-                  ? '新增影音資源'
+                  ? '新增影音'
                   : selectedContentType === 'book'
-                  ? '新增閱讀筆記'
-                  : '新增自選項目'}
+                  ? '新增書籍'
+                  : '新增項目'}
               </span>
             </Button>
           </div>
 
           {/* 2. 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
-          <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
+          <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
             <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
               <Tag className="w-3.5 h-3.5 text-indigo-600" />
-              主題領域隨選:
+              領域:
             </span>
             <div className="flex items-center gap-1.5 shrink-0">
               {allCategories.map((cat) => (
@@ -704,7 +705,7 @@ export function MyLearningView({
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                     selectedCategory === cat
                       ? 'bg-indigo-600 text-white shadow-2xs'
                       : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
@@ -932,7 +933,7 @@ export function MyLearningView({
       )}
 
       {/* 個人卡片式呈現 */}
-      <div className="space-y-4">
+      <div className="space-y-2.5">
         {displayCourses.map((course) => {
           const overallIndex = sortedMyCourses.findIndex((c) => c.id === course.id);
           const isFirst = overallIndex === 0;
@@ -1297,10 +1298,26 @@ function PersonalCourseCard({
   const isFinished = progressVal >= 100 || memberProgress.isCompleted;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all hover:border-slate-300">
-      {/* 卡片頂部條 (Header：包含上下排序、名稱、領域、狀態、進度%、日期、時數與展開按鈕) */}
-      <div className="p-4 sm:p-5 bg-linear-to-r from-white via-slate-50/50 to-indigo-50/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+    <div
+      className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${
+        isFinished
+          ? 'bg-blue-50/75 border-blue-300 hover:border-blue-400'
+          : progressVal > 0
+          ? 'bg-amber-50/75 border-amber-300 hover:border-amber-400'
+          : 'bg-white border-slate-200 hover:border-slate-300'
+      }`}
+    >
+      {/* 卡片頂部條 (Header：包含上下排序、名稱、領域、狀態、進度%、日期、時數與符號操作按鈕) */}
+      <div
+        className={`p-3 sm:p-3.5 transition-colors ${
+          isFinished
+            ? 'bg-linear-to-r from-blue-100/70 via-blue-50/70 to-indigo-50/40'
+            : progressVal > 0
+            ? 'bg-linear-to-r from-amber-100/70 via-amber-50/70 to-yellow-50/40'
+            : 'bg-linear-to-r from-white via-slate-50/50 to-indigo-50/20'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
           {/* 左側：排序控制 + 課程標題 + 分類 + 狀態 + 進度% + 日期 + 時數 */}
           <div className="flex items-start gap-2.5 sm:gap-3.5 flex-1 min-w-0">
             {/* 上下移動箭頭 (個人自訂排序) */}
@@ -1477,9 +1494,9 @@ function PersonalCourseCard({
             </div>
           </div>
 
-          {/* 右側操作群：閱讀全文 + 傳送門 + 編輯 + 展開/收合切換按鈕 */}
-          <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-center pl-7 lg:pl-0">
-            {/* 知識文章「閱讀全文」按鈕 */}
+          {/* 右側操作群：符號化按鈕 (閱讀全文、原文網址、編輯筆、刪除、展開符號) */}
+          <div className="shrink-0 flex items-center gap-1.5 self-end lg:self-center pl-7 lg:pl-0">
+            {/* 知識文章「閱讀全文」符號按鈕 */}
             {(course.type === 'article' || course.content) && (
               <Button
                 type="button"
@@ -1488,30 +1505,35 @@ function PersonalCourseCard({
                   e.stopPropagation();
                   onOpenReader(course);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
+                className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
+                title="📄 閱讀全文（點擊開啟沉浸式閱讀視窗與 AI 導讀）"
               >
                 <FileText className="h-3.5 w-3.5" />
-                <span>📄 閱讀全文</span>
-                {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300 ml-0.5" />}
+                {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300" />}
+                <HelpCircle className="h-3 w-3 text-emerald-200 hover:text-white" />
               </Button>
             )}
 
-            {/* 外部傳送門按鈕 */}
+            {/* 外部傳送門 / 原文網址符號按鈕 */}
             {course.externalUrl && (
               <a
                 href={course.externalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
+                className="h-8 w-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-all active:scale-95 inline-flex items-center justify-center shrink-0"
+                title={
+                  course.type === 'video'
+                    ? '🚀 前往觀看外部影音'
+                    : course.type === 'article'
+                    ? '🔗 前往原始文章網址'
+                    : '🚀 前往外部平台傳送門'
+                }
               >
-                <span>
-                  🚀 {course.type === 'video' ? '觀看影音' : course.type === 'article' ? '原文網址' : '外部傳送門'}
-                </span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
 
-            {/* 課程編輯與刪除權限 (主管理員 jamesyang, admin，或建立者可編輯) */}
+            {/* 課程編輯與刪除權限 (符號筆與垃圾桶) */}
             {canEdit && (
               <div className="flex items-center gap-1">
                 <Button
@@ -1519,11 +1541,10 @@ function PersonalCourseCard({
                   variant="outline"
                   size="sm"
                   onClick={() => onEditCourse(course)}
-                  className="h-8 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1"
-                  title="主管理員 / 建立者：可調整名稱、來源、傳送門與期程"
+                  className="h-8 w-8 p-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 shadow-2xs shrink-0"
+                  title="✏️ 編輯課程資訊（名稱、來源、期程與時數）"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">編輯</span>
                 </Button>
 
                 <Button
@@ -1531,32 +1552,27 @@ function PersonalCourseCard({
                   variant="ghost"
                   size="sm"
                   onClick={() => onDeleteCourse(course.id, course.title)}
-                  className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                  title="刪除此項目"
+                  className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0"
+                  title="🗑️ 刪除此項目"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
             )}
 
-            {/* 展開 / 收合詳情按鈕 */}
+            {/* 展開 / 收合詳情符號按鈕 */}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setIsCardExpanded((prev) => !prev)}
-              className="h-8 px-3 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 gap-1 shadow-2xs"
+              className="h-8 w-8 p-0 text-slate-700 border-slate-300 hover:bg-slate-100 shadow-2xs shrink-0"
+              title={isCardExpanded ? '▴ 收合詳情' : '▾ 展開詳情（章節檢核、心得筆記與進度調整）'}
             >
               {isCardExpanded ? (
-                <>
-                  <ChevronUp className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>收合詳情 ▴</span>
-                </>
+                <ChevronUp className="h-4 w-4 text-indigo-600" />
               ) : (
-                <>
-                  <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>展開詳情 ▾</span>
-                </>
+                <ChevronDown className="h-4 w-4 text-indigo-600" />
               )}
             </Button>
           </div>
@@ -1565,7 +1581,15 @@ function PersonalCourseCard({
 
       {/* 展開時才顯示詳細資訊與操作項目 (進度滑桿、章節檢核、心得筆記、成果連結) */}
       {isCardExpanded && (
-        <div className="p-5 space-y-6 border-t border-slate-100 bg-white">
+        <div
+          className={`p-4 sm:p-5 space-y-4 border-t transition-colors ${
+            isFinished
+              ? 'border-blue-200/80 bg-blue-50/30'
+              : progressVal > 0
+              ? 'border-amber-200/80 bg-amber-50/30'
+              : 'border-slate-100 bg-white'
+          }`}
+        >
           {/* 講師與課程簡介 */}
           <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-600">

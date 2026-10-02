@@ -297,17 +297,17 @@ export function PMLearningClient({
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+    <div className="space-y-3.5 w-full pb-16">
       {/* 頂部頁頭：標題、副標題與大視角切換器 (Toggle) */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
-        <div className="space-y-1.5">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="space-y-1">
           <div className="flex items-center gap-2.5">
-            <span className="p-2.5 rounded-xl bg-linear-to-tr from-indigo-600 to-blue-600 text-white shadow-xs">
-              <GraduationCap className="h-6 w-6" />
+            <span className="p-2 rounded-xl bg-linear-to-tr from-indigo-600 to-blue-600 text-white shadow-xs">
+              <GraduationCap className="h-5 w-5" />
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">
+                <h1 className="text-lg md:text-xl font-extrabold text-slate-900 tracking-tight">
                   專案-Map
                 </h1>
                 <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs font-semibold">

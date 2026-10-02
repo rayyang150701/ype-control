@@ -153,16 +153,14 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 print:hidden">
-      <div className="w-full px-4 flex h-16 items-center justify-between">
-        <div className="flex items-center gap-4" />
-
-        <div className="flex-1 flex justify-center px-4">
-            <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-4xl font-bold text-primary whitespace-nowrap overflow-hidden text-ellipsis">
-                智慧製造執行方案進度管制表
-            </Link>
+      <div className="w-full px-4 sm:px-6 flex h-16 items-center justify-between gap-4">
+        <div className="flex items-center min-w-0">
+          <Link href="/dashboard" className="font-headline text-2xl md:text-3xl lg:text-3xl font-bold text-primary whitespace-nowrap overflow-hidden text-ellipsis">
+            智慧製造執行方案進度管制表
+          </Link>
         </div>
 
-        <div className="flex items-center justify-end space-x-2">
+        <div className="flex items-center justify-end space-x-2 shrink-0">
             {/* 修改履歷快捷按鈕 (僅限億威各部門、億威PM、管理者可檢視) */}
             {canViewAuditLog && (
               <Button
