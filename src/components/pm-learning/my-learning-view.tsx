@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   PMLearningCourse,
   PMLearningMemberProgress,
@@ -55,6 +55,8 @@ import {
   Bookmark,
   Video,
   HelpCircle,
+  UploadCloud,
+  Loader2,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -64,6 +66,7 @@ import {
 } from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
+import { uploadPMLearningFile, formatLearningFileName } from '@/lib/pm-learning-upload';
 import { MarkdownPreview } from './markdown-preview';
 import { ArticleReaderDialog } from './article-reader-dialog';
 
@@ -1095,6 +1098,17 @@ function PersonalCourseCard({
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // 上傳電腦檔案至 Google 雲端專案-Map 資料夾狀態
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingFiles, setIsUploadingFiles] = useState<boolean>(false);
+  const [uploadProgressInfo, setUploadProgressInfo] = useState<{
+    percent: number;
+    stageMessage: string;
+    currentFileName: string;
+    index: number;
+    total: number;
+  } | null>(null);
+
   // 章節單元折疊狀態 (預設收合為一項)
   const [isChaptersExpanded, setIsChaptersExpanded] = useState<boolean>(false);
 
@@ -1293,6 +1307,77 @@ function PersonalCourseCard({
     const updated = attachments.filter((a) => a.id !== attId);
     setAttachments(updated);
     saveProgressPatch({ attachments: updated });
+  };
+
+  // 5. 從電腦上傳檔案至 Google 雲端專案-Map 資料夾
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    e.target.value = ''; // 清空以利後續再次選取同名檔案
+
+    setIsUploadingFiles(true);
+    const memberName =
+      memberProgress.userName || currentUser?.displayName || currentUser?.username || '成員';
+    let currentAttachmentsList = [...attachments];
+    let successCount = 0;
+
+    try {
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const targetFileName = formatLearningFileName(course.title, memberName, file.name);
+
+        setUploadProgressInfo({
+          percent: 5,
+          stageMessage: `正在準備上傳 (${i + 1}/${fileList.length})...`,
+          currentFileName: targetFileName,
+          index: i + 1,
+          total: fileList.length,
+        });
+
+        try {
+          const newAtt = await uploadPMLearningFile(file, targetFileName, (prog) => {
+            setUploadProgressInfo({
+              percent: prog.percent,
+              stageMessage: prog.stageMessage,
+              currentFileName: targetFileName,
+              index: i + 1,
+              total: fileList.length,
+            });
+          });
+
+          currentAttachmentsList = [...currentAttachmentsList, newAtt];
+          setAttachments(currentAttachmentsList);
+          successCount++;
+        } catch (fileErr: any) {
+          console.error(`檔案「${file.name}」上傳失敗:`, fileErr);
+          toast({
+            title: `檔案「${file.name}」上傳失敗`,
+            description: fileErr?.message || '上傳至 Google 雲端硬碟時發生錯誤',
+            variant: 'destructive',
+          });
+        }
+      }
+
+      if (successCount > 0) {
+        saveProgressPatch({ attachments: currentAttachmentsList });
+        toast({
+          title: '檔案已成功上傳至 Google 雲端！',
+          description: `已成功將 ${successCount} 個成果附件存入專案-Map 雲端資料夾。`,
+        });
+      }
+    } catch (err: any) {
+      console.error('上傳處理異常:', err);
+      toast({
+        title: '上傳處理異常',
+        description: err?.message || '發生未預期的上傳錯誤',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploadingFiles(false);
+      setUploadProgressInfo(null);
+    }
   };
 
   const isFinished = progressVal >= 100 || memberProgress.isCompleted;
@@ -2025,23 +2110,95 @@ function PersonalCourseCard({
                   相關附件與成果雲端連結 ({attachments.length})
                 </span>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAddingLink(!isAddingLink)}
-                className="h-7 text-xs text-blue-700 border-blue-200 hover:bg-blue-50 gap-1 font-semibold"
-              >
-                <Plus className="h-3 w-3" />
-                <span>新增成果連結</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingFiles}
+                  className="h-7 text-xs text-blue-700 border-blue-200 hover:bg-blue-50 gap-1 font-semibold"
+                  title="從電腦上傳成果檔案至 Google 雲端硬碟專案-Map 資料夾"
+                >
+                  {isUploadingFiles ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                      <span>上傳中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="h-3 w-3 text-blue-600" />
+                      <span>📁 電腦資料 → 直接上傳</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddingLink(!isAddingLink)}
+                  className="h-7 text-xs text-blue-700 border-blue-200 hover:bg-blue-50 gap-1 font-semibold"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>新增成果連結</span>
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
             </div>
+
+            {/* 上傳進度條展示 */}
+            {uploadProgressInfo && (
+              <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-300 space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold text-amber-900 min-w-0">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600 shrink-0" />
+                    <span className="truncate">
+                      上傳進度 ({uploadProgressInfo.index}/{uploadProgressInfo.total}):{' '}
+                      <span className="font-normal text-slate-700">
+                        {uploadProgressInfo.currentFileName}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="font-bold text-amber-700 shrink-0 ml-2">{uploadProgressInfo.percent}%</span>
+                </div>
+                <Progress value={uploadProgressInfo.percent} className="h-2 bg-amber-100" />
+                <div className="text-[11px] text-amber-800">{uploadProgressInfo.stageMessage}</div>
+              </div>
+            )}
 
             {/* 新增連結表單 */}
             {isAddingLink && (
-              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 space-y-2">
-                <div className="text-xs font-bold text-blue-900">
-                  新增雲端教材、重點簡報或成果連結：
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-blue-900">
+                    新增雲端教材、重點簡報或成果連結：
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingFiles}
+                    className="h-7 text-xs bg-white hover:bg-blue-100 text-blue-700 border-blue-300 font-semibold gap-1.5 shadow-2xs"
+                  >
+                    {isUploadingFiles ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                        <span>上傳中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="h-3.5 w-3.5 text-blue-600" />
+                        <span>📁 電腦資料 → 直接上傳</span>
+                      </>
+                    )}
+                  </Button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Input
