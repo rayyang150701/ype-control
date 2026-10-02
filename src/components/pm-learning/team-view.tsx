@@ -312,13 +312,13 @@ export function TeamView({
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-emerald-50/30">
-          <div className="flex items-center justify-between text-emerald-700 mb-1">
+        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-blue-50/30">
+          <div className="flex items-center justify-between text-blue-700 mb-1">
             <span className="text-xs font-semibold">已結訓 / 完讀人次</span>
-            <Award className="h-4 w-4 text-emerald-600" />
+            <Award className="h-4 w-4 text-blue-600" />
           </div>
-          <div className="text-2xl font-bold text-emerald-700">{teamOverallKPI.totalCertifications}</div>
-          <div className="text-[11px] text-emerald-600/80 mt-1">個人進度達 100% 之總計</div>
+          <div className="text-2xl font-bold text-blue-700">{teamOverallKPI.totalCertifications}</div>
+          <div className="text-[11px] text-blue-600/80 mt-1">個人進度達 100% 之總計</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-amber-50/30">
@@ -729,9 +729,9 @@ export function TeamView({
                             title={`點擊切換查看 ${name} 的個人工作區 (達成率: ${percent}%)`}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${
                               isDone
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : percent > 0
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : percent > 0
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                 : 'bg-slate-100 text-slate-600 border border-slate-200'
                             }`}
                           >
@@ -844,9 +844,9 @@ export function TeamView({
                               <span
                                 className={`text-[11px] font-bold px-2 py-0.5 rounded ${
                                   isDone
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : percent > 0
                                     ? 'bg-blue-100 text-blue-700'
+                                    : percent > 0
+                                    ? 'bg-amber-100 text-amber-800'
                                     : 'bg-slate-100 text-slate-500'
                                 }`}
                               >
@@ -933,13 +933,13 @@ export function TeamView({
           </div>
 
           {/* 欄位 2: 推進中 (1% ~ 99%) */}
-          <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-blue-200/60">
-              <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+          <div className="bg-amber-50/50 rounded-xl p-3.5 border border-amber-100 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-amber-200/60">
+              <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
                 團隊積極推進中 (進行中)
               </span>
-              <Badge className="text-[10px] bg-blue-100 text-blue-800 border-blue-200">
+              <Badge className="text-[10px] bg-amber-100 text-amber-800 border-amber-200">
                 {
                   filteredCourses.filter((c) => {
                     const p = getCourseTeamStats(c).avgPercent;
@@ -971,13 +971,13 @@ export function TeamView({
           </div>
 
           {/* 欄位 3: 已結訓 (100%) */}
-          <div className="bg-emerald-50/50 rounded-xl p-3.5 border border-emerald-100 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
-              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+          <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-blue-200/60">
+              <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
                 全體完訓結案 (100%)
               </span>
-              <Badge className="text-[10px] bg-emerald-100 text-emerald-800 border-emerald-200">
+              <Badge className="text-[10px] bg-blue-100 text-blue-800 border-blue-200">
                 {filteredCourses.filter((c) => getCourseTeamStats(c).avgPercent >= 100).length}
               </Badge>
             </div>

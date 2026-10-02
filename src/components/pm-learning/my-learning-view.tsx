@@ -45,6 +45,7 @@ import {
   Tag,
   ArrowUp,
   ArrowDown,
+  ArrowUpDown,
   Check,
   X,
   Search,
@@ -179,11 +180,14 @@ export function MyLearningView({
     setIsReaderOpen(true);
   };
 
-  // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態)
+  // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態、排序標準)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
   const [selectedStatus, setSelectedStatus] = useState<string>('全部');
+  const [sortCriterion, setSortCriterion] = useState<
+    'custom' | 'progress-desc' | 'progress-asc' | 'date-desc' | 'date-asc'
+  >('custom');
 
   // 各載體數量統計
   const contentTypeCounts = useMemo(() => {
@@ -347,6 +351,74 @@ export function MyLearningView({
     activeMember?.uid,
   ]);
 
+  // 依排序條件 (自訂 / 進度 / 發布日期) 對篩選後的清單進行排序
+  const displayCourses = useMemo(() => {
+    const uid = activeMember?.uid || '';
+    const list = [...filteredCourses];
+
+    if (sortCriterion === 'custom') {
+      return list;
+    }
+
+    if (sortCriterion === 'progress-desc') {
+      return list.sort((a, b) => {
+        const progA = (a.memberProgress || {})[uid];
+        const progB = (b.memberProgress || {})[uid];
+        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
+        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
+        if (valB !== valA) return valB - valA;
+        const dateA = a.issueDate || a.startDate || a.createdAt || '';
+        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+    }
+
+    if (sortCriterion === 'progress-asc') {
+      return list.sort((a, b) => {
+        const progA = (a.memberProgress || {})[uid];
+        const progB = (b.memberProgress || {})[uid];
+        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
+        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
+        if (valA !== valB) return valA - valB;
+        const dateA = a.issueDate || a.startDate || a.createdAt || '';
+        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+        return dateB.localeCompare(dateA);
+      });
+    }
+
+    if (sortCriterion === 'date-desc') {
+      return list.sort((a, b) => {
+        const dateA = a.issueDate || a.startDate || a.createdAt || '';
+        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+        if (dateA && !dateB) return -1;
+        if (!dateA && dateB) return 1;
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+        const progA = (a.memberProgress || {})[uid];
+        const progB = (b.memberProgress || {})[uid];
+        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
+        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
+        return valB - valA;
+      });
+    }
+
+    if (sortCriterion === 'date-asc') {
+      return list.sort((a, b) => {
+        const dateA = a.issueDate || a.startDate || a.createdAt || '';
+        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+        if (dateA && !dateB) return -1;
+        if (!dateA && dateB) return 1;
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+        const progA = (a.memberProgress || {})[uid];
+        const progB = (b.memberProgress || {})[uid];
+        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
+        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
+        return valB - valA;
+      });
+    }
+
+    return list;
+  }, [filteredCourses, sortCriterion, activeMember?.uid]);
+
   // 個人視角：上下移動調整課程順序並儲存
   const handleMoveCourse = async (courseId: string, direction: 'up' | 'down') => {
     const currentIndex = sortedMyCourses.findIndex((c) => c.id === courseId);
@@ -504,14 +576,14 @@ export function MyLearningView({
           </div>
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-blue-600">積極進行中</span>
-          <div className="text-xl font-bold text-blue-600 mt-0.5">{personalStats.inProgress} 堂</div>
+          <span className="text-[11px] font-semibold text-amber-600">積極進行中</span>
+          <div className="text-xl font-bold text-amber-600 mt-0.5">{personalStats.inProgress} 堂</div>
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-emerald-600">已完訓結業</span>
-          <div className="text-xl font-bold text-emerald-600 mt-0.5">
+          <span className="text-[11px] font-semibold text-blue-600">已完訓結業</span>
+          <div className="text-xl font-bold text-blue-600 mt-0.5">
             {personalStats.completed} 堂{' '}
-            <span className="text-xs font-normal text-emerald-600/80">({personalStats.completedHours}h)</span>
+            <span className="text-xs font-normal text-blue-600/80">({personalStats.completedHours}h)</span>
           </div>
         </div>
         <div className="bg-white p-3 rounded-lg border border-indigo-100">
@@ -750,8 +822,30 @@ export function MyLearningView({
               )}
             </div>
 
-            {/* 右側：全部展開 / 全部收合按鈕 */}
-            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+            {/* 右側：排序方式 + 全部展開 / 全部收合按鈕 */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-auto">
+              {/* 排序方式選單 */}
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                <ArrowUpDown className="h-3.5 w-3.5 text-indigo-600" />
+                <span className="text-xs font-semibold text-slate-600 hidden lg:inline">排序:</span>
+                <select
+                  value={sortCriterion}
+                  onChange={(e) =>
+                    setSortCriterion(
+                      e.target.value as 'custom' | 'progress-desc' | 'progress-asc' | 'date-desc' | 'date-asc'
+                    )
+                  }
+                  className="h-7 px-2 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                  title="選擇課程與學習項目的排序方式"
+                >
+                  <option value="custom">↕ 自訂排序 (可手動調整)</option>
+                  <option value="progress-desc">📈 進度：高 → 低 (100% ~ 0%)</option>
+                  <option value="progress-asc">📉 進度：低 → 高 (0% ~ 100%)</option>
+                  <option value="date-desc">📅 發布日期：新 → 舊</option>
+                  <option value="date-asc">📅 發布日期：舊 → 新</option>
+                </select>
+              </div>
+
               <Button
                 type="button"
                 variant="outline"
@@ -784,10 +878,10 @@ export function MyLearningView({
               已排定 PM 成長地圖項目 (
               {isFiltered ? (
                 <span className="text-indigo-600 font-extrabold">
-                  符合條件 {filteredCourses.length} / 全體 {sortedMyCourses.length} 筆
+                  符合條件 {displayCourses.length} / 全體 {sortedMyCourses.length} 筆
                 </span>
               ) : (
-                `${sortedMyCourses.length} 筆`
+                `${displayCourses.length} 筆`
               )}
               )
             </span>
@@ -796,16 +890,28 @@ export function MyLearningView({
             </span>
           </div>
 
-          {isFiltered && (
-            <div className="text-xs text-slate-400">
-              已套用篩選條件
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {sortCriterion !== 'custom' && (
+              <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] font-semibold">
+                排序: {
+                  sortCriterion === 'progress-desc' ? '📈 進度 (高 → 低)' :
+                  sortCriterion === 'progress-asc' ? '📉 進度 (低 → 高)' :
+                  sortCriterion === 'date-desc' ? '📅 發布日期 (新 → 舊)' :
+                  '📅 發布日期 (舊 → 新)'
+                }
+              </Badge>
+            )}
+            {isFiltered && (
+              <div className="text-xs text-slate-400">
+                已套用篩選條件
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* 查無篩選結果提示 */}
-      {sortedMyCourses.length > 0 && filteredCourses.length === 0 && (
+      {sortedMyCourses.length > 0 && displayCourses.length === 0 && (
         <div className="text-center py-14 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
           <Filter className="h-9 w-9 text-slate-300 mx-auto" />
           <h4 className="text-sm font-semibold text-slate-700">找不到符合篩選條件的學習項目</h4>
@@ -827,7 +933,7 @@ export function MyLearningView({
 
       {/* 個人卡片式呈現 */}
       <div className="space-y-4">
-        {filteredCourses.map((course) => {
+        {displayCourses.map((course) => {
           const overallIndex = sortedMyCourses.findIndex((c) => c.id === course.id);
           const isFirst = overallIndex === 0;
           const isLast = overallIndex === sortedMyCourses.length - 1;
@@ -840,6 +946,7 @@ export function MyLearningView({
                 currentUser={currentUser}
                 isFirst={isFirst}
                 isLast={isLast}
+                canManualSort={sortCriterion === 'custom'}
                 defaultExpanded={expandAllState}
                 onMoveCourse={(direction) => handleMoveCourse(course.id, direction)}
                 onUpdateCourse={onCourseUpdated}
@@ -925,6 +1032,7 @@ function PersonalCourseCard({
   currentUser,
   isFirst,
   isLast,
+  canManualSort = true,
   defaultExpanded = false,
   onMoveCourse,
   onUpdateCourse,
@@ -937,6 +1045,7 @@ function PersonalCourseCard({
   currentUser?: CurrentUser | null;
   isFirst: boolean;
   isLast: boolean;
+  canManualSort?: boolean;
   defaultExpanded?: boolean;
   onMoveCourse: (direction: 'up' | 'down') => void;
   onUpdateCourse: (course: PMLearningCourse) => void;
@@ -1195,28 +1304,28 @@ function PersonalCourseCard({
           {/* 左側：排序控制 + 課程標題 + 分類 + 狀態 + 進度% + 日期 + 時數 */}
           <div className="flex items-start gap-2.5 sm:gap-3.5 flex-1 min-w-0">
             {/* 上下移動箭頭 (個人自訂排序) */}
-            <div className="flex flex-col gap-0.5 shrink-0 pt-0.5" title="個人自訂課程呈現順序">
+            <div className="flex flex-col gap-0.5 shrink-0 pt-0.5" title={canManualSort ? "個人自訂課程呈現順序" : "目前依進度或發布日期排序中"}>
               <button
                 type="button"
-                disabled={isFirst}
+                disabled={!canManualSort || isFirst}
                 onClick={(e) => {
                   e.stopPropagation();
                   onMoveCourse('up');
                 }}
                 className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                title="向上移動"
+                title={!canManualSort ? '目前依【進度或發布日期】排序中，請切換至「自訂排序」以手動上下調整順序' : '向上移動'}
               >
                 <ArrowUp className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
-                disabled={isLast}
+                disabled={!canManualSort || isLast}
                 onClick={(e) => {
                   e.stopPropagation();
                   onMoveCourse('down');
                 }}
                 className="p-1 rounded hover:bg-slate-200 text-slate-500 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                title="向下移動"
+                title={!canManualSort ? '目前依【進度或發布日期】排序中，請切換至「自訂排序」以手動上下調整順序' : '向下移動'}
               >
                 <ArrowDown className="h-3.5 w-3.5" />
               </button>
@@ -1283,9 +1392,9 @@ function PersonalCourseCard({
                 <Badge
                   className={`text-xs shrink-0 ${
                     isFinished
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                      : progressVal > 0
                       ? 'bg-blue-100 text-blue-800 border-blue-200'
+                      : progressVal > 0
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
                       : 'bg-slate-100 text-slate-600 border-slate-200'
                   }`}
                 >
@@ -1296,9 +1405,9 @@ function PersonalCourseCard({
                 <span
                   className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border shrink-0 ${
                     isFinished
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                      : progressVal > 0
                       ? 'bg-blue-50 text-blue-700 border-blue-300'
+                      : progressVal > 0
+                      ? 'bg-amber-50 text-amber-700 border-amber-300'
                       : 'bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
@@ -1579,7 +1688,7 @@ function PersonalCourseCard({
                 <span className="text-xs font-bold text-slate-800">個人學習進度：</span>
                 <span
                   className={`text-lg font-extrabold ${
-                    isFinished ? 'text-emerald-600' : progressVal > 0 ? 'text-blue-600' : 'text-slate-500'
+                    isFinished ? 'text-blue-600' : progressVal > 0 ? 'text-amber-600' : 'text-slate-500'
                   }`}
                 >
                   {progressVal}%
@@ -1618,8 +1727,8 @@ function PersonalCourseCard({
                   onClick={handleMarkComplete}
                   className={`h-7 text-[11px] font-bold gap-1 transition-all ${
                     isFinished
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
                   }`}
                 >
                   <CheckCircle2 className="h-3 w-3" />
