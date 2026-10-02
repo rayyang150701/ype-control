@@ -32,6 +32,50 @@ interface PMLearningClientProps {
   initialCategories?: string[];
 }
 
+class PMErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('PM Learning Hub 畫面渲染捕捉異常:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center space-y-3 shadow-xs my-4">
+          <div className="text-rose-600 font-bold text-base">⚠️ 畫面載入發生暫時性顯示問題</div>
+          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+            系統已成功攔截渲染錯誤，您的變更已妥善儲存。請點擊下方按鈕重新載入畫面。
+          </p>
+          <div className="pt-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+            >
+              重新整理畫面
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function PMLearningClient({
   initialCourses,
   users,
@@ -114,22 +158,37 @@ export function PMLearningClient({
     }
   }, [currentUser, pmoMembers, isManualSelection, activeUserId]);
 
+  // 確保前端狀態中的 course 資料具備嚴格的陣列與物件預設值
+  const sanitizeCourse = (course: PMLearningCourse): PMLearningCourse => {
+    return {
+      ...course,
+      assignedUserIds: Array.isArray(course.assignedUserIds) ? course.assignedUserIds : [],
+      assignedUserNames: Array.isArray(course.assignedUserNames) ? course.assignedUserNames : [],
+      defaultChecklist: Array.isArray(course.defaultChecklist) ? course.defaultChecklist : [],
+      memberProgress:
+        course.memberProgress && typeof course.memberProgress === 'object'
+          ? course.memberProgress
+          : {},
+    };
+  };
+
   // 新增或更新課程回調
   const handleCourseSaved = (savedCourse: PMLearningCourse) => {
+    const cleanCourse = sanitizeCourse(savedCourse);
     setCourses((prev) => {
-      const index = prev.findIndex((c) => c.id === savedCourse.id);
+      const index = prev.findIndex((c) => c.id === cleanCourse.id);
       if (index >= 0) {
         const copy = [...prev];
-        copy[index] = savedCourse;
+        copy[index] = cleanCourse;
         return copy;
       }
-      return [savedCourse, ...prev];
+      return [cleanCourse, ...prev];
     });
 
     // 若為新填寫之自訂領域，自動加入即時 categories 狀態中
-    if (savedCourse.category?.trim()) {
+    if (cleanCourse.category?.trim()) {
       setCategories((prev) => {
-        const cat = savedCourse.category.trim();
+        const cat = cleanCourse.category.trim();
         return prev.includes(cat) ? prev : [...prev, cat];
       });
     }
@@ -142,8 +201,9 @@ export function PMLearningClient({
 
   // 單堂課程進度更新回調
   const handleCourseUpdated = (updatedCourse: PMLearningCourse) => {
+    const cleanCourse = sanitizeCourse(updatedCourse);
     setCourses((prev) =>
-      prev.map((c) => (c.id === updatedCourse.id ? updatedCourse : c))
+      prev.map((c) => (c.id === cleanCourse.id ? cleanCourse : c))
     );
   };
 
@@ -244,58 +304,61 @@ export function PMLearningClient({
         </div>
       </div>
 
-      {/* 視角一：主管 / 團隊視角 */}
-      {viewMode === 'team' && (
-        <TeamView
-          courses={courses}
-          pmoMembers={pmoMembers}
-          currentUser={currentUser}
-          categories={categories}
-          onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
-          onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
-          onEditCourse={(c) => {
-            setCourseToEdit(c);
-            setIsCreateDialogOpen(true);
-          }}
-          onCourseDeleted={handleCourseDeleted}
-          onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
-          onCourseUpdated={handleCourseUpdated}
-        />
-      )}
+      {/* 視角展示區：以 Error Boundary 包覆防止任何極端例外毀損全站 */}
+      <PMErrorBoundary>
+        {/* 視角一：主管 / 團隊視角 */}
+        {viewMode === 'team' && (
+          <TeamView
+            courses={courses}
+            pmoMembers={pmoMembers}
+            currentUser={currentUser}
+            categories={categories}
+            onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
+            onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
+            onEditCourse={(c) => {
+              setCourseToEdit(c);
+              setIsCreateDialogOpen(true);
+            }}
+            onCourseDeleted={handleCourseDeleted}
+            onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
+            onCourseUpdated={handleCourseUpdated}
+          />
+        )}
 
-      {/* 視角二：個人視角 (My Learning / 個人工作區) */}
-      {viewMode === 'personal' && (
-        <MyLearningView
-          courses={courses}
-          pmoMembers={pmoMembers}
-          activeUserId={activeUserId}
-          onActiveUserIdChange={(id) => {
-            setIsManualSelection(true);
-            setActiveUserId(id);
-          }}
-          currentUser={currentUser}
-          categories={categories}
-          onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
-          onCourseUpdated={handleCourseUpdated}
-          onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
-          onEditCourse={(c) => {
-            setCourseToEdit(c);
-            setIsCreateDialogOpen(true);
-          }}
-          onCourseDeleted={handleCourseDeleted}
-        />
-      )}
+        {/* 視角二：個人視角 (My Learning / 個人工作區) */}
+        {viewMode === 'personal' && (
+          <MyLearningView
+            courses={courses}
+            pmoMembers={pmoMembers}
+            activeUserId={activeUserId}
+            onActiveUserIdChange={(id) => {
+              setIsManualSelection(true);
+              setActiveUserId(id);
+            }}
+            currentUser={currentUser}
+            categories={categories}
+            onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
+            onCourseUpdated={handleCourseUpdated}
+            onOpenCreateDialog={(uid, initialType) => handleOpenCreateDialog(uid, initialType)}
+            onEditCourse={(c) => {
+              setCourseToEdit(c);
+              setIsCreateDialogOpen(true);
+            }}
+            onCourseDeleted={handleCourseDeleted}
+          />
+        )}
 
-      {/* 視角三：週完成與時數 KPI 管制 (Weekly & Hours) */}
-      {viewMode === 'weekly' && (
-        <WeeklyKPIView
-          courses={courses}
-          pmoMembers={pmoMembers}
-          currentUser={currentUser}
-          onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
-          onCourseUpdated={handleCourseUpdated}
-        />
-      )}
+        {/* 視角三：週完成與時數 KPI 管制 (Weekly & Hours) */}
+        {viewMode === 'weekly' && (
+          <WeeklyKPIView
+            courses={courses}
+            pmoMembers={pmoMembers}
+            currentUser={currentUser}
+            onSelectMemberInPersonalView={handleSelectMemberInPersonalView}
+            onCourseUpdated={handleCourseUpdated}
+          />
+        )}
+      </PMErrorBoundary>
 
       {/* 課程新增 / 編輯對話框 */}
       <CourseFormDialog

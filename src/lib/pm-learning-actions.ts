@@ -384,16 +384,32 @@ function fromDbRecord(c: any): PMLearningCourse {
       rawMp = {};
     }
   }
-  const memberProgress =
+  const rawObj =
     typeof rawMp === 'object' && rawMp !== null ? { ...rawMp } : {};
   let hours = 0;
   if (c.hours !== undefined && c.hours !== null) {
     hours = Number(c.hours);
-  } else if (memberProgress._courseHours !== undefined && memberProgress._courseHours !== null) {
-    hours = Number(memberProgress._courseHours);
+  } else if (rawObj._courseHours !== undefined && rawObj._courseHours !== null) {
+    hours = Number(rawObj._courseHours);
   }
 
-  const meta = (typeof memberProgress._itemMetadata === 'object' && memberProgress._itemMetadata) || {};
+  const meta = (typeof rawObj._itemMetadata === 'object' && rawObj._itemMetadata) || {};
+
+  // 清除 memberProgress 中的內部持久化特殊 key，只保留實際成員進度，並做屬性陣列防呆
+  const cleanMemberProgress: Record<string, PMLearningMemberProgress> = {};
+  Object.keys(rawObj).forEach((k) => {
+    if (k.startsWith('_')) return;
+    const prog = rawObj[k];
+    if (prog && typeof prog === 'object') {
+      cleanMemberProgress[k] = {
+        ...prog,
+        progressPercent: typeof prog.progressPercent === 'number' ? prog.progressPercent : 0,
+        isCompleted: Boolean(prog.isCompleted),
+        checklist: Array.isArray(prog.checklist) ? prog.checklist : [],
+        attachments: Array.isArray(prog.attachments) ? prog.attachments : [],
+      };
+    }
+  });
 
   return {
     id: c.id || '',
@@ -421,7 +437,7 @@ function fromDbRecord(c: any): PMLearningCourse {
       : Array.isArray(c.defaultChecklist)
       ? c.defaultChecklist
       : [],
-    memberProgress,
+    memberProgress: cleanMemberProgress,
     content: c.content || meta.content || '',
     source: c.source || meta.source || '',
     issueDate: c.issueDate || meta.issueDate || '',
@@ -596,7 +612,7 @@ export async function createPMLearningCourse(
     return {
       success: true,
       message: '項目已成功建立並完成指派！',
-      data: newCourse,
+      data: fromDbRecord(toDbPayload(newCourse)),
     };
   } catch (err: any) {
     console.error('建立 PM 學習項目失敗:', err);
@@ -790,7 +806,7 @@ export async function updatePMLearningCourse(
     await syncCoursesToDatabase(updatedList);
 
     revalidatePath('/pm-learning');
-    return { success: true, message: '資訊已成功更新！', data: updatedCourse };
+    return { success: true, message: '資訊已成功更新！', data: fromDbRecord(toDbPayload(updatedCourse)) };
   } catch (err: any) {
     console.error('更新 PM 學習紀錄失敗:', err);
     return { success: false, message: err?.message || '更新失敗' };

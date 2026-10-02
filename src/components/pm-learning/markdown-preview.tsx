@@ -13,7 +13,7 @@ export function MarkdownPreview({
   className = '',
   readingMode = false,
 }: MarkdownPreviewProps) {
-  if (!content || !content.trim()) {
+  if (typeof content !== 'string' || !content.trim()) {
     return (
       <div className={`text-xs italic text-slate-400 py-2 ${className}`}>
         尚未填寫內容...

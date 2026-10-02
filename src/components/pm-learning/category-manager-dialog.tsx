@@ -238,7 +238,7 @@ export function CategoryManagerDialog({
           {/* 既有領域清單 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
-              <span>現有領域清單 ({categories.length} 個類別)</span>
+              <span>現有領域清單 ({(categories || []).length} 個類別)</span>
               <button
                 type="button"
                 onClick={handleRestoreDefaults}
@@ -252,7 +252,7 @@ export function CategoryManagerDialog({
             </div>
 
             <div className="space-y-1.5">
-              {categories.map((cat, index) => {
+              {(categories || []).map((cat, index) => {
                 const count = categoryCourseCountMap.get(cat) || 0;
                 const isEditing = editingIndex === index;
 

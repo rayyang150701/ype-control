@@ -71,7 +71,7 @@ export function ArticleReaderDialog({
 
   if (!course) return null;
 
-  const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'];
+  const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'] || CONTENT_TYPE_CONFIG['course'];
   const hasAiAnalysis = Boolean(course.aiAnalysis?.summary);
 
   // 觸發 AI 重點導讀與摘要分析
@@ -302,7 +302,7 @@ export function ArticleReaderDialog({
                 </div>
 
                 {/* 關鍵收穫 */}
-                {course.aiAnalysis?.keyTakeaways && course.aiAnalysis.keyTakeaways.length > 0 && (
+                {Array.isArray(course.aiAnalysis?.keyTakeaways) && course.aiAnalysis.keyTakeaways.length > 0 && (
                   <div className="bg-white/90 rounded-xl p-3.5 border border-indigo-100 shadow-2xs">
                     <div className="font-bold text-indigo-950 mb-1.5 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -322,7 +322,7 @@ export function ArticleReaderDialog({
                 )}
 
                 {/* 實務落地建議 */}
-                {course.aiAnalysis?.actionableInsights && course.aiAnalysis.actionableInsights.length > 0 && (
+                {Array.isArray(course.aiAnalysis?.actionableInsights) && course.aiAnalysis.actionableInsights.length > 0 && (
                   <div className="bg-white/90 rounded-xl p-3.5 border border-amber-200/70 shadow-2xs">
                     <div className="font-bold text-amber-900 mb-1.5 flex items-center gap-1.5">
                       <Lightbulb className="w-3.5 h-3.5 text-amber-600" />

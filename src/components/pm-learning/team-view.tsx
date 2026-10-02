@@ -202,13 +202,15 @@ export function TeamView({
       // 1. 關鍵字比對
       const q = searchQuery.toLowerCase().trim();
       if (q) {
-        const matchTitle = course.title.toLowerCase().includes(q);
+        const matchTitle = (course.title || '').toLowerCase().includes(q);
         const matchInstructor = (course.instructorOrPlatform || '').toLowerCase().includes(q);
         const matchSource = (course.source || '').toLowerCase().includes(q);
         const matchDesc = (course.description || '').toLowerCase().includes(q);
         const matchContent = (course.content || '').toLowerCase().includes(q);
         const matchIssue = (course.issueDate || '').toLowerCase().includes(q);
-        const matchMembers = course.assignedUserNames.some((n) => n.toLowerCase().includes(q));
+        const matchMembers = (Array.isArray(course.assignedUserNames) ? course.assignedUserNames : []).some(
+          (n) => (n || '').toLowerCase().includes(q)
+        );
         if (
           !matchTitle &&
           !matchInstructor &&
@@ -243,7 +245,7 @@ export function TeamView({
       }
 
       // 5. 成員篩選比對
-      if (selectedMemberFilter !== 'all' && !course.assignedUserIds.includes(selectedMemberFilter)) {
+      if (selectedMemberFilter !== 'all' && !(course.assignedUserIds || []).includes(selectedMemberFilter)) {
         return false;
       }
 
@@ -497,7 +499,7 @@ export function TeamView({
             className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
             <option value="all">所有指派成員</option>
-            {pmoMembers.map((m) => (
+            {(pmoMembers || []).map((m) => (
               <option key={m.uid} value={m.uid}>
                 {m.displayName || m.email}
               </option>
@@ -588,7 +590,7 @@ export function TeamView({
             const stats = getCourseTeamStats(course);
             const isExpanded = expandedCourseIds.includes(course.id);
             const carrierType = course.type || 'course';
-            const carrierCfg = CONTENT_TYPE_CONFIG[carrierType];
+            const carrierCfg = CONTENT_TYPE_CONFIG[carrierType] || CONTENT_TYPE_CONFIG['course'];
             const isArticle = carrierType === 'article';
 
             return (
@@ -817,8 +819,8 @@ export function TeamView({
                           '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
-                        const checklist = prog?.checklist || [];
-                        const completedChecks = checklist.filter((c) => c.completed).length;
+                        const checklist = Array.isArray(prog?.checklist) ? prog.checklist : [];
+                        const completedChecks = checklist.filter((c) => c?.completed).length;
 
                         return (
                           <div
@@ -828,7 +830,7 @@ export function TeamView({
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">
-                                  {name.slice(0, 1)}
+                                  {String(name || 'PM').slice(0, 1)}
                                 </div>
                                 <span className="font-bold text-xs text-slate-800">{name}</span>
                               </div>
@@ -852,7 +854,7 @@ export function TeamView({
                                 <CheckCircle2 className="h-3 w-3 text-slate-400" />
                                 章節單元: {completedChecks}/{checklist.length}
                               </span>
-                              {prog?.attachments && prog.attachments.length > 0 && (
+                              {Array.isArray(prog?.attachments) && prog.attachments.length > 0 && (
                                 <span className="flex items-center gap-1 text-indigo-600">
                                   <Paperclip className="h-3 w-3" />
                                   {prog.attachments.length} 個附件
@@ -861,7 +863,7 @@ export function TeamView({
                             </div>
 
                             {/* 心得摘錄 */}
-                            {prog?.notes && (
+                            {prog?.notes && typeof prog.notes === 'string' && (
                               <div className="p-2 bg-slate-50 rounded text-[11px] text-slate-600 line-clamp-2 border border-slate-100">
                                 💬 {prog.notes.replace(/[#*`>-]/g, '').trim()}
                               </div>
@@ -1034,7 +1036,7 @@ function KanbanCourseCard({
   onOpenReader: (course: PMLearningCourse) => void;
 }) {
   const carrierType = course.type || 'course';
-  const carrierCfg = CONTENT_TYPE_CONFIG[carrierType];
+  const carrierCfg = CONTENT_TYPE_CONFIG[carrierType] || CONTENT_TYPE_CONFIG['course'];
   const isArticle = carrierType === 'article';
 
   return (

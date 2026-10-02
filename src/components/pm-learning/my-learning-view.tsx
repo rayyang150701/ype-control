@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   PMLearningCourse,
   PMLearningMemberProgress,
+  PMLearningChecklistItem,
   PMLearningAttachment,
   PMLearningContentType,
   PMLearningTimelinessType,
@@ -439,7 +440,7 @@ export function MyLearningView({
               onChange={(e) => onActiveUserIdChange(e.target.value)}
               className="h-8 px-2.5 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {pmoMembers.map((m) => (
+              {(pmoMembers || []).map((m) => (
                 <option key={m.uid} value={m.uid}>
                   {m.displayName || m.email} (億威 · {m.department || 'PM'})
                 </option>
@@ -886,7 +887,7 @@ function PersonalCourseCard({
     progressPercent: 0,
     isCompleted: false,
     notes: '',
-    checklist: (course.defaultChecklist || []).map((item, idx) => ({
+    checklist: (Array.isArray(course.defaultChecklist) ? course.defaultChecklist : []).map((item, idx) => ({
       id: `chk-${idx}`,
       title: item,
       completed: false,
@@ -904,10 +905,12 @@ function PersonalCourseCard({
   const [progressVal, setProgressVal] = useState<number>(memberProgress.progressPercent || 0);
   const [isNotesEditing, setIsNotesEditing] = useState<boolean>(false);
   const [notesText, setNotesText] = useState<string>(memberProgress.notes || '');
-  const [checklist, setChecklist] = useState(memberProgress.checklist || []);
+  const [checklist, setChecklist] = useState<PMLearningChecklistItem[]>(
+    Array.isArray(memberProgress.checklist) ? memberProgress.checklist : []
+  );
   const [newCheckText, setNewCheckText] = useState<string>('');
   const [attachments, setAttachments] = useState<PMLearningAttachment[]>(
-    memberProgress.attachments || []
+    Array.isArray(memberProgress.attachments) ? memberProgress.attachments : []
   );
   const [isAddingLink, setIsAddingLink] = useState(false);
   const [newLinkTitle, setNewLinkTitle] = useState('');
@@ -932,8 +935,8 @@ function PersonalCourseCard({
   useEffect(() => {
     setProgressVal(memberProgress.progressPercent || 0);
     setNotesText(memberProgress.notes || '');
-    setChecklist(memberProgress.checklist || []);
-    setAttachments(memberProgress.attachments || []);
+    setChecklist(Array.isArray(memberProgress.checklist) ? memberProgress.checklist : []);
+    setAttachments(Array.isArray(memberProgress.attachments) ? memberProgress.attachments : []);
   }, [memberProgress]);
 
   // 儲存快速時數修改
@@ -1133,7 +1136,7 @@ function PersonalCourseCard({
               <div className="flex flex-wrap items-center gap-2">
                 {/* 載體型態 Badge */}
                 {(() => {
-                  const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'];
+                  const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'] || CONTENT_TYPE_CONFIG['course'];
                   return (
                     <Badge className={`text-xs shrink-0 ${typeConfig.badgeClass}`}>
                       <span className="mr-1">{typeConfig.icon}</span>
@@ -1612,36 +1615,36 @@ function PersonalCourseCard({
                 </div>
 
                 <div className="space-y-1.5">
-                  {checklist.map((item, idx) => (
+                  {(Array.isArray(checklist) ? checklist : []).map((item, idx) => (
                     <div
-                      key={item.id}
+                      key={item?.id || `chk-idx-${idx}`}
                       className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
-                        item.completed
+                        item?.completed
                           ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
                           : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
                       }`}
                     >
                       <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
                         <Checkbox
-                          checked={item.completed}
-                          onCheckedChange={() => handleToggleCheck(item.id)}
+                          checked={Boolean(item?.completed)}
+                          onCheckedChange={() => item?.id && handleToggleCheck(item.id)}
                         />
                         <span className="text-[11px] font-mono text-slate-400 font-medium">
                           {idx + 1}.
                         </span>
                         <span
                           className={
-                            item.completed
+                            item?.completed
                               ? 'line-through text-slate-400'
                               : 'font-semibold text-slate-800'
                           }
                         >
-                          {item.title}
+                          {item?.title || '單元'}
                         </span>
                       </label>
                       <button
                         type="button"
-                        onClick={() => handleDeleteCheckItem(item.id)}
+                        onClick={() => item?.id && handleDeleteCheckItem(item.id)}
                         className="text-slate-300 hover:text-rose-500 transition-colors p-1"
                         title="刪除此章節單元"
                       >
@@ -1850,21 +1853,21 @@ function PersonalCourseCard({
               </div>
             )}
 
-            {attachments.length > 0 && (
+            {Array.isArray(attachments) && attachments.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {attachments.map((att) => (
                   <div
-                    key={att.id}
+                    key={att?.id || att?.url}
                     className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-slate-200 shadow-2xs hover:border-blue-300 transition-colors"
                   >
                     <a
-                      href={att.url}
+                      href={att?.url || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 flex-1 min-w-0 text-xs font-semibold text-blue-700 hover:underline"
                     >
                       <LinkIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-                      <span className="truncate">{att.title}</span>
+                      <span className="truncate">{att?.title || att?.url}</span>
                       <ExternalLink className="h-3 w-3 shrink-0 text-slate-400" />
                     </a>
 

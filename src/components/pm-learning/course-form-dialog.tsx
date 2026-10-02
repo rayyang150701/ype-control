@@ -148,7 +148,7 @@ export function CourseFormDialog({
       setBookQuotesAndReflections(courseToEdit.bookQuotesAndReflections || '');
 
       setChecklistItems(
-        courseToEdit.defaultChecklist && courseToEdit.defaultChecklist.length > 0
+        Array.isArray(courseToEdit.defaultChecklist) && courseToEdit.defaultChecklist.length > 0
           ? courseToEdit.defaultChecklist
           : ['觀看完成核心課程章節', '繳交學習重點心得或筆記']
       );
@@ -191,7 +191,7 @@ export function CourseFormDialog({
       if (defaultAssignedUserId) {
         setAssignedUserIds([defaultAssignedUserId]);
       } else {
-        setAssignedUserIds(pmoMembers.map((m) => m.uid));
+        setAssignedUserIds((pmoMembers || []).map((m) => m.uid));
       }
       setChecklistItems([
         '第一單元：核心概念與知識研讀',
@@ -248,7 +248,7 @@ export function CourseFormDialog({
       }
 
       const assignedNames = assignedUserIds.map((uid) => {
-        const found = pmoMembers.find((m) => m.uid === uid);
+        const found = (pmoMembers || []).find((m) => m.uid === uid);
         return found?.displayName || found?.email || '成員';
       });
 
@@ -716,7 +716,7 @@ export function CourseFormDialog({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setAssignedUserIds(pmoMembers.map((m) => m.uid))}
+                  onClick={() => setAssignedUserIds((pmoMembers || []).map((m) => m.uid))}
                   className="text-[11px] text-indigo-600 hover:underline"
                 >
                   全選

@@ -421,7 +421,7 @@ export function WeeklyKPIView({
             </div>
           </div>
           <div>
-            <div className="text-2xl font-black text-blue-700">{pmoMembers.length} 位</div>
+            <div className="text-2xl font-black text-blue-700">{(pmoMembers || []).length} 位</div>
             <p className="text-xs text-slate-400 mt-2">
               成員可於個人工作區自訂呈現順序
             </p>
@@ -597,7 +597,7 @@ export function WeeklyKPIView({
               className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="all">全體億威 PMO 成員</option>
-              {pmoMembers.map((m) => (
+              {(pmoMembers || []).map((m) => (
                 <option key={m.uid} value={m.uid}>
                   {m.displayName || m.email}
                 </option>
