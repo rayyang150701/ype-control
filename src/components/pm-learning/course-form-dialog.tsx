@@ -540,7 +540,7 @@ export function CourseFormDialog({
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold flex items-center gap-1 text-emerald-950">
                   <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                  發表日期 (年月日)
+                  發布日期 (年月日)
                 </Label>
                 <Input
                   type="date"

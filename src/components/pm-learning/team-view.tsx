@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo } from 'react';
 import {
@@ -76,13 +76,14 @@ export function TeamView({
   const [displayMode, setDisplayMode] = useState<PMTeamDisplayMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContentType, setSelectedContentType] = useState<'all' | PMLearningContentType>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string>('?券');
-  const [selectedIssueDate, setSelectedIssueDate] = useState<string>('?券');
-  const [selectedTimeliness, setSelectedTimeliness] = useState<string>('?券');
+  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedIssueDate, setSelectedIssueDate] = useState<string>('全部');
+  const [selectedTimeliness, setSelectedTimeliness] = useState<string>('全部');
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
   const [expandedCourseIds, setExpandedCourseIds] = useState<string[]>([]);
 
-  // ?亥???瘝絡撘霈閬????  const [readerCourse, setReaderCourse] = useState<PMLearningCourse | null>(null);
+  // 知識文章沉浸式閱讀視窗狀態
+  const [readerCourse, setReaderCourse] = useState<PMLearningCourse | null>(null);
   const [isReaderOpen, setIsReaderOpen] = useState(false);
 
   const handleOpenReader = (c: PMLearningCourse) => {
@@ -90,13 +91,14 @@ export function TeamView({
     setIsReaderOpen(true);
   };
 
-  // 撅?/?嗅??桀?????⊥?蝝?  const toggleExpand = (courseId: string) => {
+  // 展開/收合單堂項目的成員明細
+  const toggleExpand = (courseId: string) => {
     setExpandedCourseIds((prev) =>
       prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId]
     );
   };
 
-  // 閮?瘥?摮貊?鞈????像????
+  // 計算每項學習資源的團隊平均完成率
   const getCourseTeamStats = (course: PMLearningCourse) => {
     const assignedIds = course.assignedUserIds || [];
     if (assignedIds.length === 0) {
@@ -116,7 +118,7 @@ export function TeamView({
     return { avgPercent, completedCount, totalCount: assignedIds.length };
   };
 
-  // ?典??蜇擃?KPI
+  // 全團隊總體 KPI
   const teamOverallKPI = useMemo(() => {
     if (courses.length === 0) {
       return { totalCourses: 0, overallAvgPercent: 0, totalCertifications: 0, inProgressCourses: 0 };
@@ -143,7 +145,8 @@ export function TeamView({
     };
   }, [courses]);
 
-  // ??擃?絞閮?  const contentTypeCounts = useMemo(() => {
+  // 各載體數量統計
+  const contentTypeCounts = useMemo(() => {
     const counts: Record<string, number> = { all: courses.length, course: 0, article: 0, video: 0, book: 0 };
     courses.forEach((c) => {
       const t = c.type || 'course';
@@ -152,52 +155,52 @@ export function TeamView({
     return counts;
   }, [courses]);
 
-  // ???典?僑???(??撠)
+  // 所有可用出刊年月選項 (文章專用)
   const allIssueDates = useMemo(() => {
     const set = new Set<string>();
     courses.forEach((c) => {
-      if (c.issueDate?.trim()) {
-        const ym = c.issueDate.trim().substring(0, 7);
-        set.add(ym);
-      }
+      if (c.issueDate?.trim()) set.add(c.issueDate.trim());
     });
-    return ['?券', ...Array.from(set).sort().reverse()];
+    return ['全部', ...Array.from(set).sort().reverse()];
   }, [courses]);
 
-  // ???憿??  const allCategories = useMemo(() => {
+  // 所有分類選項
+  const allCategories = useMemo(() => {
     const set = new Set<string>(categories || []);
     courses.forEach((c) => {
       if (c.category?.trim()) set.add(c.category.trim());
     });
-    return ['?券', ...Array.from(set)];
+    return ['全部', ...Array.from(set)];
   }, [courses, categories]);
 
-  // 蝭拚??文?
+  // 篩選啟用判定
   const isFiltered =
     searchQuery.trim() !== '' ||
     selectedContentType !== 'all' ||
-    selectedCategory !== '?券' ||
-    selectedIssueDate !== '?券' ||
-    selectedTimeliness !== '?券' ||
+    selectedCategory !== '全部' ||
+    selectedIssueDate !== '全部' ||
+    selectedTimeliness !== '全部' ||
     selectedMemberFilter !== 'all';
 
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedContentType('all');
-    setSelectedCategory('?券');
-    setSelectedIssueDate('?券');
-    setSelectedTimeliness('?券');
+    setSelectedCategory('全部');
+    setSelectedIssueDate('全部');
+    setSelectedTimeliness('全部');
     setSelectedMemberFilter('all');
   };
 
-  // 蝭拚敺???  const filteredCourses = useMemo(() => {
+  // 篩選後清單
+  const filteredCourses = useMemo(() => {
     return courses.filter((course) => {
-      // 0. 頛???蝭拚
+      // 0. 載體型態篩選
       if (selectedContentType !== 'all' && (course.type || 'course') !== selectedContentType) {
         return false;
       }
 
-      // 1. ?摮?撠?      const q = searchQuery.toLowerCase().trim();
+      // 1. 關鍵字比對
+      const q = searchQuery.toLowerCase().trim();
       if (q) {
         const matchTitle = (course.title || '').toLowerCase().includes(q);
         const matchInstructor = (course.instructorOrPlatform || '').toLowerCase().includes(q);
@@ -223,18 +226,18 @@ export function TeamView({
         }
       }
 
-      // 2. ??瘥? (?詨?銝駁??券)
-      if (selectedCategory !== '?券' && course.category !== selectedCategory) {
+      // 2. 領域比對 (核心主題隨選)
+      if (selectedCategory !== '全部' && course.category !== selectedCategory) {
         return false;
       }
 
-      // 3. ?箏?撟湔?瘥? (??撠惇)
-      if (selectedIssueDate !== '?券') {
-        const ym = (course.issueDate || '').trim().substring(0, 7);
-        if (ym !== selectedIssueDate) return false;
+      // 3. 出刊年月比對 (文章專屬)
+      if (selectedIssueDate !== '全部' && course.issueDate !== selectedIssueDate) {
+        return false;
       }
 
-      // 4. ???扳?撠?      if (selectedTimeliness !== '?券') {
+      // 4. 時效性比對
+      if (selectedTimeliness !== '全部') {
         if (selectedTimeliness === 'time_sensitive' && course.timelinessType !== 'time_sensitive') {
           return false;
         }
@@ -243,7 +246,7 @@ export function TeamView({
         }
       }
 
-      // 5. ?蝭拚瘥?
+      // 5. 成員篩選比對
       if (selectedMemberFilter !== 'all' && !(course.assignedUserIds || []).includes(selectedMemberFilter)) {
         return false;
       }
@@ -260,45 +263,45 @@ export function TeamView({
     selectedMemberFilter,
   ]);
 
-  // ?芷蝣箄?
+  // 刪除確認
   const handleDelete = async (courseId: string, title: string) => {
-    if (!window.confirm(`蝣箏?閬?扎?{title}?飛蝧??桀?嚗迨???⊥?敺拙??)) {
+    if (!window.confirm(`確定要刪除「${title}」這個學習項目嗎？此動作無法復原。`)) {
       return;
     }
     try {
       const res = await deletePMLearningCourse(courseId);
       if (res.success) {
-        toast({ title: '撌脣?日???, description: `???{title}?歇??蝘駁` });
+        toast({ title: '已刪除項目', description: `項目「${title}」已成功移除` });
         onCourseDeleted(courseId);
       } else {
-        toast({ title: '?芷憭望?', description: res.message, variant: 'destructive' });
+        toast({ title: '刪除失敗', description: res.message, variant: 'destructive' });
       }
     } catch (e: any) {
-      toast({ title: '?芷?粹', description: e.message, variant: 'destructive' });
+      toast({ title: '刪除出錯', description: e.message, variant: 'destructive' });
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* ??蝮賡???? (KPI Summary Cards) */}
+      {/* 團隊總體指標看板 (KPI Summary Cards) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium">蝮賢飛蝧??亥?摨?/span>
+            <span className="text-xs font-medium">總學習與知識庫</span>
             <BookOpen className="h-4 w-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-bold text-slate-800">{teamOverallKPI.totalCourses}</div>
-          <div className="text-[11px] text-slate-400 mt-1">瘨菔?隤脩???蝡蔣?唾?敹?</div>
+          <div className="text-[11px] text-slate-400 mt-1">涵蓋課程、文章、影音與心得</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-blue-50/30">
           <div className="flex items-center justify-between text-blue-700 mb-1">
-            <span className="text-xs font-semibold">???湧?撟喳?????/span>
+            <span className="text-xs font-semibold">團隊整體平均達成率</span>
             <Sparkles className="h-4 w-4 text-blue-600" />
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold text-blue-700">{teamOverallKPI.overallAvgPercent}%</span>
-            <span className="text-xs text-blue-600/80">({courses.length} ???桀像??</span>
+            <span className="text-xs text-blue-600/80">({courses.length} 個項目平均)</span>
           </div>
           <div className="mt-2">
             <Progress value={teamOverallKPI.overallAvgPercent} className="h-1.5 bg-blue-100" />
@@ -307,24 +310,24 @@ export function TeamView({
 
         <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-emerald-50/30">
           <div className="flex items-center justify-between text-emerald-700 mb-1">
-            <span className="text-xs font-semibold">撌脩?閮?/ 摰?鈭箸活</span>
+            <span className="text-xs font-semibold">已結訓 / 完讀人次</span>
             <Award className="h-4 w-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-emerald-700">{teamOverallKPI.totalCertifications}</div>
-          <div className="text-[11px] text-emerald-600/80 mt-1">?犖?脣漲??100% 銋蜇閮?/div>
+          <div className="text-[11px] text-emerald-600/80 mt-1">個人進度達 100% 之總計</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-2xs hover:shadow-xs transition-shadow bg-linear-to-br from-white to-amber-50/30">
           <div className="flex items-center justify-between text-amber-700 mb-1">
-            <span className="text-xs font-semibold">蝛扔?券脖葉?</span>
+            <span className="text-xs font-semibold">積極推進中項目</span>
             <Clock className="h-4 w-4 text-amber-600" />
           </div>
           <div className="text-2xl font-bold text-amber-700">{teamOverallKPI.inProgressCourses}</div>
-          <div className="text-[11px] text-amber-600/80 mt-1">???典??靽桃???銝?/div>
+          <div className="text-[11px] text-amber-600/80 mt-1">團隊全員持續修習研讀中</div>
         </div>
       </div>
 
-      {/* ?之頛???????(?券 | 蝺?隤脩? | ?亥??? | 敶梢鞈? | ?犖?梯?) */}
+      {/* 四大載體切換分頁列 (全部 | 線上課程 | 知識文章 | 影音資源 | 個人閱讀) */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
           <button
@@ -336,7 +339,7 @@ export function TeamView({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <span>?? ?券頛?</span>
+            <span>🌐 全部載體</span>
             <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700">
               {contentTypeCounts.all}
             </span>
@@ -367,7 +370,7 @@ export function TeamView({
           })}
         </div>
 
-        {/* ?敹急?啣??? */}
+        {/* 頂部快捷新增按鈕 */}
         <div className="flex items-center gap-2">
           {onOpenCategoryManager && (
             <Button
@@ -376,10 +379,10 @@ export function TeamView({
               size="sm"
               onClick={onOpenCategoryManager}
               className="h-8 px-2.5 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 shadow-2xs hidden sm:flex"
-              title="蝬剛風?憓?蝺刻摩??皜"
+              title="維護、新增或編輯領域清單"
             >
               <Tag className="h-3.5 w-3.5 text-indigo-600" />
-              <span>蝬剛風??</span>
+              <span>維護領域</span>
             </Button>
           )}
 
@@ -397,22 +400,22 @@ export function TeamView({
             <Plus className="h-3.5 w-3.5" />
             <span>
               {selectedContentType === 'article'
-                ? '?啣??亥???'
+                ? '新增知識文章'
                 : selectedContentType === 'video'
-                ? '?啣?敶梢鞈?'
+                ? '新增影音資源'
                 : selectedContentType === 'book'
-                ? '?啣??梯??貊'
-                : '?啣??寡?? / ?晷'}
+                ? '新增閱讀書目'
+                : '新增培訓項目 / 指派'}
             </span>
           </Button>
         </div>
       </div>
 
-      {/* ?券??敹恍?蝐文? (Category Quick Pills - 頝冽?隞質楊?箏??券??單) */}
+      {/* 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
       <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
         <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
           <Tag className="w-3.5 h-3.5 text-indigo-600" />
-          銝駁????券:
+          主題領域隨選:
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {allCategories.map((cat) => (
@@ -432,16 +435,16 @@ export function TeamView({
         </div>
       </div>
 
-      {/* ???祟?貉?璅∪???撌亙??*/}
+      {/* 搜尋、篩選與模式切換工具列 */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
         <div className="flex flex-wrap items-center gap-2.5 flex-1">
-          {/* ?摮?撠?*/}
+          {/* 關鍵字搜尋 */}
           <div className="relative min-w-[220px] max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="???迂??甈?雓葦????交??..."
+              placeholder="搜尋名稱、專欄/講師、內文、期別或成員..."
               className="pl-9 pr-7 h-9 text-xs"
             />
             {searchQuery && (
@@ -449,14 +452,14 @@ export function TeamView({
                 type="button"
                 onClick={() => setSearchQuery('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                title="皜?摮?
+                title="清除關鍵字"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* ?箏??遢/?銝? (??撠) */}
+          {/* 出刊月份/期別下拉 (文章專用) */}
           {(selectedContentType === 'all' || selectedContentType === 'article') &&
             allIssueDates.length > 1 && (
               <div className="flex items-center gap-1.5">
@@ -466,38 +469,38 @@ export function TeamView({
                   onChange={(e) => setSelectedIssueDate(e.target.value)}
                   className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 >
-                  <option value="?券">?券?箏??遢</option>
+                  <option value="全部">全部出刊月份</option>
                   {allIssueDates
-                    .filter((d) => d !== '?券')
+                    .filter((d) => d !== '全部')
                     .map((d) => (
                       <option key={d} value={d}>
-                        ?? ?箏?: {d}
+                        📅 出刊: {d}
                       </option>
                     ))}
                 </select>
               </div>
             )}
 
-          {/* ???扯釭銝? */}
+          {/* 時效性質下拉 */}
           {(selectedContentType === 'all' || selectedContentType === 'article') && (
             <select
               value={selectedTimeliness}
               onChange={(e) => setSelectedTimeliness(e.target.value)}
               className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              <option value="?券">?券????/option>
-              <option value="time_sensitive">????頞典 (餈??)</option>
-              <option value="evergreen">? 撣賊??亥? (?瑟??拍)</option>
+              <option value="全部">全部時效性</option>
+              <option value="time_sensitive">⚡ 時效趨勢 (近期關鍵)</option>
+              <option value="evergreen">🌱 常青知識 (長期適用)</option>
             </select>
           )}
 
-          {/* ?蝭拚 */}
+          {/* 成員篩選 */}
           <select
             value={selectedMemberFilter}
             onChange={(e) => setSelectedMemberFilter(e.target.value)}
             className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
-            <option value="all">???瘣暹???/option>
+            <option value="all">所有指派成員</option>
             {(pmoMembers || []).map((m) => (
               <option key={m.uid} value={m.uid}>
                 {m.displayName || m.email}
@@ -505,7 +508,7 @@ export function TeamView({
             ))}
           </select>
 
-          {/* ?身蝭拚?? */}
+          {/* 重設篩選按鈕 */}
           {isFiltered && (
             <Button
               type="button"
@@ -513,16 +516,16 @@ export function TeamView({
               size="sm"
               onClick={handleResetFilters}
               className="h-9 px-2.5 text-xs text-slate-500 hover:text-slate-800 gap-1"
-              title="皜??祟?豢?隞?
+              title="清除所有篩選條件"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span>?身</span>
+              <span>重設</span>
             </Button>
           )}
         </div>
 
         <div className="flex items-center gap-2 self-end md:self-auto">
-          {/* 閬????? ?” vs ? */}
+          {/* 視角切換器: 列表 vs 看板 */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               type="button"
@@ -534,7 +537,7 @@ export function TeamView({
               }`}
             >
               <LayoutList className="h-3.5 w-3.5" />
-              <span>?”?</span>
+              <span>列表呈現</span>
             </button>
             <button
               type="button"
@@ -546,27 +549,28 @@ export function TeamView({
               }`}
             >
               <Kanban className="h-3.5 w-3.5" />
-              <span>?脣漲?</span>
+              <span>進度看板</span>
             </button>
           </div>
 
-          {/* 銝餌恣?甈??內 */}
+          {/* 主管理員權限提示 */}
           {isCourseManager(currentUser) && (
             <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold hidden lg:flex">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-              <span>蝞∠??⊥???/span>
+              <span>管理員權限</span>
             </Badge>
           )}
         </div>
       </div>
 
-      {/* ?亦蝯??內 */}
+      {/* 查無結果提示 */}
       {filteredCourses.length === 0 && (
         <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
           <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
-          <h3 className="text-sm font-semibold text-slate-700">?曆??啁泵??隞嗥??</h3>
+          <h3 className="text-sm font-semibold text-slate-700">找不到符合條件的項目</h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            閰西??湔?蝭拚璇辣???日??萄?嚗?暺?銝???啣?摮貊????          </p>
+            試著更換篩選條件、清除關鍵字，或點擊上方按鈕新增學習項目。
+          </p>
           {isFiltered && (
             <Button
               type="button"
@@ -575,12 +579,13 @@ export function TeamView({
               onClick={handleResetFilters}
               className="text-xs"
             >
-              皜??祟?豢?隞?            </Button>
+              清除所有篩選條件
+            </Button>
           )}
         </div>
       )}
 
-      {/* 閬?銝嚗?銵典???(List / Table Mode) */}
+      {/* 視角一：列表呈現 (List / Table Mode) */}
       {displayMode === 'list' && filteredCourses.length > 0 && (
         <div className="space-y-3">
           {filteredCourses.map((course) => {
@@ -595,12 +600,12 @@ export function TeamView({
                 key={course.id}
                 className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all overflow-hidden"
               >
-                {/* ?”銝餃? */}
+                {/* 列表主列 */}
                 <div className="p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                  {/* 撌血嚗?擃?蝔晞??亥?撟喳 */}
+                  {/* 左側：載體、名稱、類別與平台 */}
                   <div className="space-y-1.5 flex-1 min-w-[280px]">
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* 頛?璅惜 */}
+                      {/* 載體標籤 */}
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${carrierCfg.badgeClass}`}
                       >
@@ -608,26 +613,26 @@ export function TeamView({
                         <span>{carrierCfg.label}</span>
                       </span>
 
-                      {/* ?箏?撟湔? (??) */}
+                      {/* 出刊年月 (文章) */}
                       {course.issueDate && (
                         <Badge
                           variant="outline"
                           className="text-[11px] bg-slate-50 text-slate-700 border-slate-200 font-mono gap-1"
                         >
                           <Calendar className="h-3 w-3 text-slate-500" />
-                          <span>{course.issueDate.substring(0, 7)}</span>
+                          <span>{course.issueDate}</span>
                         </Badge>
                       )}
 
-                      {/* ??璅惜 */}
+                      {/* 時效標籤 */}
                       {course.timelinessType === 'time_sensitive' && (
                         <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                           <Zap className="h-3 w-3 text-amber-500" />
-                          ??
+                          時效
                         </span>
                       )}
 
-                      {/* ??璅惜 */}
+                      {/* 領域標籤 */}
                       {course.category && (
                         <Badge
                           variant="outline"
@@ -645,11 +650,11 @@ export function TeamView({
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                       <div className="flex items-center gap-1">
                         <span className="font-medium text-slate-700">
-                          {isArticle ? '撠?/靘?嚗? : carrierType === 'video' ? '敶梢撟喳嚗? : carrierType === 'book' ? '雿??箇?嚗? : '雓葦/撟喳嚗?}
+                          {isArticle ? '專欄/來源：' : carrierType === 'video' ? '影音平台：' : carrierType === 'book' ? '作者/出版：' : '講師/平台：'}
                         </span>
                         <span className="text-indigo-600 font-medium">
                           {course.source || course.instructorOrPlatform}
-                          {course.subSource ? ` 繚 ${course.subSource}` : ''}
+                          {course.subSource ? ` · ${course.subSource}` : ''}
                         </span>
                       </div>
 
@@ -657,12 +662,12 @@ export function TeamView({
                         <div className="flex items-center gap-1 text-slate-500">
                           <Calendar className="h-3.5 w-3.5" />
                           <span>
-                            {course.startDate || '?芸?'} ~ {course.endDate || '?芸?'}
+                            {course.startDate || '未定'} ~ {course.endDate || '未定'}
                           </span>
                         </div>
                       )}
 
-                      {/* ?梯??冽??? (????) */}
+                      {/* 閱讀全文按鈕 (文章型態) */}
                       {isArticle && (
                         <button
                           type="button"
@@ -670,16 +675,16 @@ export function TeamView({
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
                         >
                           <FileText className="h-3.5 w-3.5 text-indigo-600" />
-                          <span>?梯??冽?</span>
+                          <span>閱讀全文</span>
                           {course.aiAnalysis && (
                             <span className="text-[10px] px-1 py-0.2 rounded bg-purple-100 text-purple-700 font-bold ml-0.5">
-                              ?? AI ??
+                              🤖 AI 摘要
                             </span>
                           )}
                         </button>
                       )}
 
-                      {/* 憭?喲? */}
+                      {/* 外部傳送門 */}
                       {course.externalUrl && (
                         <a
                           href={course.externalUrl}
@@ -689,18 +694,18 @@ export function TeamView({
                         >
                           <ExternalLink className="h-3 w-3" />
                           <span>
-                            {isArticle ? '???? ?? : carrierType === 'video' ? '閫?蔣???? : '憭?喲? ??}
+                            {isArticle ? '原始文章 ↗' : carrierType === 'video' ? '觀看影音 ↗' : '外部傳送門 ↗'}
                           </span>
                         </a>
                       )}
                     </div>
                   </div>
 
-                  {/* 銝剝?嚗?瘣暹??⊿????*/}
+                  {/* 中間：指派成員頭像清單 */}
                   <div className="min-w-[180px] space-y-1">
                     <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
                       <Users className="h-3.5 w-3.5 text-slate-400" />
-                      <span>?晷? ({(course.assignedUserIds || []).length} 雿?嚗?/span>
+                      <span>指派成員 ({(course.assignedUserIds || []).length} 位)：</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {(course.assignedUserIds || []).map((uid) => {
@@ -708,7 +713,7 @@ export function TeamView({
                         const name =
                           prog?.userName ||
                           (course.assignedUserNames || [])[(course.assignedUserIds || []).indexOf(uid)] ||
-                          '?';
+                          '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
 
@@ -717,7 +722,7 @@ export function TeamView({
                             key={uid}
                             type="button"
                             onClick={() => onSelectMemberInPersonalView(uid)}
-                            title={`暺????亦? ${name} ?犖撌乩?? (???? ${percent}%)`}
+                            title={`點擊切換查看 ${name} 的個人工作區 (達成率: ${percent}%)`}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${
                               isDone
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -728,7 +733,7 @@ export function TeamView({
                           >
                             <span>{name}</span>
                             <span className="font-bold text-[10px]">
-                              {isDone ? '?? : `${percent}%`}
+                              {isDone ? '✓' : `${percent}%`}
                             </span>
                           </button>
                         );
@@ -736,10 +741,10 @@ export function TeamView({
                     </div>
                   </div>
 
-                  {/* ?喳嚗??擃????脣漲璇??詨?*/}
+                  {/* 右側：團隊整體完成率進度條與數值 */}
                   <div className="w-full lg:w-48 space-y-1.5 shrink-0 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700">???湧?摰???/span>
+                      <span className="font-bold text-slate-700">團隊整體完成率</span>
                       <span
                         className={`font-bold ${
                           stats.avgPercent >= 100 ? 'text-emerald-600' : 'text-indigo-600'
@@ -755,11 +760,11 @@ export function TeamView({
                       }`}
                     />
                     <div className="text-[10px] text-slate-400 text-right">
-                      {stats.completedCount} / {stats.totalCount} 雿歇摰?/摰?
+                      {stats.completedCount} / {stats.totalCount} 位已完訓/完讀
                     </div>
                   </div>
 
-                  {/* ????????*/}
+                  {/* 操作與展開按鈕 */}
                   <div className="flex items-center gap-1 self-end lg:self-center">
                     {canUserEditCourse(currentUser, course.createdBy) && (
                       <>
@@ -769,7 +774,7 @@ export function TeamView({
                           size="sm"
                           onClick={() => onEditCourse(course)}
                           className="h-8 px-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
-                          title="蝺刻摩?批捆 (銝餌恣?/撱箇??靽格?批捆)"
+                          title="編輯內容 (主管理員/建立者可修改內容)"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </Button>
@@ -779,7 +784,7 @@ export function TeamView({
                           size="sm"
                           onClick={() => handleDelete(course.id, course.title)}
                           className="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                          title="?芷?"
+                          title="刪除項目"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -792,19 +797,19 @@ export function TeamView({
                       onClick={() => toggleExpand(course.id)}
                       className="h-8 px-2.5 text-xs text-slate-700 gap-1"
                     >
-                      <span>??敦</span>
+                      <span>成員明細</span>
                       {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                 </div>
 
-                {/* 撅?銋?閮??∠敦蝭?憛?*/}
+                {/* 展開之受訓成員細節區塊 */}
                 {isExpanded && (
                   <div className="bg-slate-50/70 border-t border-slate-200/80 p-4 space-y-3">
                     <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                      <span>?? ???⊿脣漲?炎?詨?颲西?敹???嚗?/span>
+                      <span>📌 各成員進度、檢核待辦與心得摘要：</span>
                       <span className="text-[11px] text-slate-400 font-normal">
-                        暺??∠??舐?亥歲頧?犖撠惇撌乩??
+                        點選成員卡片可直接跳轉至個人專屬工作區
                       </span>
                     </div>
 
@@ -814,7 +819,7 @@ export function TeamView({
                         const name =
                           prog?.userName ||
                           (course.assignedUserNames || [])[(course.assignedUserIds || []).indexOf(uid)] ||
-                          '?';
+                          '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
                         const checklist = Array.isArray(prog?.checklist) ? prog.checklist : [];
@@ -841,7 +846,7 @@ export function TeamView({
                                     : 'bg-slate-100 text-slate-500'
                                 }`}
                               >
-                                {isDone ? '撌脩?閮? : `?脰?銝?${percent}%`}
+                                {isDone ? '已結訓' : `進行中 ${percent}%`}
                               </span>
                             </div>
 
@@ -850,19 +855,20 @@ export function TeamView({
                             <div className="flex items-center justify-between text-[11px] text-slate-500">
                               <span className="flex items-center gap-1">
                                 <CheckCircle2 className="h-3 w-3 text-slate-400" />
-                                蝡??桀?: {completedChecks}/{checklist.length}
+                                章節單元: {completedChecks}/{checklist.length}
                               </span>
                               {Array.isArray(prog?.attachments) && prog.attachments.length > 0 && (
                                 <span className="flex items-center gap-1 text-indigo-600">
                                   <Paperclip className="h-3 w-3" />
-                                  {prog.attachments.length} ??隞?                                </span>
+                                  {prog.attachments.length} 個附件
+                                </span>
                               )}
                             </div>
 
-                            {/* 敹??? */}
+                            {/* 心得摘錄 */}
                             {prog?.notes && typeof prog.notes === 'string' && (
                               <div className="p-2 bg-slate-50 rounded text-[11px] text-slate-600 line-clamp-2 border border-slate-100">
-                                ? {prog.notes.replace(/[#*`>-]/g, '').trim()}
+                                💬 {prog.notes.replace(/[#*`>-]/g, '').trim()}
                               </div>
                             )}
 
@@ -874,7 +880,8 @@ export function TeamView({
                                 onClick={() => onSelectMemberInPersonalView(uid)}
                                 className="h-6 text-[11px] text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 font-medium"
                               >
-                                ?脣?犖撌乩?? ??                              </Button>
+                                進入個人工作區 ↗
+                              </Button>
                             </div>
                           </div>
                         );
@@ -888,15 +895,16 @@ export function TeamView({
         </div>
       )}
 
-      {/* 閬?鈭??脣漲?? (Kanban Mode) */}
+      {/* 視角二：進度看板呈現 (Kanban Mode) */}
       {displayMode === 'kanban' && filteredCourses.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* 甈? 1: 敺?憪?(0%) */}
+          {/* 欄位 1: 待開始 (0%) */}
           <div className="bg-slate-50/90 rounded-xl p-3.5 border border-slate-200/80 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                敺???/ 敺?憪?              </span>
+                待啟動 / 待開始
+              </span>
               <Badge variant="secondary" className="text-[10px]">
                 {filteredCourses.filter((c) => getCourseTeamStats(c).avgPercent === 0).length}
               </Badge>
@@ -920,12 +928,12 @@ export function TeamView({
             </div>
           </div>
 
-          {/* 甈? 2: ?券脖葉 (1% ~ 99%) */}
+          {/* 欄位 2: 推進中 (1% ~ 99%) */}
           <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-blue-200/60">
               <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-                ??蝛扔?券脖葉 (?脰?銝?
+                團隊積極推進中 (進行中)
               </span>
               <Badge className="text-[10px] bg-blue-100 text-blue-800 border-blue-200">
                 {
@@ -958,12 +966,12 @@ export function TeamView({
             </div>
           </div>
 
-          {/* 甈? 3: 撌脩?閮?(100%) */}
+          {/* 欄位 3: 已結訓 (100%) */}
           <div className="bg-emerald-50/50 rounded-xl p-3.5 border border-emerald-100 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
               <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                ?券?摰?蝯? (100%)
+                全體完訓結案 (100%)
               </span>
               <Badge className="text-[10px] bg-emerald-100 text-emerald-800 border-emerald-200">
                 {filteredCourses.filter((c) => getCourseTeamStats(c).avgPercent >= 100).length}
@@ -990,7 +998,7 @@ export function TeamView({
         </div>
       )}
 
-      {/* ?亥???瘝絡撘霈閬? (?舀 AI ????閮? */}
+      {/* 知識文章沉浸式閱讀視窗 (支援 AI 摘要與筆記) */}
       <ArticleReaderDialog
         isOpen={isReaderOpen}
         onClose={() => {
@@ -1012,7 +1020,7 @@ export function TeamView({
   );
 }
 
-// ??桀?辣
+// 看板單卡元件
 function KanbanCourseCard({
   course,
   stats,
@@ -1047,12 +1055,12 @@ function KanbanCourseCard({
 
           {course.issueDate && (
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono">
-              {course.issueDate.substring(0, 7)}
+              {course.issueDate}
             </span>
           )}
 
           <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
-            {course.category || '撠?蝞∠?'}
+            {course.category || '專案管理'}
           </Badge>
         </div>
 
@@ -1062,7 +1070,7 @@ function KanbanCourseCard({
               type="button"
               onClick={onEdit}
               className="text-slate-400 hover:text-indigo-600 p-1 rounded"
-              title="蝺刻摩?"
+              title="編輯項目"
             >
               <Edit3 className="h-3 w-3" />
             </button>
@@ -1070,7 +1078,7 @@ function KanbanCourseCard({
               type="button"
               onClick={onDelete}
               className="text-slate-400 hover:text-rose-600 p-1 rounded"
-              title="?芷?"
+              title="刪除項目"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -1083,9 +1091,9 @@ function KanbanCourseCard({
       </h4>
 
       <div className="text-[11px] text-slate-500 flex items-center justify-between">
-        <span className="truncate max-w-[140px]" title={[course.source || course.instructorOrPlatform, course.subSource].filter(Boolean).join(' 繚 ')}>
+        <span className="truncate max-w-[140px]" title={[course.source || course.instructorOrPlatform, course.subSource].filter(Boolean).join(' · ')}>
           {course.source || course.instructorOrPlatform}
-          {course.subSource ? ` 繚 ${course.subSource}` : ''}
+          {course.subSource ? ` · ${course.subSource}` : ''}
         </span>
 
         {isArticle ? (
@@ -1095,7 +1103,7 @@ function KanbanCourseCard({
             className="text-indigo-600 hover:underline font-bold flex items-center gap-0.5 text-[11px]"
           >
             <FileText className="h-3 w-3 text-indigo-600" />
-            ?梯??冽?
+            閱讀全文
           </button>
         ) : course.externalUrl ? (
           <a
@@ -1104,24 +1112,24 @@ function KanbanCourseCard({
             rel="noopener noreferrer"
             className="text-blue-600 hover:underline flex items-center gap-0.5"
           >
-            ?喲? <ExternalLink className="h-2.5 w-2.5" />
+            傳送門 <ExternalLink className="h-2.5 w-2.5" />
           </a>
         ) : null}
       </div>
 
       <div className="space-y-1">
         <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-500 font-medium">????</span>
+          <span className="text-slate-500 font-medium">達成率:</span>
           <span className="font-bold text-indigo-600">{stats.avgPercent}%</span>
         </div>
         <Progress value={stats.avgPercent} className="h-1.5" />
       </div>
 
-      {/* ?晷鈭箏?剖? */}
+      {/* 指派人員頭像 */}
       <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
         {(course.assignedUserIds || []).map((uid) => {
           const prog = (course.memberProgress || {})[uid];
-          const name = prog?.userName || '?';
+          const name = prog?.userName || '成員';
           const p = prog?.progressPercent ?? 0;
           return (
             <button
@@ -1129,7 +1137,7 @@ function KanbanCourseCard({
               type="button"
               onClick={() => onSelectMember(uid)}
               className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 font-medium transition-colors"
-              title={`${name} ????${p}%`}
+              title={`${name} 達成率 ${p}%`}
             >
               {name} ({p}%)
             </button>

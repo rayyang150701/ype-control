@@ -1210,11 +1210,11 @@ function PersonalCourseCard({
                   </Badge>
                 )}
 
-                {/* 文章出刊期別 */}
+                {/* 文章發布日期 */}
                 {course.issueDate && (
                   <Badge variant="outline" className="text-xs bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono shrink-0">
                     <Calendar className="w-3 h-3 mr-1 text-indigo-500" />
-                    {course.issueDate.substring(0, 7)} 期
+                    發布日期: {course.issueDate}
                   </Badge>
                 )}
 
@@ -1436,7 +1436,7 @@ function PersonalCourseCard({
               </div>
               {course.issueDate && (
                 <div className="font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                  📅 {course.issueDate.substring(0, 7)} 期
+                  📅 發布日期: {course.issueDate}
                 </div>
               )}
               {course.createdBy && (
@@ -1462,7 +1462,7 @@ function PersonalCourseCard({
                   </Badge>
                   {course.issueDate && (
                     <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 font-mono text-xs">
-                      📅 {course.issueDate.substring(0, 7)} 出刊
+                      📅 發布日期: {course.issueDate}
                     </Badge>
                   )}
                   {course.timelinessType === 'time_sensitive' ? (

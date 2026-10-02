@@ -186,7 +186,7 @@ export function ArticleReaderDialog({
               {course.issueDate && (
                 <Badge variant="outline" className="bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono">
                   <Calendar className="w-3 h-3 mr-1 text-indigo-500" />
-                  {course.issueDate} 期
+                  發布日期: {course.issueDate}
                 </Badge>
               )}
 
