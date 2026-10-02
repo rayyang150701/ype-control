@@ -87,7 +87,7 @@ export function PMLearningClient({
   const [courses, setCourses] = useState<PMLearningCourse[]>(initialCourses);
   const [categories, setCategories] = useState<string[]>(initialCategories);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<PMLearningViewMode>('team');
+  const [viewMode, setViewMode] = useState<PMLearningViewMode>('personal');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createDialogInitialType, setCreateDialogInitialType] = useState<PMLearningContentType>('course');
   const [courseToEdit, setCourseToEdit] = useState<PMLearningCourse | null>(null);
@@ -358,38 +358,38 @@ export function PMLearningClient({
             onCourseUpdated={handleCourseUpdated}
           />
         )}
+
+        {/* 課程新增 / 編輯對話框 */}
+        <CourseFormDialog
+          isOpen={isCreateDialogOpen}
+          onClose={() => {
+            setIsCreateDialogOpen(false);
+            setCourseToEdit(null);
+            setDefaultAssignedUserId(undefined);
+          }}
+          pmoMembers={pmoMembers}
+          courseToEdit={courseToEdit}
+          currentUserId={currentUser?.uid}
+          defaultAssignedUserId={defaultAssignedUserId}
+          availableCategories={categories}
+          onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
+          initialType={createDialogInitialType}
+          onSuccess={handleCourseSaved}
+        />
+
+        {/* 課程領域管理維護對話框 */}
+        <CategoryManagerDialog
+          isOpen={isCategoryDialogOpen}
+          onClose={() => setIsCategoryDialogOpen(false)}
+          categories={categories}
+          courses={courses}
+          onCategoriesChange={setCategories}
+          onCoursesUpdated={async () => {
+            const fresh = await getPMLearningCourses();
+            setCourses(fresh);
+          }}
+        />
       </PMErrorBoundary>
-
-      {/* 課程新增 / 編輯對話框 */}
-      <CourseFormDialog
-        isOpen={isCreateDialogOpen}
-        onClose={() => {
-          setIsCreateDialogOpen(false);
-          setCourseToEdit(null);
-          setDefaultAssignedUserId(undefined);
-        }}
-        pmoMembers={pmoMembers}
-        courseToEdit={courseToEdit}
-        currentUserId={currentUser?.uid}
-        defaultAssignedUserId={defaultAssignedUserId}
-        availableCategories={categories}
-        onOpenCategoryManager={() => setIsCategoryDialogOpen(true)}
-        initialType={createDialogInitialType}
-        onSuccess={handleCourseSaved}
-      />
-
-      {/* 課程領域管理維護對話框 */}
-      <CategoryManagerDialog
-        isOpen={isCategoryDialogOpen}
-        onClose={() => setIsCategoryDialogOpen(false)}
-        categories={categories}
-        courses={courses}
-        onCategoriesChange={setCategories}
-        onCoursesUpdated={async () => {
-          const fresh = await getPMLearningCourses();
-          setCourses(fresh);
-        }}
-      />
     </div>
   );
 }

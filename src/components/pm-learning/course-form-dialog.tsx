@@ -94,6 +94,7 @@ export function CourseFormDialog({
   // 知識文章 (Article) 專屬欄位
   const [articleContent, setArticleContent] = useState('');
   const [articleSource, setArticleSource] = useState('');
+  const [articleSubSource, setArticleSubSource] = useState('');
   const [articleIssueDate, setArticleIssueDate] = useState('');
   const [timelinessType, setTimelinessType] = useState<PMLearningTimelinessType>('evergreen');
 
@@ -140,6 +141,7 @@ export function CourseFormDialog({
       // 文章擴充
       setArticleContent(courseToEdit.content || '');
       setArticleSource(courseToEdit.source || courseToEdit.instructorOrPlatform || '');
+      setArticleSubSource(courseToEdit.subSource || '');
       setArticleIssueDate(courseToEdit.issueDate || '');
       setTimelinessType(courseToEdit.timelinessType || 'evergreen');
 
@@ -167,6 +169,7 @@ export function CourseFormDialog({
       setTimelinessType('evergreen');
       setArticleContent('');
       setArticleSource('');
+      setArticleSubSource('');
       setVideoTimestampNotes('');
       setBookQuotesAndReflections('');
 
@@ -269,6 +272,7 @@ export function CourseFormDialog({
         // 知識文章與其他型態欄位
         content: articleContent.trim(),
         source: articleSource.trim() || effectiveInstructorOrPlatform,
+        subSource: articleSubSource.trim(),
         issueDate: articleIssueDate.trim(),
         timelinessType,
         videoTimestampNotes: videoTimestampNotes.trim(),
@@ -412,7 +416,7 @@ export function CourseFormDialog({
                 }}
                 placeholder={
                   contentType === 'article'
-                    ? '例如：數位時代付費專欄、商業周刊、哈佛商業評論'
+                    ? '例如：曼報Pro、數位時代付費專欄、商業周刊'
                     : contentType === 'video'
                     ? '例如：YouTube 工控技術頻道、Webinar、Podcast'
                     : contentType === 'book'
@@ -421,6 +425,48 @@ export function CourseFormDialog({
                 }
                 required
               />
+
+              {/* 文章專屬：專欄子主題 / 單元標籤 (例如：曼報Pro -> 科技曼讀) */}
+              {contentType === 'article' && (
+                <div className="pt-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold flex items-center gap-1 text-slate-700">
+                      <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                      專欄子主題 / 單元標籤 (選填，便於主題分類)
+                    </Label>
+                    <span className="text-[10px] text-slate-400">如：科技曼讀、巨人之聲</span>
+                  </div>
+                  <Input
+                    value={articleSubSource}
+                    onChange={(e) => setArticleSubSource(e.target.value)}
+                    placeholder="例如：科技曼讀、巨人之聲、商業解碼..."
+                    className="h-9 text-xs"
+                  />
+                  {/* 曼報 Pro 智慧快捷推薦按鈕 */}
+                  {(articleSource.includes('曼報') || !articleSource) && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] text-slate-400">曼報快捷:</span>
+                      {['科技曼讀', '巨人之聲', '商業解碼'].map((sub) => (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => {
+                            setArticleSubSource(sub);
+                            if (!articleSource) setArticleSource('曼報Pro');
+                          }}
+                          className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                            articleSubSource === sub
+                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                          }`}
+                        >
+                          {sub}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 學習領域類別 (支援選單、自訂與管理) */}

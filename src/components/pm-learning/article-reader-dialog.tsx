@@ -29,6 +29,8 @@ import {
   RotateCcw,
   Video,
   Share2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { PMLearningCourse, CONTENT_TYPE_CONFIG } from '@/types/pm-learning';
 import { MarkdownPreview } from './markdown-preview';
@@ -58,6 +60,7 @@ export function ArticleReaderDialog({
   const [showNotesEditor, setShowNotesEditor] = useState(false);
   const [personalNotes, setPersonalNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   // 初始化個人筆記
   React.useEffect(() => {
@@ -153,7 +156,13 @@ export function ArticleReaderDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <DialogContent
+        className={`flex flex-col p-0 gap-0 overflow-hidden transition-all duration-200 bg-white shadow-2xl ${
+          isFullScreen
+            ? 'w-screen h-screen max-w-none max-h-none rounded-none inset-0 translate-x-0 translate-y-0 left-0 top-0'
+            : 'max-w-6xl w-[96vw] max-h-[94vh] rounded-2xl'
+        }`}
+      >
         {/* 頂部 Header */}
         <div className="p-5 md:p-6 border-b border-slate-100 bg-linear-to-b from-slate-50/80 to-white space-y-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -167,6 +176,12 @@ export function ArticleReaderDialog({
                 <Tag className="w-3 h-3 mr-1 text-slate-500" />
                 {course.category}
               </Badge>
+
+              {course.subSource && (
+                <Badge variant="outline" className="bg-indigo-50/90 text-indigo-900 border-indigo-300 font-bold">
+                  📂 {course.subSource}
+                </Badge>
+              )}
 
               {course.issueDate && (
                 <Badge variant="outline" className="bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono">
@@ -187,12 +202,33 @@ export function ArticleReaderDialog({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* 全螢幕 / 寬螢幕切換按鈕 */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs gap-1.5 border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold"
+                onClick={() => setIsFullScreen((prev) => !prev)}
+                title={isFullScreen ? '切換為視窗模式' : '切換為滿版全螢幕模式'}
+              >
+                {isFullScreen ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="hidden sm:inline">視窗模式</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="hidden sm:inline">全螢幕閱讀</span>
+                  </>
+                )}
+              </Button>
+
               {course.externalUrl && (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 text-xs gap-1.5 border-slate-300 hover:border-slate-400 text-slate-700"
+                  className="h-8 text-xs gap-1.5 border-slate-300 hover:border-slate-400 text-slate-700 font-semibold"
                   asChild
                 >
                   <a href={course.externalUrl} target="_blank" rel="noopener noreferrer">
@@ -206,7 +242,7 @@ export function ArticleReaderDialog({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-8 text-xs gap-1 text-slate-600 hover:text-slate-900"
+                  className="h-8 text-xs gap-1 text-indigo-700 hover:bg-indigo-50 font-semibold"
                   onClick={() => {
                     onClose();
                     onEdit(course);
@@ -225,11 +261,16 @@ export function ArticleReaderDialog({
 
           <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-slate-500">
             {(course.source || course.instructorOrPlatform) && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span className="font-medium text-slate-700">
+                <span className="font-bold text-slate-800">
                   {course.source || course.instructorOrPlatform}
                 </span>
+                {course.subSource && (
+                  <span className="text-indigo-600 font-semibold">
+                    （{course.subSource}）
+                  </span>
+                )}
               </div>
             )}
             {course.hours !== undefined && course.hours > 0 && (
@@ -395,8 +436,10 @@ export function ArticleReaderDialog({
               </div>
             )}
 
-            <div className="bg-slate-50/30 rounded-2xl p-4 md:p-6 border border-slate-100">
-              <MarkdownPreview content={mainMarkdown} readingMode={true} />
+            <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
+              <div className="max-w-4xl mx-auto leading-relaxed">
+                <MarkdownPreview content={mainMarkdown} readingMode={true} />
+              </div>
             </div>
           </div>
         </div>

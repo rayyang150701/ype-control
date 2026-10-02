@@ -57,7 +57,8 @@ export interface PMLearningCourse {
 
   // === 知識文章 (Article) 與全文儲存專屬欄位 ===
   content?: string; // 文章完整內容 (支援 Markdown，含表格、引言與圖片語法)
-  source?: string; // 專欄或發行來源 (如：科技島專欄、數位時代、天下雜誌付費專欄)
+  source?: string; // 專欄或發行來源 (如：曼報Pro、科技島專欄、數位時代、天下雜誌付費專欄)
+  subSource?: string; // 專欄子分類 / 專屬單元 (如：科技曼讀、巨人之聲、商業解碼)
   issueDate?: string; // 出刊月份或期別 (如：2026-10、2026-09，便於時效與月份控管)
   timelinessType?: PMLearningTimelinessType; // 時效性：'time_sensitive' (時效趨勢) | 'evergreen' (常青知識)
   aiAnalysis?: PMLearningAIAnalysis; // AI 重點導讀與摘要成果

@@ -123,7 +123,7 @@ export function MyLearningView({
       const h = Number(c.hours) || 0;
       totalH += h;
 
-      const prog = (c.memberProgress || {})[activeMember.uid];
+      const prog = (c.memberProgress || {})[activeMember?.uid || ''];
       const p = prog?.progressPercent ?? 0;
       totalP += p;
       if (prog?.isCompleted || p >= 100) {
@@ -213,12 +213,16 @@ export function MyLearningView({
     return ['全部', ...Array.from(set)];
   }, [myCourses, categories]);
 
-  // 所有可用平台 / 講師選項
+  // 所有可用平台 / 專欄來源選項
   const allPlatforms = useMemo(() => {
     const set = new Set<string>();
     myCourses.forEach((c) => {
-      if (c.instructorOrPlatform?.trim()) {
-        set.add(c.instructorOrPlatform.trim());
+      const src = c.source || c.instructorOrPlatform;
+      if (src?.trim()) {
+        set.add(src.trim());
+      }
+      if (c.subSource?.trim()) {
+        set.add(c.subSource.trim());
       }
     });
     return ['全部', ...Array.from(set)];
@@ -251,13 +255,14 @@ export function MyLearningView({
         return false;
       }
 
-      // 1. 關鍵字比對 (搜尋名稱、平台/講師、說明、筆記、章節單元、出刊、內文)
+      // 1. 關鍵字比對 (搜尋名稱、平台/講師、專欄、子主題、說明、筆記、章節單元、出刊、內文)
       const q = searchQuery.toLowerCase().trim();
       if (q) {
         const prog = (course.memberProgress || {})[activeMember?.uid || ''];
         const matchTitle = (course.title || '').toLowerCase().includes(q);
         const matchPlatform = (course.instructorOrPlatform || '').toLowerCase().includes(q);
         const matchSource = (course.source || '').toLowerCase().includes(q);
+        const matchSubSource = (course.subSource || '').toLowerCase().includes(q);
         const matchDesc = (course.description || '').toLowerCase().includes(q);
         const matchCategory = (course.category || '').toLowerCase().includes(q);
         const matchContent = (course.content || '').toLowerCase().includes(q);
@@ -270,6 +275,7 @@ export function MyLearningView({
           !matchTitle &&
           !matchPlatform &&
           !matchSource &&
+          !matchSubSource &&
           !matchDesc &&
           !matchCategory &&
           !matchContent &&
@@ -301,9 +307,16 @@ export function MyLearningView({
         }
       }
 
-      // 5. 平台 / 講師篩選
-      if (selectedPlatform !== '全部' && course.instructorOrPlatform !== selectedPlatform) {
-        return false;
+      // 5. 平台 / 專欄來源篩選
+      if (selectedPlatform !== '全部') {
+        const p = selectedPlatform.toLowerCase();
+        const matchP =
+          (course.instructorOrPlatform || '').toLowerCase() === p ||
+          (course.source || '').toLowerCase() === p ||
+          (course.subSource || '').toLowerCase() === p;
+        if (!matchP) {
+          return false;
+        }
       }
 
       // 6. 學習狀態篩選
@@ -373,7 +386,9 @@ export function MyLearningView({
     });
 
     try {
-      await saveUserCourseOrder(activeMember.uid, orderedIds);
+      if (activeMember?.uid) {
+        await saveUserCourseOrder(activeMember.uid, orderedIds);
+      }
     } catch (e: any) {
       console.error('儲存排序異常:', e);
       toast({ title: '排序雲端同步異常', description: e?.message, variant: 'destructive' });
@@ -817,7 +832,7 @@ export function MyLearningView({
             <PersonalCourseCard
               key={course.id}
               course={course}
-              userId={activeMember.uid}
+              userId={activeMember?.uid || ''}
               currentUser={currentUser}
               isFirst={isFirst}
               isLast={isLast}
@@ -1153,6 +1168,13 @@ function PersonalCourseCard({
                   {course.category}
                 </Badge>
 
+                {/* 專欄子主題 / 單元標籤 (如：科技曼讀) */}
+                {course.subSource && (
+                  <Badge variant="outline" className="text-xs bg-indigo-50/80 text-indigo-900 border-indigo-300 font-semibold shrink-0">
+                    📂 {course.subSource}
+                  </Badge>
+                )}
+
                 {/* 文章出刊期別 */}
                 {course.issueDate && (
                   <Badge variant="outline" className="text-xs bg-indigo-50/70 text-indigo-700 border-indigo-200 font-mono shrink-0">
@@ -1374,6 +1396,7 @@ function PersonalCourseCard({
                 </span>
                 <span className="text-indigo-600 font-bold">
                   {course.source || course.instructorOrPlatform}
+                  {course.subSource && ` · ${course.subSource}`}
                 </span>
               </div>
               {course.issueDate && (

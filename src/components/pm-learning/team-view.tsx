@@ -205,6 +205,7 @@ export function TeamView({
         const matchTitle = (course.title || '').toLowerCase().includes(q);
         const matchInstructor = (course.instructorOrPlatform || '').toLowerCase().includes(q);
         const matchSource = (course.source || '').toLowerCase().includes(q);
+        const matchSubSource = (course.subSource || '').toLowerCase().includes(q);
         const matchDesc = (course.description || '').toLowerCase().includes(q);
         const matchContent = (course.content || '').toLowerCase().includes(q);
         const matchIssue = (course.issueDate || '').toLowerCase().includes(q);
@@ -215,6 +216,7 @@ export function TeamView({
           !matchTitle &&
           !matchInstructor &&
           !matchSource &&
+          !matchSubSource &&
           !matchDesc &&
           !matchContent &&
           !matchIssue &&
@@ -652,6 +654,7 @@ export function TeamView({
                         </span>
                         <span className="text-indigo-600 font-medium">
                           {course.source || course.instructorOrPlatform}
+                          {course.subSource ? ` · ${course.subSource}` : ''}
                         </span>
                       </div>
 
@@ -1088,8 +1091,9 @@ function KanbanCourseCard({
       </h4>
 
       <div className="text-[11px] text-slate-500 flex items-center justify-between">
-        <span className="truncate max-w-[140px]">
+        <span className="truncate max-w-[140px]" title={[course.source || course.instructorOrPlatform, course.subSource].filter(Boolean).join(' · ')}>
           {course.source || course.instructorOrPlatform}
+          {course.subSource ? ` · ${course.subSource}` : ''}
         </span>
 
         {isArticle ? (
