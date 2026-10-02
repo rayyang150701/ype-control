@@ -94,14 +94,14 @@ export function MyLearningView({
   const { toast } = useToast();
 
   // 目前選中的億威 PMO 成員
-  const activeMember = pmoMembers.find((m) => m.uid === activeUserId) || pmoMembers[0];
+  const activeMember = (pmoMembers || []).find((m) => m.uid === activeUserId) || pmoMembers?.[0];
 
   // 篩選指派給該成員的課程清單
-  const myCourses = courses.filter((c) => c.assignedUserIds.includes(activeMember?.uid || ''));
+  const myCourses = (courses || []).filter((c) => (c.assignedUserIds || []).includes(activeMember?.uid || ''));
 
   // 計算該成員個人的整體學習與時數數據
   const personalStats = useMemo(() => {
-    if (myCourses.length === 0) {
+    if (myCourses.length === 0 || !activeMember) {
       return {
         total: 0,
         completed: 0,
@@ -122,7 +122,7 @@ export function MyLearningView({
       const h = Number(c.hours) || 0;
       totalH += h;
 
-      const prog = c.memberProgress[activeMember.uid];
+      const prog = (c.memberProgress || {})[activeMember.uid];
       const p = prog?.progressPercent ?? 0;
       totalP += p;
       if (prog?.isCompleted || p >= 100) {
@@ -148,9 +148,10 @@ export function MyLearningView({
 
   // 依該成員個人自訂順序 (sortOrder) 排序課程
   const sortedMyCourses = useMemo(() => {
+    const uid = activeMember?.uid || '';
     return [...myCourses].sort((a, b) => {
-      const orderA = a.memberProgress[activeMember?.uid || '']?.sortOrder;
-      const orderB = b.memberProgress[activeMember?.uid || '']?.sortOrder;
+      const orderA = (a.memberProgress || {})[uid]?.sortOrder;
+      const orderB = (b.memberProgress || {})[uid]?.sortOrder;
       if (orderA !== undefined && orderB !== undefined) {
         return orderA - orderB;
       }
@@ -252,8 +253,8 @@ export function MyLearningView({
       // 1. 關鍵字比對 (搜尋名稱、平台/講師、說明、筆記、章節單元、出刊、內文)
       const q = searchQuery.toLowerCase().trim();
       if (q) {
-        const prog = course.memberProgress[activeMember?.uid || ''];
-        const matchTitle = course.title.toLowerCase().includes(q);
+        const prog = (course.memberProgress || {})[activeMember?.uid || ''];
+        const matchTitle = (course.title || '').toLowerCase().includes(q);
         const matchPlatform = (course.instructorOrPlatform || '').toLowerCase().includes(q);
         const matchSource = (course.source || '').toLowerCase().includes(q);
         const matchDesc = (course.description || '').toLowerCase().includes(q);
@@ -262,7 +263,7 @@ export function MyLearningView({
         const matchIssue = (course.issueDate || '').toLowerCase().includes(q);
         const matchNotes = (prog?.notes || '').toLowerCase().includes(q);
         const matchChecklist = (prog?.checklist || []).some((item) =>
-          item.title.toLowerCase().includes(q)
+          (item.title || '').toLowerCase().includes(q)
         );
         if (
           !matchTitle &&
@@ -306,7 +307,7 @@ export function MyLearningView({
 
       // 6. 學習狀態篩選
       if (selectedStatus !== '全部') {
-        const prog = course.memberProgress[activeMember?.uid || ''];
+        const prog = (course.memberProgress || {})[activeMember?.uid || ''];
         const p = prog?.progressPercent ?? 0;
         const isDone = prog?.isCompleted || p >= 100;
         if (selectedStatus === '已完訓' && !isDone) return false;
@@ -341,12 +342,13 @@ export function MyLearningView({
     newOrdered[targetIndex] = temp;
 
     const orderedIds = newOrdered.map((c) => c.id);
+    const activeUid = activeMember?.uid || '';
 
     // 立即更新前端各課程的 sortOrder 狀態
     newOrdered.forEach((c, idx) => {
-      const existingProg = c.memberProgress[activeMember.uid] || {
-        userId: activeMember.uid,
-        userName: activeMember.displayName || '',
+      const existingProg = (c.memberProgress || {})[activeUid] || {
+        userId: activeUid,
+        userName: activeMember?.displayName || '',
         progressPercent: 0,
         isCompleted: false,
         checklist: [],
@@ -355,8 +357,8 @@ export function MyLearningView({
       onCourseUpdated({
         ...c,
         memberProgress: {
-          ...c.memberProgress,
-          [activeMember.uid]: {
+          ...(c.memberProgress || {}),
+          [activeUid]: {
             ...existingProg,
             sortOrder: idx,
           },
@@ -878,7 +880,7 @@ function PersonalCourseCard({
   onOpenReader: (course: PMLearningCourse) => void;
 }) {
   const { toast } = useToast();
-  const memberProgress: PMLearningMemberProgress = course.memberProgress[userId] || {
+  const memberProgress: PMLearningMemberProgress = (course.memberProgress || {})[userId] || {
     userId,
     userName: '成員',
     progressPercent: 0,
@@ -960,7 +962,7 @@ function PersonalCourseCard({
         const updatedCourse = {
           ...course,
           memberProgress: {
-            ...course.memberProgress,
+            ...(course.memberProgress || {}),
             [userId]: res.data,
           },
         };

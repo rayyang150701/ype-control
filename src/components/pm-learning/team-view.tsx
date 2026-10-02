@@ -107,7 +107,7 @@ export function TeamView({
     let totalPercent = 0;
     let completedCount = 0;
     assignedIds.forEach((uid) => {
-      const prog = course.memberProgress[uid];
+      const prog = (course.memberProgress || {})[uid];
       const p = prog?.progressPercent ?? 0;
       totalPercent += p;
       if (prog?.isCompleted || p >= 100) {
@@ -700,14 +700,14 @@ export function TeamView({
                   <div className="min-w-[180px] space-y-1">
                     <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
                       <Users className="h-3.5 w-3.5 text-slate-400" />
-                      <span>指派成員 ({course.assignedUserIds.length} 位)：</span>
+                      <span>指派成員 ({(course.assignedUserIds || []).length} 位)：</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {course.assignedUserIds.map((uid) => {
-                        const prog = course.memberProgress[uid];
+                      {(course.assignedUserIds || []).map((uid) => {
+                        const prog = (course.memberProgress || {})[uid];
                         const name =
                           prog?.userName ||
-                          course.assignedUserNames[course.assignedUserIds.indexOf(uid)] ||
+                          (course.assignedUserNames || [])[(course.assignedUserIds || []).indexOf(uid)] ||
                           '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
@@ -809,11 +809,11 @@ export function TeamView({
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {course.assignedUserIds.map((uid) => {
-                        const prog = course.memberProgress[uid];
+                      {(course.assignedUserIds || []).map((uid) => {
+                        const prog = (course.memberProgress || {})[uid];
                         const name =
                           prog?.userName ||
-                          course.assignedUserNames[course.assignedUserIds.indexOf(uid)] ||
+                          (course.assignedUserNames || [])[(course.assignedUserIds || []).indexOf(uid)] ||
                           '成員';
                         const percent = prog?.progressPercent ?? 0;
                         const isDone = prog?.isCompleted || percent >= 100;
@@ -1121,8 +1121,8 @@ function KanbanCourseCard({
 
       {/* 指派人員頭像 */}
       <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100">
-        {course.assignedUserIds.map((uid) => {
-          const prog = course.memberProgress[uid];
+        {(course.assignedUserIds || []).map((uid) => {
+          const prog = (course.memberProgress || {})[uid];
           const name = prog?.userName || '成員';
           const p = prog?.progressPercent ?? 0;
           return (

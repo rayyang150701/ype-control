@@ -151,13 +151,20 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
         yiehPhuiProjectManager: project.yiehPhuiProjectManager ?? '',
         tpmOfficeContact: project.tpmOfficeContact ?? '',
         egigaContact: project.egigaContact ?? '',
-        subProjects: project.subProjects.map(sp => ({
-          id: sp.id,
-          name: sp.name,
-          owner: sp.owner || '',
-          expectedCompletionDate: (sp.expectedCompletionDate && String(sp.expectedCompletionDate).trim() !== '') ? new Date(sp.expectedCompletionDate as string) : null,
-          actualCompletionDate: (sp.actualCompletionDate && String(sp.actualCompletionDate).trim() !== '') ? new Date(sp.actualCompletionDate as string) : null,
-        })),
+        subProjects: (project.subProjects || []).map(sp => {
+          const parseSafeDate = (val: any): Date | null => {
+            if (!val || String(val).trim() === '') return null;
+            const d = new Date(val);
+            return isNaN(d.getTime()) ? null : d;
+          };
+          return {
+            id: sp.id,
+            name: sp.name || '',
+            owner: sp.owner || '',
+            expectedCompletionDate: parseSafeDate(sp.expectedCompletionDate),
+            actualCompletionDate: parseSafeDate(sp.actualCompletionDate),
+          };
+        }),
       });
     }
   }, [project, isOpen, reset]);
@@ -201,10 +208,10 @@ export function EditProjectDialog({ isOpen, setIsOpen, project, onProjectUpdated
     name: 'subProjects',
   });
   
-  const originalSubProjectIds = project.subProjects.map(sp => sp.id);
+  const originalSubProjectIds = (project.subProjects || []).map(sp => sp.id);
 
   const formatDate = (date?: Date | null) => {
-    if (!date) return '選擇日期 (可留空)';
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '選擇日期 (可留空)';
     return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   };
   

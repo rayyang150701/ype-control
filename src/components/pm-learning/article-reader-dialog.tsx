@@ -62,7 +62,7 @@ export function ArticleReaderDialog({
   // 初始化個人筆記
   React.useEffect(() => {
     if (course && currentUserId) {
-      const prog = course.memberProgress[currentUserId];
+      const prog = (course.memberProgress || {})[currentUserId];
       setPersonalNotes(prog?.notes || '');
     } else {
       setPersonalNotes('');
@@ -114,7 +114,7 @@ export function ArticleReaderDialog({
     }
     setIsSavingNotes(true);
     try {
-      const existingProg = course.memberProgress[currentUserId];
+      const existingProg = (course.memberProgress || {})[currentUserId];
       const res = await updatePMMemberProgress(course.id, currentUserId, {
         notes: personalNotes,
         progressPercent: existingProg?.progressPercent ?? (personalNotes.trim() ? 100 : 0),
@@ -125,7 +125,7 @@ export function ArticleReaderDialog({
         const updatedCourse: PMLearningCourse = {
           ...course,
           memberProgress: {
-            ...course.memberProgress,
+            ...(course.memberProgress || {}),
             [currentUserId]: res.data,
           },
         };

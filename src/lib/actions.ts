@@ -1051,8 +1051,13 @@ export async function updateProject(
                     if (spData.id) {
                         const oldSp = oldSubProjects.find(osp => osp.id === spData.id);
                         if (oldSp) {
-                            const oldDate = oldSp.expected_completion_date ? format(new Date(oldSp.expected_completion_date), 'yyyy/MM/dd') : '未設定';
-                            const newDate = spData.expectedCompletionDate ? format(new Date(spData.expectedCompletionDate), 'yyyy/MM/dd') : '未設定';
+                            const formatSafeDateStr = (val: any) => {
+                                if (!val) return '未設定';
+                                const d = new Date(val);
+                                return isNaN(d.getTime()) ? '未設定' : format(d, 'yyyy/MM/dd');
+                            };
+                            const oldDate = formatSafeDateStr(oldSp.expected_completion_date);
+                            const newDate = formatSafeDateStr(spData.expectedCompletionDate);
                             if (oldDate !== newDate) {
                                 projDiffs.push({
                                     field: `subProject_${spData.id}_date`,

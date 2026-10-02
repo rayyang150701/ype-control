@@ -329,6 +329,18 @@ function getDefaultSeedCourses(): PMLearningCourse[] {
   ];
 }
 
+function toSafeDateStringOrNull(val: any): string | null {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (!s || s === 'null' || s === 'undefined' || s === 'Invalid Date') return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10);
+  }
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function toDbPayload(c: PMLearningCourse) {
   const mp: Record<string, any> = { ...(c.memberProgress || {}) };
   if (c.hours !== undefined && c.hours !== null) {
@@ -346,16 +358,16 @@ function toDbPayload(c: PMLearningCourse) {
   };
   return {
     id: c.id,
-    title: c.title,
-    instructor_or_platform: c.instructorOrPlatform,
+    title: c.title || '',
+    instructor_or_platform: c.instructorOrPlatform || '',
     category: c.category || '專案管理與治理',
     description: c.description || '',
     external_url: c.externalUrl || '',
-    start_date: c.startDate ? c.startDate.slice(0, 10) : null,
-    end_date: c.endDate ? c.endDate.slice(0, 10) : null,
-    assigned_user_ids: c.assignedUserIds || [],
-    assigned_user_names: c.assignedUserNames || [],
-    default_checklist: c.defaultChecklist || [],
+    start_date: toSafeDateStringOrNull(c.startDate),
+    end_date: toSafeDateStringOrNull(c.endDate),
+    assigned_user_ids: Array.isArray(c.assignedUserIds) ? c.assignedUserIds : [],
+    assigned_user_names: Array.isArray(c.assignedUserNames) ? c.assignedUserNames : [],
+    default_checklist: Array.isArray(c.defaultChecklist) ? c.defaultChecklist : [],
     member_progress: mp,
     created_by: c.createdBy || '',
     created_at: c.createdAt || new Date().toISOString(),
@@ -364,8 +376,16 @@ function toDbPayload(c: PMLearningCourse) {
 }
 
 function fromDbRecord(c: any): PMLearningCourse {
+  let rawMp = c.member_progress ?? c.memberProgress;
+  if (typeof rawMp === 'string') {
+    try {
+      rawMp = JSON.parse(rawMp);
+    } catch {
+      rawMp = {};
+    }
+  }
   const memberProgress =
-    typeof c.member_progress === 'object' && c.member_progress ? { ...c.member_progress } : {};
+    typeof rawMp === 'object' && rawMp !== null ? { ...rawMp } : {};
   let hours = 0;
   if (c.hours !== undefined && c.hours !== null) {
     hours = Number(c.hours);
@@ -373,10 +393,10 @@ function fromDbRecord(c: any): PMLearningCourse {
     hours = Number(memberProgress._courseHours);
   }
 
-  const meta = memberProgress._itemMetadata || {};
+  const meta = (typeof memberProgress._itemMetadata === 'object' && memberProgress._itemMetadata) || {};
 
   return {
-    id: c.id,
+    id: c.id || '',
     type: c.type || meta.type || 'course',
     title: c.title || '',
     instructorOrPlatform: c.instructor_or_platform || c.instructorOrPlatform || '',
@@ -384,8 +404,8 @@ function fromDbRecord(c: any): PMLearningCourse {
     description: c.description || '',
     externalUrl: c.external_url || c.externalUrl || '',
     hours: hours || 0,
-    startDate: c.start_date ? String(c.start_date).slice(0, 10) : c.startDate || '',
-    endDate: c.end_date ? String(c.end_date).slice(0, 10) : c.endDate || '',
+    startDate: c.start_date ? String(c.start_date).slice(0, 10) : (c.startDate ? String(c.startDate).slice(0, 10) : ''),
+    endDate: c.end_date ? String(c.end_date).slice(0, 10) : (c.endDate ? String(c.endDate).slice(0, 10) : ''),
     assignedUserIds: Array.isArray(c.assigned_user_ids)
       ? c.assigned_user_ids
       : Array.isArray(c.assignedUserIds)
@@ -442,9 +462,10 @@ export async function getPMLearningCourses(): Promise<PMLearningCourse[]> {
       try {
         const parsed = JSON.parse(sysRecord.notes);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          const mapped = parsed.map(fromDbRecord);
           // 若獨立表已存在但為空，順便回填獨立表
-          await syncCoursesToDatabase(parsed);
-          return parsed;
+          await syncCoursesToDatabase(mapped);
+          return mapped;
         }
       } catch (e) {
         console.error('解析 PM 學習地圖資料失敗:', e);
@@ -454,10 +475,10 @@ export async function getPMLearningCourses(): Promise<PMLearningCourse[]> {
     // 3. 若為首次啟用，自動初始化種子資料並持久化儲存
     const seedCourses = getDefaultSeedCourses();
     await syncCoursesToDatabase(seedCourses);
-    return seedCourses;
+    return seedCourses.map(fromDbRecord);
   } catch (err) {
     console.error('讀取 PM 學習地圖課程失敗:', err);
-    return getDefaultSeedCourses();
+    return getDefaultSeedCourses().map(fromDbRecord);
   }
 }
 
@@ -470,7 +491,10 @@ async function syncCoursesToDatabase(courses: PMLearningCourse[]): Promise<boole
   try {
     // 1. 寫入 pm_learning_courses 主表
     const dbPayload = courses.map(toDbPayload);
-    await supabase.from('pm_learning_courses').upsert(dbPayload, { onConflict: 'id' });
+    const { error: dbErr } = await supabase.from('pm_learning_courses').upsert(dbPayload, { onConflict: 'id' });
+    if (dbErr) {
+      console.warn('寫入 pm_learning_courses 主表警告:', dbErr);
+    }
 
     // 2. 寫入 clients 備援
     await supabase.from('clients').upsert(
@@ -507,10 +531,13 @@ export async function createPMLearningCourse(
     const defaultChecklist =
       courseData.initialChecklist || courseData.defaultChecklist || [];
 
-    courseData.assignedUserIds.forEach((uid, idx) => {
+    const assignedIds = Array.isArray(courseData.assignedUserIds) ? courseData.assignedUserIds : [];
+    const assignedNames = Array.isArray(courseData.assignedUserNames) ? courseData.assignedUserNames : [];
+
+    assignedIds.forEach((uid, idx) => {
       memberProgress[uid] = {
         userId: uid,
-        userName: courseData.assignedUserNames[idx] || '成員',
+        userName: assignedNames[idx] || '成員',
         progressPercent: 0,
         isCompleted: false,
         notes: '',
@@ -535,8 +562,8 @@ export async function createPMLearningCourse(
       hours: courseData.hours !== undefined ? Number(courseData.hours) : 0,
       startDate: courseData.startDate || '',
       endDate: courseData.endDate || '',
-      assignedUserIds: courseData.assignedUserIds,
-      assignedUserNames: courseData.assignedUserNames,
+      assignedUserIds: assignedIds,
+      assignedUserNames: assignedNames,
       defaultChecklist,
       memberProgress,
       content: courseData.content || '',
@@ -555,6 +582,10 @@ export async function createPMLearningCourse(
     const { error: insertError } = await supabase
       .from('pm_learning_courses')
       .insert(toDbPayload(newCourse));
+
+    if (insertError) {
+      console.warn('插入 pm_learning_courses 警告:', insertError);
+    }
 
     // 2. 同步更新整體課程備援快取
     const currentList = await getPMLearningCourses();
@@ -708,11 +739,11 @@ export async function updatePMLearningCourse(
 
     // 如果指派成員有名單增減，同步維護 memberProgress
     if (courseData.assignedUserIds) {
-      courseData.assignedUserIds.forEach((uid, idx) => {
+      const assignedIds = Array.isArray(courseData.assignedUserIds) ? courseData.assignedUserIds : [];
+      const assignedNames = Array.isArray(courseData.assignedUserNames) ? courseData.assignedUserNames : [];
+      assignedIds.forEach((uid, idx) => {
         if (!updatedMemberProgress[uid]) {
-          const userName = courseData.assignedUserNames
-            ? courseData.assignedUserNames[idx]
-            : '成員';
+          const userName = assignedNames[idx] || '成員';
           const defaultItems =
             courseData.defaultChecklist || target.defaultChecklist || [];
           updatedMemberProgress[uid] = {
@@ -721,7 +752,7 @@ export async function updatePMLearningCourse(
             progressPercent: 0,
             isCompleted: false,
             notes: '',
-            checklist: defaultItems.map((item, i) => ({
+            checklist: (defaultItems || []).map((item, i) => ({
               id: `chk-${Date.now()}-${i}`,
               title: item,
               completed: false,
@@ -733,6 +764,11 @@ export async function updatePMLearningCourse(
       });
     }
 
+    // 若有更新 memberProgress 補丁，合併之
+    if (courseData.memberProgress) {
+      Object.assign(updatedMemberProgress, courseData.memberProgress);
+    }
+
     const updatedCourse: PMLearningCourse = {
       ...target,
       ...courseData,
@@ -741,9 +777,13 @@ export async function updatePMLearningCourse(
     };
 
     // 1. 更新至 pm_learning_courses 資料表
-    await supabase
+    const { error: upsertErr } = await supabase
       .from('pm_learning_courses')
       .upsert(toDbPayload(updatedCourse), { onConflict: 'id' });
+
+    if (upsertErr) {
+      console.warn('更新 pm_learning_courses 警告:', upsertErr);
+    }
 
     // 2. 同步更新備援
     const updatedList = currentList.map((c) => (c.id === courseId ? updatedCourse : c));
@@ -796,7 +836,8 @@ export async function updatePMMemberProgress(
       return { success: false, message: '找不到對應的學習課程' };
     }
 
-    const currentProgress = targetCourse.memberProgress[userId] || {
+    const targetMemberProgress = { ...(targetCourse.memberProgress || {}) };
+    const currentProgress = targetMemberProgress[userId] || {
       userId,
       userName: '成員',
       progressPercent: 0,
@@ -835,14 +876,15 @@ export async function updatePMMemberProgress(
       updatedAt: nowIso,
     };
 
-    targetCourse.memberProgress[userId] = updatedProgress;
+    targetMemberProgress[userId] = updatedProgress;
+    targetCourse.memberProgress = targetMemberProgress;
     targetCourse.updatedAt = nowIso;
 
-    // 1. 同步更新 pm_learning_courses 資料表中的 member_progress 欄位
+    // 1. 同步更新 pm_learning_courses 資料表中的 member_progress 欄位（以 toDbPayload 確保 _itemMetadata 與 _courseHours 完整保留）
     await supabase
       .from('pm_learning_courses')
       .update({
-        member_progress: targetCourse.memberProgress,
+        member_progress: toDbPayload(targetCourse).member_progress,
         updated_at: nowIso,
       })
       .eq('id', courseId);
@@ -872,7 +914,7 @@ export async function saveUserCourseOrder(userId: string, orderedCourseIds: stri
     const updatedCourses = courses.map((course) => {
       const orderIdx = orderedCourseIds.indexOf(course.id);
       if (orderIdx >= 0) {
-        const existingProg = course.memberProgress[userId] || {
+        const existingProg = (course.memberProgress || {})[userId] || {
           userId,
           userName: '',
           progressPercent: 0,
@@ -883,7 +925,7 @@ export async function saveUserCourseOrder(userId: string, orderedCourseIds: stri
         return {
           ...course,
           memberProgress: {
-            ...course.memberProgress,
+            ...(course.memberProgress || {}),
             [userId]: {
               ...existingProg,
               sortOrder: orderIdx,

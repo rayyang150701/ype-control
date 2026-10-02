@@ -733,8 +733,8 @@ export function CourseFormDialog({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 max-h-44 overflow-y-auto">
-              {pmoMembers.map((member) => {
-                const isSelected = assignedUserIds.includes(member.uid);
+              {(pmoMembers || []).map((member) => {
+                const isSelected = (assignedUserIds || []).includes(member.uid);
                 return (
                   <div
                     key={member.uid}
@@ -748,6 +748,7 @@ export function CourseFormDialog({
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => handleToggleMember(member.uid)}
+                      onClick={(e) => e.stopPropagation()}
                     />
                     <div className="truncate">
                       <div className="truncate">{member.displayName || member.username}</div>

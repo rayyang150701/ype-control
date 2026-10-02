@@ -110,12 +110,12 @@ export function WeeklyKPIView({
   const completedEvents = useMemo(() => {
     const list: CompletedEvent[] = [];
 
-    courses.forEach((c) => {
+    (courses || []).forEach((c) => {
       const cHours = Number(c.hours) || 0;
 
       // 檢查指派成員中已完成的人員
-      c.assignedUserIds.forEach((uid) => {
-        const prog = c.memberProgress[uid];
+      (c.assignedUserIds || []).forEach((uid) => {
+        const prog = (c.memberProgress || {})[uid];
         const isDone = prog?.isCompleted || (prog?.progressPercent ?? 0) >= 100;
         if (isDone) {
           // 決定完成日期
@@ -126,14 +126,14 @@ export function WeeklyKPIView({
             c.updatedAt ||
             new Date().toISOString();
 
-          const memberObj = pmoMembers.find((m) => m.uid === uid);
+          const memberObj = (pmoMembers || []).find((m) => m.uid === uid);
           const userName = memberObj?.displayName || memberObj?.email || prog?.userName || 'PM成員';
 
           list.push({
             course: c,
             userId: uid,
             userName,
-            completedDate: dateStr.slice(0, 10),
+            completedDate: String(dateStr).slice(0, 10),
             hours: cHours,
             weekInfo: getWeekInfo(dateStr),
             notesSnippet: prog?.notes ? prog.notes.slice(0, 100) : '',
@@ -147,9 +147,9 @@ export function WeeklyKPIView({
 
   // 2. 依照「成員個人」聚合 KPI 數據
   const memberKpiList = useMemo(() => {
-    return pmoMembers.map((member) => {
+    return (pmoMembers || []).map((member) => {
       // 該成員指派到的所有課程
-      const assigned = courses.filter((c) => c.assignedUserIds.includes(member.uid));
+      const assigned = (courses || []).filter((c) => (c.assignedUserIds || []).includes(member.uid));
       let totalPlannedHours = 0;
       let completedHours = 0;
       let completedCount = 0;
@@ -159,7 +159,7 @@ export function WeeklyKPIView({
         const h = Number(c.hours) || 0;
         totalPlannedHours += h;
 
-        const prog = c.memberProgress[member.uid];
+        const prog = (c.memberProgress || {})[member.uid];
         const p = prog?.progressPercent ?? 0;
         const isDone = prog?.isCompleted || p >= 100;
 
@@ -212,14 +212,15 @@ export function WeeklyKPIView({
     let totalPlannedHours = 0;
     let totalCompletedHours = 0;
 
-    courses.forEach((c) => {
+    (courses || []).forEach((c) => {
       const h = Number(c.hours) || 0;
-      const assignedCount = c.assignedUserIds.length;
+      const assignedIds = c.assignedUserIds || [];
+      const assignedCount = assignedIds.length;
       totalPlannedHours += h * assignedCount;
 
-      c.assignedUserIds.forEach((uid) => {
+      assignedIds.forEach((uid) => {
         totalAssignedEntries++;
-        const prog = c.memberProgress[uid];
+        const prog = (c.memberProgress || {})[uid];
         if (prog?.isCompleted || (prog?.progressPercent ?? 0) >= 100) {
           totalCompletedEntries++;
           totalCompletedHours += h;
