@@ -69,7 +69,7 @@ function fileToBase64(file: File, onProgress?: (percent: number) => void): Promi
  * 1. 檔名與副檔名檢查（擋 .exe/.bat/.sh，上限 100MB）
  * 2. 呼叫後端 /api/pm-learning/upload-session 取得驗證過的專屬 folderId 與端點
  * 3. 讀取 Base64
- * 4. 根據檔案大小（<= 4MB 走內部代理，> 4MB 直傳 GAS 端點）透過 XMLHttpRequest 發送並監聽即時上傳進度
+ * 4. 根據檔案大小（<= 4MB 優先走內部代理，> 4MB 透過 fetch 支援 302 重導向直傳 GAS 端點）
  * 5. 上傳成功自動回傳 PMLearningAttachment 物件
  */
 export async function uploadPMLearningFile(
@@ -120,7 +120,7 @@ export async function uploadPMLearningFile(
     onProgress?.({ percent: scaled, stageMessage: `正在讀取本機檔案 (${p}%)...` });
   });
 
-  // 4. 判斷上傳通道：<= 4MB 優先透過伺服器代理 /api/pm-learning/upload，避開跨域與防火牆；> 4MB 則直接 PUT/POST 至 GAS
+  // 4. 判斷上傳通道：<= 4MB 優先透過伺服器代理 /api/pm-learning/upload，避開跨域與防火牆；> 4MB 則直接透過 fetch 直傳 GAS (完美支援 302 重導向)
   const payloadStr = JSON.stringify({
     fileName: targetFileName,
     mimeType: file.type || 'application/octet-stream',
@@ -128,74 +128,102 @@ export async function uploadPMLearningFile(
     folderId: folderId,
   });
 
-  const PROXY_LIMIT = 4 * 1024 * 1024; // 4MB
-  const postUrl = file.size <= PROXY_LIMIT ? '/api/pm-learning/upload' : uploadUrl;
+  const executeDirectGAS = async (): Promise<PMLearningAttachment> => {
+    let simulatedPct = 30;
+    onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${formatFileSize(file.size)})...` });
 
-  onProgress?.({ percent: 30, stageMessage: `正在上傳至 Google 雲端硬碟 (${formatFileSize(file.size)})...` });
-
-  return new Promise<PMLearningAttachment>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', postUrl, true);
-    xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && e.total > 0) {
-        // 進度映射至 30% - 95%
-        const uploadPercent = Math.min(95, Math.max(30, Math.round(30 + (e.loaded / e.total) * 65)));
-        onProgress?.({
-          percent: uploadPercent,
-          stageMessage: `檔案直傳中 (${uploadPercent}%)...`,
-        });
+    const simInterval = setInterval(() => {
+      if (simulatedPct < 90) {
+        simulatedPct += 2;
+        onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${simulatedPct}%)...` });
       }
-    };
+    }, 700);
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const res = JSON.parse(xhr.responseText);
-          if (res.success && res.file) {
-            onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
-            const f = res.file;
-            const webViewLink =
-              f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
+    try {
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: payloadStr,
+        redirect: 'follow',
+      });
 
-            const attachment: PMLearningAttachment = {
-              id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-              title: targetFileName,
-              url: webViewLink,
-              type: 'drive',
-              createdAt: new Date().toISOString(),
-            };
+      clearInterval(simInterval);
+      onProgress?.({ percent: 95, stageMessage: 'Google Drive 正在儲存檔案並設定公開檢視權限...' });
 
-            resolve(attachment);
-          } else {
-            reject(new Error(res.error || res.message || 'Google 雲端硬碟建立檔案失敗'));
-          }
-        } catch {
-          reject(new Error('解析 Google 雲端服務回應失敗'));
-        }
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Google 雲端回應格式錯誤 (HTTP ${res.status}): ${text.substring(0, 120)}`);
+      }
+
+      if (data && data.success && data.file) {
+        onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
+        const f = data.file;
+        const webViewLink = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
+
+        return {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          title: targetFileName,
+          url: webViewLink,
+          type: 'drive',
+          createdAt: new Date().toISOString(),
+        };
       } else {
-        let errMsg = `上傳連線失敗 (HTTP ${xhr.status})`;
-        try {
-          const errRes = JSON.parse(xhr.responseText);
-          if (errRes.message || errRes.error) {
-            errMsg = errRes.message || errRes.error;
-          }
-        } catch {}
-        reject(new Error(errMsg));
+        const errorMsg = data?.error || data?.message || 'Google 雲端硬碟建立檔案失敗';
+        throw new Error(errorMsg);
       }
-    };
+    } catch (err: any) {
+      clearInterval(simInterval);
+      throw err;
+    }
+  };
 
-    xhr.onerror = () => {
-      reject(new Error('網路連線異常或 Google 雲端端點連線失敗'));
-    };
+  const PROXY_LIMIT = 4 * 1024 * 1024; // 4MB
+  if (file.size <= PROXY_LIMIT) {
+    let proxyPct = 25;
+    onProgress?.({ percent: proxyPct, stageMessage: `正在傳輸至伺服器代理 (${formatFileSize(file.size)})...` });
+    const proxyInterval = setInterval(() => {
+      if (proxyPct < 85) {
+        proxyPct += 4;
+        onProgress?.({ percent: proxyPct, stageMessage: `正在傳輸至雲端硬碟 (${proxyPct}%)...` });
+      }
+    }, 400);
 
-    xhr.ontimeout = () => {
-      reject(new Error('上傳連線逾時，請檢查網路連線後重試'));
-    };
+    try {
+      const res = await fetch('/api/pm-learning/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payloadStr,
+      });
 
-    // 逾時設定為 5 分鐘
-    xhr.timeout = 5 * 60 * 1000;
-    xhr.send(payloadStr);
-  });
+      clearInterval(proxyInterval);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.file) {
+          onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
+          const f = data.file;
+          const webViewLink = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
+          return {
+            id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+            title: targetFileName,
+            url: webViewLink,
+            type: 'drive',
+            createdAt: new Date().toISOString(),
+          };
+        } else if (data.message || data.error) {
+          throw new Error(data.message || data.error);
+        }
+      }
+      console.warn('伺服器內部代理上傳失敗，切換至直傳 GAS 備援...');
+    } catch (proxyErr: any) {
+      clearInterval(proxyInterval);
+      console.warn('伺服器代理端點異常，切換至直傳 GAS 備援:', proxyErr);
+    }
+  }
+
+  // 大於 4MB 或代理回退：執行直傳 GAS
+  return await executeDirectGAS();
 }
