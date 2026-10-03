@@ -32,6 +32,8 @@ import {
   Sparkles,
   Zap,
   ClipboardPaste,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   PMLearningCourse,
@@ -118,6 +120,20 @@ export function CourseFormDialog({
   const [newSubUnitTexts, setNewSubUnitTexts] = useState<Record<number, string>>({});
   const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
   const [batchImportText, setBatchImportText] = useState('');
+
+  // 大單元展開/縮回狀態 (預設全開)
+  const [expandedDialogChapters, setExpandedDialogChapters] = useState<Record<number, boolean>>({});
+
+  const isDialogChapterExpanded = (idx: number) => {
+    return expandedDialogChapters[idx] !== false;
+  };
+
+  const handleToggleDialogChapter = (idx: number) => {
+    setExpandedDialogChapters((prev) => ({
+      ...prev,
+      [idx]: prev[idx] === false ? true : false,
+    }));
+  };
 
   // 整理所有可用領域
   const categoryOptions = React.useMemo(() => {
@@ -884,6 +900,18 @@ export function CourseFormDialog({
                       {/* 第一階：大單元標題與操作 */}
                       <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100">
                         <div className="flex items-center gap-2 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDialogChapter(cIdx)}
+                            className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition-colors"
+                            title={isDialogChapterExpanded(cIdx) ? '縮回此單元' : '展開此單元'}
+                          >
+                            {isDialogChapterExpanded(cIdx) ? (
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-800 shrink-0">
                             大單元 {cIdx + 1}
                           </span>
@@ -912,66 +940,68 @@ export function CourseFormDialog({
                         </div>
                       </div>
 
-                      {/* 第二階：子單元清單 */}
-                      <div className="space-y-1.5 pl-3 border-l-2 border-indigo-100 ml-1">
-                        {chap.subUnits.map((sub, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:bg-slate-100/70 transition-colors"
-                          >
-                            <div className="flex items-center gap-1.5 flex-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                              <Input
-                                value={sub}
-                                onChange={(e) => handleUpdateSubUnit(cIdx, sIdx, e.target.value)}
-                                placeholder="子單元名稱"
-                                className="h-6 text-xs bg-white border-slate-200"
-                              />
+                      {/* 第二階：子單元清單 (支援展開/縮回) */}
+                      {isDialogChapterExpanded(cIdx) && (
+                        <div className="space-y-1.5 pl-3 border-l-2 border-indigo-100 ml-1">
+                          {chap.subUnits.map((sub, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:bg-slate-100/70 transition-colors"
+                            >
+                              <div className="flex items-center gap-1.5 flex-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                                <Input
+                                  value={sub}
+                                  onChange={(e) => handleUpdateSubUnit(cIdx, sIdx, e.target.value)}
+                                  placeholder="子單元名稱"
+                                  className="h-6 text-xs bg-white border-slate-200"
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveSubUnit(cIdx, sIdx)}
+                                className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600 shrink-0"
+                                title="刪除此子單元"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             </div>
+                          ))}
+
+                          {/* 新增子單元輸入行 */}
+                          <div className="flex gap-1.5 pt-1">
+                            <Input
+                              value={newSubUnitTexts[cIdx] || ''}
+                              onChange={(e) =>
+                                setNewSubUnitTexts((prev) => ({
+                                  ...prev,
+                                  [cIdx]: e.target.value,
+                                }))
+                              }
+                              placeholder={`輸入子單元名稱 (例如：${cIdx + 1}.${chap.subUnits.length + 1} ...)`}
+                              className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddSubUnit(cIdx);
+                                }
+                              }}
+                            />
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={() => handleRemoveSubUnit(cIdx, sIdx)}
-                              className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600 shrink-0"
-                              title="刪除此子單元"
+                              onClick={() => handleAddSubUnit(cIdx)}
+                              className="h-7 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold gap-1 px-2.5"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Plus className="h-3 w-3" />
+                              新增子單元
                             </Button>
                           </div>
-                        ))}
-
-                        {/* 新增子單元輸入行 */}
-                        <div className="flex gap-1.5 pt-1">
-                          <Input
-                            value={newSubUnitTexts[cIdx] || ''}
-                            onChange={(e) =>
-                              setNewSubUnitTexts((prev) => ({
-                                ...prev,
-                                [cIdx]: e.target.value,
-                              }))
-                            }
-                            placeholder={`輸入子單元名稱 (例如：${cIdx + 1}.${chap.subUnits.length + 1} ...)`}
-                            className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleAddSubUnit(cIdx);
-                              }
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddSubUnit(cIdx)}
-                            className="h-7 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold gap-1 px-2.5"
-                          >
-                            <Plus className="h-3 w-3" />
-                            新增子單元
-                          </Button>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>

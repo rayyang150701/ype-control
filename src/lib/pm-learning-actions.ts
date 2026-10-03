@@ -396,17 +396,49 @@ function fromDbRecord(c: any): PMLearningCourse {
 
   const meta = (typeof rawObj._itemMetadata === 'object' && rawObj._itemMetadata) || {};
 
+  const defaultChecklist = Array.isArray(c.default_checklist)
+    ? c.default_checklist
+    : Array.isArray(c.defaultChecklist)
+    ? c.defaultChecklist
+    : [];
+
+  const hasChapterInDefault = defaultChecklist.some(
+    (item: any) =>
+      item &&
+      typeof item === 'object' &&
+      Array.isArray(item.subUnits) &&
+      item.subUnits.length > 0
+  );
+
   // 清除 memberProgress 中的內部持久化特殊 key，只保留實際成員進度，並做屬性陣列防呆
   const cleanMemberProgress: Record<string, PMLearningMemberProgress> = {};
   Object.keys(rawObj).forEach((k) => {
     if (k.startsWith('_')) return;
     const prog = rawObj[k];
     if (prog && typeof prog === 'object') {
+      const rawChecklist = Array.isArray(prog.checklist) ? prog.checklist : [];
+      let finalChecklist = rawChecklist;
+
+      // 若 defaultChecklist 具備兩階大單元/子單元，但成員進度仍為舊版未包含 chapterTitle 的扁平項目
+      const hasChapterInProg = rawChecklist.some((item: any) => Boolean(item?.chapterTitle));
+      if (hasChapterInDefault && !hasChapterInProg && defaultChecklist.length > 0) {
+        const expanded = expandChecklistToItems(defaultChecklist);
+        const completedTitles = new Set(
+          rawChecklist
+            .filter((chk: any) => chk?.completed)
+            .map((chk: any) => (chk?.title || '').trim())
+        );
+        finalChecklist = expanded.map((item) => ({
+          ...item,
+          completed: completedTitles.has(item.title.trim()),
+        }));
+      }
+
       cleanMemberProgress[k] = {
         ...prog,
         progressPercent: typeof prog.progressPercent === 'number' ? prog.progressPercent : 0,
         isCompleted: Boolean(prog.isCompleted),
-        checklist: Array.isArray(prog.checklist) ? prog.checklist : [],
+        checklist: finalChecklist,
         attachments: Array.isArray(prog.attachments) ? prog.attachments : [],
       };
     }
@@ -768,6 +800,37 @@ export async function updatePMLearningCourse(
             notes: '',
             checklist: expandChecklistToItems(defaultItems),
             attachments: [],
+            updatedAt: nowIso,
+          };
+        }
+      });
+    }
+
+    // 如果有修改 defaultChecklist，同步更新每位已指派成員的 checklist (依新兩階架構展開並保留完成勾選狀態)
+    if (courseData.defaultChecklist !== undefined) {
+      const newItems = expandChecklistToItems(courseData.defaultChecklist);
+      const assignedIds = Array.isArray(courseData.assignedUserIds)
+        ? courseData.assignedUserIds
+        : Array.isArray(target.assignedUserIds)
+        ? target.assignedUserIds
+        : Object.keys(updatedMemberProgress);
+
+      assignedIds.forEach((uid) => {
+        const existingProg = updatedMemberProgress[uid];
+        if (existingProg) {
+          const oldChecklist = Array.isArray(existingProg.checklist) ? existingProg.checklist : [];
+          const completedTitles = new Set(
+            oldChecklist
+              .filter((c) => c.completed)
+              .map((c) => (c.title || '').trim())
+          );
+          const updatedChecklist = newItems.map((item) => ({
+            ...item,
+            completed: completedTitles.has(item.title.trim()),
+          }));
+          updatedMemberProgress[uid] = {
+            ...existingProg,
+            checklist: updatedChecklist,
             updatedAt: nowIso,
           };
         }
