@@ -9,11 +9,18 @@ export interface PMLearningAIAnalysis {
   modelName?: string;
 }
 
+export interface PMLearningChapterUnit {
+  id?: string;
+  title: string; // 大單元標題，例如 "單元 1" 或 "第一單元：核心概念"
+  subUnits: string[]; // 子單元名稱清單，例如 ["1.1 需求訪談", "1.2 範疇設定"]
+}
+
 export interface PMLearningChecklistItem {
   id: string;
   title: string;
   completed: boolean;
   completedAt?: string;
+  chapterTitle?: string; // 所屬第一階「大單元 / 章節」名稱，如「單元 1」
 }
 
 export interface PMLearningAttachment {
@@ -52,7 +59,7 @@ export interface PMLearningCourse {
   endDate?: string; // 預計訖日 (YYYY-MM-DD)
   assignedUserIds: string[]; // 指派研讀成員 User IDs
   assignedUserNames: string[]; // 指派研讀成員姓名清單
-  defaultChecklist?: string[]; // 預設章節檢核清單
+  defaultChecklist?: (string | PMLearningChapterUnit)[]; // 預設章節檢核清單 (支援單元字串或兩階大單元/子單元架構)
   memberProgress: Record<string, PMLearningMemberProgress>; // 每位指派成員的個人研習進度
 
   // === 知識文章 (Article) 與全文儲存專屬欄位 ===

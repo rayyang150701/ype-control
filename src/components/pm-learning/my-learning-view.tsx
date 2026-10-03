@@ -65,7 +65,7 @@ import {
   saveUserCourseOrder,
   updateCourseHours,
 } from '@/lib/pm-learning-actions';
-import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
+import { isCourseManager, canUserEditCourse, expandChecklistToItems } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { uploadPMLearningFile, formatLearningFileName } from '@/lib/pm-learning-upload';
 import { MarkdownPreview } from './markdown-preview';
@@ -1068,11 +1068,9 @@ function PersonalCourseCard({
       progressPercent: 0,
       isCompleted: false,
       notes: '',
-      checklist: (Array.isArray(course.defaultChecklist) ? course.defaultChecklist : []).map((item, idx) => ({
-        id: `chk-${idx}`,
-        title: item,
-        completed: false,
-      })),
+      checklist: expandChecklistToItems(
+        Array.isArray(course.defaultChecklist) ? course.defaultChecklist : []
+      ),
       attachments: [],
     };
   }, [rawProgress, userId, course.defaultChecklist]);
@@ -1091,6 +1089,8 @@ function PersonalCourseCard({
     Array.isArray(memberProgress.checklist) ? memberProgress.checklist : []
   );
   const [newCheckText, setNewCheckText] = useState<string>('');
+  const [newSubUnitTexts, setNewSubUnitTexts] = useState<Record<string, string>>({});
+  const [newChapterText, setNewChapterText] = useState<string>('');
   const [attachments, setAttachments] = useState<PMLearningAttachment[]>(
     Array.isArray(memberProgress.attachments) ? memberProgress.attachments : []
   );
@@ -1244,6 +1244,42 @@ function PersonalCourseCard({
     });
   };
 
+  // 將成員檢核清單依第一階「大單元」分組呈現
+  const groupedChapters = useMemo(() => {
+    const groups: {
+      chapterTitle: string;
+      items: PMLearningChecklistItem[];
+    }[] = [];
+    const map = new Map<string, PMLearningChecklistItem[]>();
+    const standaloneItems: PMLearningChecklistItem[] = [];
+
+    (checklist || []).forEach((item) => {
+      const cTitle = (item?.chapterTitle || '').trim();
+      if (cTitle) {
+        if (!map.has(cTitle)) {
+          const list: PMLearningChecklistItem[] = [];
+          map.set(cTitle, list);
+          groups.push({
+            chapterTitle: cTitle,
+            items: list,
+          });
+        }
+        map.get(cTitle)!.push(item);
+      } else {
+        standaloneItems.push(item);
+      }
+    });
+
+    if (standaloneItems.length > 0) {
+      groups.push({
+        chapterTitle: groups.length > 0 ? '其他單元' : '',
+        items: standaloneItems,
+      });
+    }
+
+    return groups;
+  }, [checklist]);
+
   // 2. 切換檢核項目
   const handleToggleCheck = (checkId: string) => {
     const updated = checklist.map((c) =>
@@ -1253,7 +1289,64 @@ function PersonalCourseCard({
     saveProgressPatch({ checklist: updated });
   };
 
-  // 新增檢核項
+  // 全選或取消全選特定大單元底下的所有子單元
+  const handleToggleChapterAll = (chapterTitle: string) => {
+    const targetItems = checklist.filter(
+      (c) => (c.chapterTitle || '').trim() === chapterTitle.trim()
+    );
+    if (targetItems.length === 0) return;
+    const allCompleted = targetItems.every((c) => c.completed);
+    const updated = checklist.map((c) => {
+      if ((c.chapterTitle || '').trim() === chapterTitle.trim()) {
+        return { ...c, completed: !allCompleted };
+      }
+      return c;
+    });
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+  };
+
+  // 新增子單元至特定大單元
+  const handleAddSubUnitToChecklist = (chapterTitle: string) => {
+    const text = (newSubUnitTexts[chapterTitle] || '').trim();
+    if (!text) return;
+
+    const newItem: PMLearningChecklistItem = {
+      id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: text,
+      chapterTitle: chapterTitle.trim(),
+      completed: false,
+    };
+    const updated = [...checklist, newItem];
+    setChecklist(updated);
+    setNewSubUnitTexts((prev) => ({ ...prev, [chapterTitle]: '' }));
+    saveProgressPatch({ checklist: updated });
+  };
+
+  // 新增大單元
+  const handleAddChapterToChecklist = () => {
+    const defaultName = `單元 ${groupedChapters.length + 1}`;
+    const chapterName = newChapterText.trim() || defaultName;
+
+    // 建立新大單元時，預設帶入其第一個子單元序號 (例如 1.1 或 3.1)
+    const chapNum = groupedChapters.length + 1;
+    const newItem: PMLearningChecklistItem = {
+      id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: `${chapNum}.1`,
+      chapterTitle: chapterName,
+      completed: false,
+    };
+    const updated = [...checklist, newItem];
+    setChecklist(updated);
+    setNewChapterText('');
+    saveProgressPatch({ checklist: updated });
+    toast({
+      title: '已新增大單元',
+      description: `已成功新增「${chapterName}」`,
+    });
+  };
+
+  // 新增獨立檢核項 (相容既有單一單元)
   const handleAddCheckItem = () => {
     if (!newCheckText.trim()) return;
     const newItem = {
@@ -1915,88 +2008,185 @@ function PersonalCourseCard({
               </div>
             </div>
 
-            {/* 展開時才顯示完整的章節單元清單 (保留核取方格) */}
+            {/* 展開時才顯示完整的兩階章節單元清單 (保留核取方格) */}
             {isChaptersExpanded && (
-              <div className="p-3.5 space-y-2.5 bg-slate-50/40 border-t border-slate-200">
+              <div className="p-3.5 space-y-3 bg-slate-50/40 border-t border-slate-200">
                 <div className="flex items-center justify-between pb-1 text-xs text-slate-500">
-                  <span>點選核取方格標記已修習完成之章節單元：</span>
+                  <span>點選核取方格標記已完成之子單元：</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleAutoCalcFromChecklist();
                     }}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-white px-2 py-1 rounded border border-indigo-100 shadow-2xs hover:bg-indigo-50 transition-colors"
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-white px-2.5 py-1 rounded-md border border-indigo-200 shadow-2xs hover:bg-indigo-50 transition-colors"
                     title="根據章節單元完成比例自動換算上方進度百分比"
                   >
-                    <Calculator className="h-3 w-3" />
-                    <span>依章節換算進度</span>
+                    <Calculator className="h-3.5 w-3.5" />
+                    <span>依單元換算進度</span>
                   </button>
                 </div>
 
-                <div className="space-y-1.5">
-                  {(Array.isArray(checklist) ? checklist : []).map((item, idx) => (
-                    <div
-                      key={item?.id || `chk-idx-${idx}`}
-                      className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
-                        item?.completed
-                          ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
-                          : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
-                      }`}
-                    >
-                      <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
-                        <Checkbox
-                          checked={Boolean(item?.completed)}
-                          onCheckedChange={() => item?.id && handleToggleCheck(item.id)}
-                        />
-                        <span className="text-[11px] font-mono text-slate-400 font-medium">
-                          {idx + 1}.
-                        </span>
-                        <span
-                          className={
-                            item?.completed
-                              ? 'line-through text-slate-400'
-                              : 'font-semibold text-slate-800'
-                          }
-                        >
-                          {item?.title || '單元'}
-                        </span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => item?.id && handleDeleteCheckItem(item.id)}
-                        className="text-slate-300 hover:text-rose-500 transition-colors p-1"
-                        title="刪除此章節單元"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                {/* 無單元狀態 */}
+                {checklist.length === 0 ? (
+                  <div className="text-center py-5 bg-white rounded-lg border border-dashed border-slate-200 text-xs text-slate-400 space-y-1">
+                    <Layers className="h-5 w-5 mx-auto text-slate-300" />
+                    <p>此項目目前尚無章節單元清單</p>
+                    <p className="text-[11px] text-slate-400">可於下方建立第一個大單元 (如：單元 1)</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {groupedChapters.map((group, gIdx) => {
+                      const isStandalone = !group.chapterTitle;
+                      const completedCount = group.items.filter((c) => c.completed).length;
+                      const allDone = completedCount === group.items.length && group.items.length > 0;
 
-                {/* 新增個人章節單元輸入框 */}
-                <div className="flex gap-2 pt-1.5">
+                      return (
+                        <div
+                          key={group.chapterTitle || `group-${gIdx}`}
+                          className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2 hover:border-indigo-200 transition-colors"
+                        >
+                          {/* 第一階：大單元標題與狀態 */}
+                          {!isStandalone ? (
+                            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-100">
+                              <div className="flex items-center gap-2">
+                                <span className="p-1 rounded bg-indigo-50 text-indigo-700">
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                </span>
+                                <span className="text-xs font-bold text-slate-800">
+                                  {group.chapterTitle}
+                                </span>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] font-semibold ${
+                                    allDone
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                      : completedCount > 0
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {completedCount} / {group.items.length} 完成
+                                </Badge>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleToggleChapterAll(group.chapterTitle)}
+                                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold hover:underline"
+                              >
+                                {allDone ? '取消全選' : '全選此單元'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="pb-1 text-xs font-bold text-slate-500">
+                              其他單元
+                            </div>
+                          )}
+
+                          {/* 第二階：子單元檢核清單 */}
+                          <div
+                            className={`space-y-1.5 ${
+                              !isStandalone ? 'pl-2 border-l-2 border-indigo-100 ml-1' : ''
+                            }`}
+                          >
+                            {group.items.map((item, idx) => (
+                              <div
+                                key={item?.id || `chk-idx-${idx}`}
+                                className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-colors ${
+                                  item?.completed
+                                    ? 'bg-emerald-50/60 border-emerald-200 text-slate-400'
+                                    : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
+                                }`}
+                              >
+                                <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
+                                  <Checkbox
+                                    checked={Boolean(item?.completed)}
+                                    onCheckedChange={() => item?.id && handleToggleCheck(item.id)}
+                                  />
+                                  <span
+                                    className={
+                                      item?.completed
+                                        ? 'line-through text-slate-400'
+                                        : 'font-semibold text-slate-800'
+                                    }
+                                  >
+                                    {item?.title || '單元'}
+                                  </span>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => item?.id && handleDeleteCheckItem(item.id)}
+                                  className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                                  title="刪除此單元"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+
+                            {/* 在此大單元下新增子單元 */}
+                            {!isStandalone && (
+                              <div className="flex gap-1.5 pt-1">
+                                <Input
+                                  value={newSubUnitTexts[group.chapterTitle] || ''}
+                                  onChange={(e) =>
+                                    setNewSubUnitTexts((prev) => ({
+                                      ...prev,
+                                      [group.chapterTitle]: e.target.value,
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddSubUnitToChecklist(group.chapterTitle);
+                                    }
+                                  }}
+                                  placeholder={`在此單元新增子單元 (例如：${gIdx + 1}.${group.items.length + 1})...`}
+                                  className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleAddSubUnitToChecklist(group.chapterTitle)}
+                                  className="h-7 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold gap-1 px-2.5"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  新增子單元
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 底部：新增大單元輸入行 */}
+                <div className="flex gap-2 pt-2 border-t border-slate-200">
                   <Input
-                    value={newCheckText}
-                    onChange={(e) => setNewCheckText(e.target.value)}
+                    value={newChapterText}
+                    onChange={(e) => setNewChapterText(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handleAddCheckItem();
+                        handleAddChapterToChecklist();
                       }
                     }}
-                    placeholder="新增章節單元，例如：「章節 1：基礎環境建置」、「實機測試與驗收」..."
-                    className="h-8 text-xs bg-white"
+                    placeholder={`新增大單元 (例如：單元 ${groupedChapters.length + 1})...`}
+                    className="h-8 text-xs bg-white flex-1"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleAddCheckItem}
-                    className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+                    onClick={handleAddChapterToChecklist}
+                    className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-300 hover:bg-indigo-50 font-bold gap-1 px-3 shadow-2xs"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>新增單元</span>
+                    <span>新增大單元</span>
                   </Button>
                 </div>
               </div>

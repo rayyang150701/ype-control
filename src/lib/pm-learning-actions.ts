@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
 import { User, CurrentUser } from '@/types';
-import { PMLearningCourse, PMLearningMemberProgress, DEFAULT_PM_CATEGORIES } from '@/types/pm-learning';
+import { PMLearningCourse, PMLearningMemberProgress, DEFAULT_PM_CATEGORIES, PMLearningChapterUnit } from '@/types/pm-learning';
 
 const SYSTEM_RECORD_KEY = '__SYSTEM_PM_LEARNING__';
 
-import { isCourseManager } from '@/lib/pm-learning-utils';
+import { isCourseManager, expandChecklistToItems } from '@/lib/pm-learning-utils';
 
 /**
  * 篩選符合條件的億威電子 PMO / PM 部門人員
@@ -536,7 +536,7 @@ async function syncCoursesToDatabase(courses: PMLearningCourse[]): Promise<boole
  */
 export async function createPMLearningCourse(
   courseData: Omit<PMLearningCourse, 'id' | 'createdAt' | 'updatedAt' | 'memberProgress'> & {
-    initialChecklist?: string[];
+    initialChecklist?: (string | PMLearningChapterUnit)[];
   }
 ) {
   const supabase = getSupabaseClient();
@@ -559,11 +559,7 @@ export async function createPMLearningCourse(
         progressPercent: 0,
         isCompleted: false,
         notes: '',
-        checklist: defaultChecklist.map((item, i) => ({
-          id: `chk-${Date.now()}-${i}`,
-          title: item,
-          completed: false,
-        })),
+        checklist: expandChecklistToItems(defaultChecklist),
         attachments: [],
         updatedAt: nowIso,
       };
@@ -770,11 +766,7 @@ export async function updatePMLearningCourse(
             progressPercent: 0,
             isCompleted: false,
             notes: '',
-            checklist: (defaultItems || []).map((item, i) => ({
-              id: `chk-${Date.now()}-${i}`,
-              title: item,
-              completed: false,
-            })),
+            checklist: expandChecklistToItems(defaultItems),
             attachments: [],
             updatedAt: nowIso,
           };
@@ -861,11 +853,7 @@ export async function updatePMMemberProgress(
       progressPercent: 0,
       isCompleted: false,
       notes: '',
-      checklist: (targetCourse.defaultChecklist || []).map((t, idx) => ({
-        id: `chk-${Date.now()}-${idx}`,
-        title: t,
-        completed: false,
-      })),
+      checklist: expandChecklistToItems(targetCourse.defaultChecklist || []),
       attachments: [],
     };
 

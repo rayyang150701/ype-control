@@ -31,6 +31,7 @@ import {
   Bookmark,
   Sparkles,
   Zap,
+  ClipboardPaste,
 } from 'lucide-react';
 import {
   PMLearningCourse,
@@ -38,6 +39,7 @@ import {
   PMLearningTimelinessType,
   DEFAULT_PM_CATEGORIES,
   CONTENT_TYPE_CONFIG,
+  PMLearningChapterUnit,
 } from '@/types/pm-learning';
 import { User } from '@/types';
 import {
@@ -45,6 +47,10 @@ import {
   updatePMLearningCourse,
   savePMLearningCategories,
 } from '@/lib/pm-learning-actions';
+import {
+  normalizeChecklistToChapters,
+  parseTextToChecklistChapters,
+} from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 
 interface CourseFormDialogProps {
@@ -106,13 +112,12 @@ export function CourseFormDialog({
   // 個人閱讀 (Book) 專屬欄位
   const [bookQuotesAndReflections, setBookQuotesAndReflections] = useState('');
 
-  // 課程檢核清單 (Course Checklist)
-  const [checklistItems, setChecklistItems] = useState<string[]>([
-    '觀看完成核心課程章節',
-    '繳交學習重點心得或筆記',
-    '完成實務情境演練或專案落地驗收',
-  ]);
-  const [newChecklistText, setNewChecklistText] = useState('');
+  // 課程檢核清單 (兩階架構：大單元 / 子單元)
+  const [chapters, setChapters] = useState<PMLearningChapterUnit[]>([]);
+  const [newChapterTitle, setNewChapterTitle] = useState('');
+  const [newSubUnitTexts, setNewSubUnitTexts] = useState<Record<number, string>>({});
+  const [isBatchImportOpen, setIsBatchImportOpen] = useState(false);
+  const [batchImportText, setBatchImportText] = useState('');
 
   // 整理所有可用領域
   const categoryOptions = React.useMemo(() => {
@@ -151,11 +156,10 @@ export function CourseFormDialog({
       setVideoTimestampNotes(courseToEdit.videoTimestampNotes || '');
       setBookQuotesAndReflections(courseToEdit.bookQuotesAndReflections || '');
 
-      setChecklistItems(
-        Array.isArray(courseToEdit.defaultChecklist) && courseToEdit.defaultChecklist.length > 0
-          ? courseToEdit.defaultChecklist
-          : ['觀看完成核心課程章節', '繳交學習重點心得或筆記']
-      );
+      const existingList = Array.isArray(courseToEdit.defaultChecklist)
+        ? courseToEdit.defaultChecklist
+        : [];
+      setChapters(normalizeChecklistToChapters(existingList));
     } else {
       setContentType(initialType);
       setTitle('');
@@ -198,11 +202,9 @@ export function CourseFormDialog({
       } else {
         setAssignedUserIds((pmoMembers || []).map((m) => m.uid));
       }
-      setChecklistItems([
-        '第一單元：核心概念與知識研讀',
-        '第二單元：實務案例操作與演練',
-        '第三單元：心得產出與應用驗收',
-      ]);
+
+      // 使用者需求 1：新增課程時候，不需要預設這些單元，由使用者自行新增更新
+      setChapters([]);
     }
   }, [courseToEdit?.id, isOpen]);
 
@@ -212,14 +214,94 @@ export function CourseFormDialog({
     );
   };
 
-  const handleAddChecklist = () => {
-    if (!newChecklistText.trim()) return;
-    setChecklistItems((prev) => [...prev, newChecklistText.trim()]);
-    setNewChecklistText('');
+  // 大單元 / 子單元管理操作
+  const handleAddChapter = (titleOverride?: string) => {
+    const defaultName = `單元 ${chapters.length + 1}`;
+    const titleToUse =
+      (titleOverride !== undefined ? titleOverride : newChapterTitle).trim() || defaultName;
+    const newChap: PMLearningChapterUnit = {
+      id: `chap-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: titleToUse,
+      subUnits: [],
+    };
+    setChapters((prev) => [...prev, newChap]);
+    setNewChapterTitle('');
   };
 
-  const handleRemoveChecklist = (index: number) => {
-    setChecklistItems((prev) => prev.filter((_, idx) => idx !== index));
+  const handleRemoveChapter = (chapterIdx: number) => {
+    setChapters((prev) => prev.filter((_, idx) => idx !== chapterIdx));
+  };
+
+  const handleUpdateChapterTitle = (chapterIdx: number, title: string) => {
+    setChapters((prev) =>
+      prev.map((c, idx) => (idx === chapterIdx ? { ...c, title } : c))
+    );
+  };
+
+  const handleAddSubUnit = (chapterIdx: number, subTextOverride?: string) => {
+    const rawText = (
+      subTextOverride !== undefined ? subTextOverride : newSubUnitTexts[chapterIdx] || ''
+    ).trim();
+    if (!rawText) return;
+
+    setChapters((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== chapterIdx) return c;
+        return {
+          ...c,
+          subUnits: [...c.subUnits, rawText],
+        };
+      })
+    );
+
+    setNewSubUnitTexts((prev) => ({ ...prev, [chapterIdx]: '' }));
+  };
+
+  const handleRemoveSubUnit = (chapterIdx: number, subIdx: number) => {
+    setChapters((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== chapterIdx) return c;
+        return {
+          ...c,
+          subUnits: c.subUnits.filter((_, sIdx) => sIdx !== subIdx),
+        };
+      })
+    );
+  };
+
+  const handleUpdateSubUnit = (chapterIdx: number, subIdx: number, newTitle: string) => {
+    setChapters((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== chapterIdx) return c;
+        const newSubs = [...c.subUnits];
+        newSubs[subIdx] = newTitle;
+        return {
+          ...c,
+          subUnits: newSubs,
+        };
+      })
+    );
+  };
+
+  // 批次貼上解析匯入
+  const handleApplyBatchImport = () => {
+    if (!batchImportText.trim()) return;
+    const parsed = parseTextToChecklistChapters(batchImportText);
+    if (parsed.length === 0) {
+      toast({
+        title: '無法辨識章節內容',
+        description: '請確認貼上的文字格式是否包含單元或子單元編號',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setChapters((prev) => [...prev, ...parsed]);
+    setBatchImportText('');
+    setIsBatchImportOpen(false);
+    toast({
+      title: '批次匯入完成',
+      description: `已成功匯入 ${parsed.length} 個大單元與對應子單元`,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -269,7 +351,7 @@ export function CourseFormDialog({
         description: description.trim(),
         assignedUserIds,
         assignedUserNames: assignedNames,
-        defaultChecklist: contentType === 'course' ? checklistItems : [],
+        defaultChecklist: contentType === 'course' ? chapters : [],
 
         // 知識文章與其他型態欄位
         content: articleContent.trim(),
@@ -294,7 +376,7 @@ export function CourseFormDialog({
       } else {
         const res = await createPMLearningCourse({
           ...payload,
-          initialChecklist: contentType === 'course' ? checklistItems : [],
+          initialChecklist: contentType === 'course' ? chapters : [],
           createdBy: currentUserId || defaultAssignedUserId || 'user',
         });
 
@@ -705,44 +787,207 @@ export function CourseFormDialog({
             />
           </div>
 
-          {/* 線上課程專屬：預設章節檢核清單 (Checklist) */}
+          {/* 線上課程專屬：兩階章節單元檢核清單 (大單元 / 子單元) */}
           {contentType === 'course' && (
-            <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                課程章節單元檢核清單 (Checklist)
-              </Label>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {checklistItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-slate-200 text-xs"
-                  >
-                    <span className="flex-1 truncate">
-                      {idx + 1}. {item}
-                    </span>
+            <div className="space-y-3 p-3.5 bg-slate-50/80 rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="h-4 w-4 text-indigo-600" />
+                  <Label className="text-xs font-bold text-slate-800">
+                    課程章節單元清單 (兩階架構：大單元 / 子單元)
+                  </Label>
+                  {chapters.length > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-white text-indigo-700 border-indigo-200 font-medium"
+                    >
+                      {chapters.length} 個大單元 · 共{' '}
+                      {chapters.reduce((sum, c) => sum + (c.subUnits?.length || 0), 0)} 個子單元
+                    </Badge>
+                  )}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBatchImportOpen(!isBatchImportOpen)}
+                  className="h-7 text-xs px-2.5 text-indigo-600 border-indigo-200 hover:bg-indigo-50 font-medium gap-1"
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5" />
+                  <span>{isBatchImportOpen ? '收合批次貼上' : '📋 快捷批次貼上'}</span>
+                </Button>
+              </div>
+
+              {/* 快捷批次貼上解析區塊 */}
+              {isBatchImportOpen && (
+                <div className="p-3 bg-indigo-50/60 rounded-lg border border-indigo-200 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] text-indigo-900 font-semibold">
+                    <span>直接貼上多行單元文字 (自動識別兩階單元1. / 1.1 / 1.2 等)：</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBatchImportText(
+                          '單元1.\n1.1 需求訪談與定義\n1.2 範疇基準建立\n單元2\n2.1 現場施工調校\n2.2 驗收測試與簽核'
+                        )
+                      }
+                      className="text-[10px] text-indigo-600 hover:underline font-normal"
+                    >
+                      帶入範例格式
+                    </button>
+                  </div>
+                  <Textarea
+                    value={batchImportText}
+                    onChange={(e) => setBatchImportText(e.target.value)}
+                    placeholder="單元1.&#10;1.1 需求訪談與定義&#10;1.2 範疇基準建立&#10;單元2&#10;2.1 現場施工調校&#10;2.2 驗收測試與簽核"
+                    rows={5}
+                    className="font-mono text-xs bg-white"
+                  />
+                  <div className="flex justify-end gap-2">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveChecklist(idx)}
-                      className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600"
+                      onClick={() => setIsBatchImportOpen(false)}
+                      className="h-7 text-xs text-slate-500"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      取消
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApplyBatchImport}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+                    >
+                      解析並加入單元
                     </Button>
                   </div>
-                ))}
-              </div>
-              <div className="flex gap-1.5 pt-1">
+                </div>
+              )}
+
+              {/* 兩階章節單元呈現列表 */}
+              {chapters.length === 0 ? (
+                <div className="text-center py-6 px-4 bg-white rounded-lg border border-dashed border-slate-300 text-slate-400 space-y-1.5">
+                  <Layers className="h-6 w-6 mx-auto text-slate-300" />
+                  <p className="text-xs font-medium text-slate-600">尚無課程單元</p>
+                  <p className="text-[11px] text-slate-400">
+                    請點選下方「新增大單元 (章節)」或使用上方「快捷批次貼上」建立課程單元。
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  {chapters.map((chap, cIdx) => (
+                    <div
+                      key={chap.id || `chap-${cIdx}`}
+                      className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs space-y-2 p-3 transition-colors hover:border-indigo-200"
+                    >
+                      {/* 第一階：大單元標題與操作 */}
+                      <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-800 shrink-0">
+                            大單元 {cIdx + 1}
+                          </span>
+                          <Input
+                            value={chap.title}
+                            onChange={(e) => handleUpdateChapterTitle(cIdx, e.target.value)}
+                            placeholder={`例如：單元 ${cIdx + 1}`}
+                            className="h-7 text-xs font-bold text-slate-800 bg-transparent border-slate-200 focus:bg-white"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {chap.subUnits.length} 個子單元
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveChapter(cIdx)}
+                            className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                            title="刪除此大單元及其所有子單元"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* 第二階：子單元清單 */}
+                      <div className="space-y-1.5 pl-3 border-l-2 border-indigo-100 ml-1">
+                        {chap.subUnits.map((sub, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:bg-slate-100/70 transition-colors"
+                          >
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                              <Input
+                                value={sub}
+                                onChange={(e) => handleUpdateSubUnit(cIdx, sIdx, e.target.value)}
+                                placeholder="子單元名稱"
+                                className="h-6 text-xs bg-white border-slate-200"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveSubUnit(cIdx, sIdx)}
+                              className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600 shrink-0"
+                              title="刪除此子單元"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+
+                        {/* 新增子單元輸入行 */}
+                        <div className="flex gap-1.5 pt-1">
+                          <Input
+                            value={newSubUnitTexts[cIdx] || ''}
+                            onChange={(e) =>
+                              setNewSubUnitTexts((prev) => ({
+                                ...prev,
+                                [cIdx]: e.target.value,
+                              }))
+                            }
+                            placeholder={`輸入子單元名稱 (例如：${cIdx + 1}.${chap.subUnits.length + 1} ...)`}
+                            className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddSubUnit(cIdx);
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAddSubUnit(cIdx)}
+                            className="h-7 text-xs shrink-0 text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold gap-1 px-2.5"
+                          >
+                            <Plus className="h-3 w-3" />
+                            新增子單元
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 底部：新增大單元輸入行 */}
+              <div className="flex gap-2 pt-1 border-t border-slate-200">
                 <Input
-                  value={newChecklistText}
-                  onChange={(e) => setNewChecklistText(e.target.value)}
-                  placeholder="輸入新章節或單元名稱..."
-                  className="h-8 text-xs flex-1 bg-white"
+                  value={newChapterTitle}
+                  onChange={(e) => setNewChapterTitle(e.target.value)}
+                  placeholder={`輸入新大單元名稱 (例如：單元 ${chapters.length + 1})...`}
+                  className="h-8 text-xs bg-white flex-1"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleAddChecklist();
+                      handleAddChapter();
                     }
                   }}
                 />
@@ -750,11 +995,11 @@ export function CourseFormDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={handleAddChecklist}
-                  className="h-8 text-xs shrink-0"
+                  onClick={() => handleAddChapter()}
+                  className="h-8 text-xs shrink-0 text-indigo-700 border-indigo-300 hover:bg-indigo-50 font-bold gap-1 px-3 shadow-2xs"
                 >
-                  <Plus className="h-3 w-3 mr-1" />
-                  新增單元
+                  <Plus className="h-3.5 w-3.5" />
+                  新增大單元 (章節)
                 </Button>
               </div>
             </div>
