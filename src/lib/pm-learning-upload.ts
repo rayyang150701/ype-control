@@ -128,102 +128,54 @@ export async function uploadPMLearningFile(
     folderId: folderId,
   });
 
-  const executeDirectGAS = async (): Promise<PMLearningAttachment> => {
-    let simulatedPct = 30;
-    onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${formatFileSize(file.size)})...` });
+  // 4. 單一直傳通道：直接透過 fetch 直傳 Google Apps Script 端點 (完美支援 302 重導向，避免雙重上傳與重覆檔案)
+  let simulatedPct = 30;
+  onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${formatFileSize(file.size)})...` });
 
-    const simInterval = setInterval(() => {
-      if (simulatedPct < 90) {
-        simulatedPct += 2;
-        onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${simulatedPct}%)...` });
-      }
-    }, 700);
-
-    try {
-      const res = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: payloadStr,
-        redirect: 'follow',
-      });
-
-      clearInterval(simInterval);
-      onProgress?.({ percent: 95, stageMessage: 'Google Drive 正在儲存檔案並設定公開檢視權限...' });
-
-      const text = await res.text();
-      let data: any = null;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`Google 雲端回應格式錯誤 (HTTP ${res.status}): ${text.substring(0, 120)}`);
-      }
-
-      if (data && data.success && data.file) {
-        onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
-        const f = data.file;
-        const webViewLink = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
-
-        return {
-          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-          title: targetFileName,
-          url: webViewLink,
-          type: 'drive',
-          createdAt: new Date().toISOString(),
-        };
-      } else {
-        const errorMsg = data?.error || data?.message || 'Google 雲端硬碟建立檔案失敗';
-        throw new Error(errorMsg);
-      }
-    } catch (err: any) {
-      clearInterval(simInterval);
-      throw err;
+  const simInterval = setInterval(() => {
+    if (simulatedPct < 90) {
+      simulatedPct += 2;
+      onProgress?.({ percent: simulatedPct, stageMessage: `正在直傳 Google 雲端硬碟 (${simulatedPct}%)...` });
     }
-  };
+  }, 700);
 
-  const PROXY_LIMIT = 4 * 1024 * 1024; // 4MB
-  if (file.size <= PROXY_LIMIT) {
-    let proxyPct = 25;
-    onProgress?.({ percent: proxyPct, stageMessage: `正在傳輸至伺服器代理 (${formatFileSize(file.size)})...` });
-    const proxyInterval = setInterval(() => {
-      if (proxyPct < 85) {
-        proxyPct += 4;
-        onProgress?.({ percent: proxyPct, stageMessage: `正在傳輸至雲端硬碟 (${proxyPct}%)...` });
-      }
-    }, 400);
+  try {
+    const res = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payloadStr,
+      redirect: 'follow',
+    });
 
+    clearInterval(simInterval);
+    onProgress?.({ percent: 95, stageMessage: 'Google Drive 正在儲存檔案並設定公開檢視權限...' });
+
+    const text = await res.text();
+    let data: any = null;
     try {
-      const res = await fetch('/api/pm-learning/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payloadStr,
-      });
-
-      clearInterval(proxyInterval);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.file) {
-          onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
-          const f = data.file;
-          const webViewLink = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
-          return {
-            id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-            title: targetFileName,
-            url: webViewLink,
-            type: 'drive',
-            createdAt: new Date().toISOString(),
-          };
-        } else if (data.message || data.error) {
-          throw new Error(data.message || data.error);
-        }
-      }
-      console.warn('伺服器內部代理上傳失敗，切換至直傳 GAS 備援...');
-    } catch (proxyErr: any) {
-      clearInterval(proxyInterval);
-      console.warn('伺服器代理端點異常，切換至直傳 GAS 備援:', proxyErr);
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Google 雲端回應格式錯誤 (HTTP ${res.status}): ${text.substring(0, 120)}`);
     }
+
+    if (data && data.success && data.file) {
+      onProgress?.({ percent: 100, stageMessage: '已完成上傳並取得雲端連結！' });
+      const f = data.file;
+      const webViewLink = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
+
+      return {
+        id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+        title: targetFileName,
+        url: webViewLink,
+        type: 'drive',
+        createdAt: new Date().toISOString(),
+      };
+    } else {
+      const errorMsg = data?.error || data?.message || 'Google 雲端硬碟建立檔案失敗';
+      throw new Error(errorMsg);
+    }
+  } catch (err: any) {
+    clearInterval(simInterval);
+    throw err;
   }
-
-  // 大於 4MB 或代理回退：執行直傳 GAS
-  return await executeDirectGAS();
 }
