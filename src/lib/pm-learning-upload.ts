@@ -23,19 +23,31 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * 格式化專案-Map 檔名前綴：「課程名稱_成員名稱_原檔名」
- * 自動清理特殊字元以符合雲端硬碟與作業系統檔名限制
+ * 格式化專案-Map 檔名：「日期_原檔名」 (例如 20261003_原檔名.pdf)
+ * 不再套用冗長的課程名稱或成員名稱，簡化檔名並利於 Google Drive 排序
  */
 export function formatLearningFileName(
-  courseTitle: string,
-  memberName: string,
-  originalFileName: string
+  arg1: string,
+  arg2?: string,
+  arg3?: string
 ): string {
+  // 相容舊式呼叫 (courseTitle, memberName, originalFileName) 或新式呼叫 (originalFileName)
+  const originalFileName = arg3 || arg1;
   const sanitize = (s: string) => (s || '').replace(/[\\/:*?"<>|\r\n\t]/g, '_').trim();
-  const cleanTitle = sanitize(courseTitle) || '課程';
-  const cleanMember = sanitize(memberName) || '成員';
   const cleanOriginal = sanitize(originalFileName) || '檔案';
-  return `${cleanTitle}_${cleanMember}_${cleanOriginal}`;
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}${mm}${dd}`;
+
+  // 若原檔名開頭已帶有相同日期，避免重複前綴 (例如 20261003_20261003_xxx)
+  if (cleanOriginal.startsWith(dateStr)) {
+    return cleanOriginal;
+  }
+
+  return `${dateStr}_${cleanOriginal}`;
 }
 
 /**

@@ -1327,7 +1327,7 @@ function PersonalCourseCard({
     try {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        const targetFileName = formatLearningFileName(course.title, memberName, file.name);
+        const targetFileName = formatLearningFileName(file.name);
 
         setUploadProgressInfo({
           percent: 5,
