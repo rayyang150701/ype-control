@@ -6,6 +6,7 @@ import {
   PMLearningMemberProgress,
   PMLearningChecklistItem,
   PMLearningAttachment,
+  PMLearningReflectionItem,
   PMLearningContentType,
   PMLearningTimelinessType,
   CONTENT_TYPE_CONFIG,
@@ -58,6 +59,7 @@ import {
   UploadCloud,
   Loader2,
   Download,
+  MessageSquare,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -1071,6 +1073,7 @@ function PersonalCourseCard({
         progressPercent: 0,
         isCompleted: false,
         notes: '',
+        reflections: [],
         checklist: defaultExpanded,
         attachments: [],
       };
@@ -1089,23 +1092,45 @@ function PersonalCourseCard({
       );
     const hasChapterInMember = rawChecklist.some((item) => Boolean(item?.chapterTitle));
 
+    let finalChecklist = rawChecklist;
     if (hasChapterInDefault && !hasChapterInMember && defaultExpanded.length > 0) {
       const completedTitles = new Set(
         rawChecklist
           .filter((c) => c.completed)
           .map((c) => (c.title || '').trim())
       );
-      const syncedChecklist = defaultExpanded.map((item) => ({
+      finalChecklist = defaultExpanded.map((item) => ({
         ...item,
         completed: completedTitles.has(item.title.trim()),
       }));
-      return {
-        ...rawProgress,
-        checklist: syncedChecklist,
-      };
     }
 
-    return rawProgress;
+    // 確保個人歷程札記清單存在，若有舊 notes 則平滑遷移
+    let finalReflections: PMLearningReflectionItem[] = Array.isArray(rawProgress.reflections)
+      ? rawProgress.reflections
+      : [];
+    if (
+      finalReflections.length === 0 &&
+      typeof rawProgress.notes === 'string' &&
+      rawProgress.notes.trim()
+    ) {
+      finalReflections = [
+        {
+          id: `legacy-${userId}`,
+          createdAt: rawProgress.updatedAt
+            ? String(rawProgress.updatedAt).replace('T', ' ').slice(0, 16)
+            : new Date().toISOString().replace('T', ' ').slice(0, 16),
+          content: rawProgress.notes.trim(),
+          relatedUnit: '課程初期心得',
+        },
+      ];
+    }
+
+    return {
+      ...rawProgress,
+      checklist: finalChecklist,
+      reflections: finalReflections,
+    };
   }, [rawProgress, userId, course.defaultChecklist]);
 
   // 控制整張卡片下半部是否展開（使用者要求紅框下預設收起）
@@ -1116,8 +1141,19 @@ function PersonalCourseCard({
   }, [defaultExpanded]);
 
   const [progressVal, setProgressVal] = useState<number>(memberProgress.progressPercent || 0);
-  const [isNotesEditing, setIsNotesEditing] = useState<boolean>(false);
-  const [notesText, setNotesText] = useState<string>(memberProgress.notes || '');
+
+  // 個人歷程札記 (支援時間戳記、單元標記與展開/收折)
+  const [reflections, setReflections] = useState<PMLearningReflectionItem[]>(
+    Array.isArray(memberProgress.reflections) ? memberProgress.reflections : []
+  );
+  const [isReflectionsExpanded, setIsReflectionsExpanded] = useState<boolean>(true);
+  const [isAddingReflection, setIsAddingReflection] = useState<boolean>(false);
+  const [newReflectionContent, setNewReflectionContent] = useState<string>('');
+  const [newReflectionUnit, setNewReflectionUnit] = useState<string>('');
+  const [editingReflectionId, setEditingReflectionId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string>('');
+  const [editingUnit, setEditingUnit] = useState<string>('');
+
   const [checklist, setChecklist] = useState<PMLearningChecklistItem[]>(
     Array.isArray(memberProgress.checklist) ? memberProgress.checklist : []
   );
@@ -1160,17 +1196,41 @@ function PersonalCourseCard({
   // 同步外部變更：只依賴純值/序列化字串，完全不放物件參考進依賴陣列
   // 這是 Error #185 的根源修復：rawProgress 是不穩定的物件參考，每次 course 變動都不同
   const currentProgressPercent = rawProgress?.progressPercent ?? 0;
-  const currentNotes = rawProgress?.notes ?? '';
   const currentChecklistKey = JSON.stringify(rawProgress?.checklist || []);
   const currentAttachmentsKey = JSON.stringify(rawProgress?.attachments || []);
+  const currentReflectionsKey = JSON.stringify(memberProgress.reflections || []);
+
+  // 供心得札記下拉選單引用的單元/章節清單
+  const availableUnitOptions = useMemo(() => {
+    const list: string[] = ['全課總結 / 綜合心得'];
+    const seen = new Set<string>(['全課總結 / 綜合心得']);
+
+    checklist.forEach((item) => {
+      if (item.chapterTitle && !seen.has(item.chapterTitle.trim())) {
+        seen.add(item.chapterTitle.trim());
+        list.push(item.chapterTitle.trim());
+      }
+      const title = item.title?.trim();
+      if (title && !seen.has(title)) {
+        seen.add(title);
+        list.push(title);
+      }
+    });
+
+    return list;
+  }, [checklist]);
 
   useEffect(() => {
     setProgressVal(currentProgressPercent);
   }, [currentProgressPercent]);
 
   useEffect(() => {
-    setNotesText(currentNotes);
-  }, [currentNotes]);
+    try {
+      setReflections(JSON.parse(currentReflectionsKey));
+    } catch {
+      setReflections([]);
+    }
+  }, [currentReflectionsKey]);
 
   useEffect(() => {
     try {
@@ -1429,11 +1489,103 @@ function PersonalCourseCard({
     saveProgressPatch({ checklist: updated });
   };
 
-  // 3. 儲存筆記
-  const handleSaveNotes = () => {
-    saveProgressPatch({ notes: notesText });
-    setIsNotesEditing(false);
-    toast({ title: '筆記已儲存', description: '個人心得與筆記已成功更新至雲端！' });
+  // 3. 歷程札記操作
+  const handleAddReflection = () => {
+    if (!newReflectionContent.trim()) {
+      toast({ title: '請輸入心得或想法內容', variant: 'destructive' });
+      return;
+    }
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timeStr = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const newRef: PMLearningReflectionItem = {
+      id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: timeStr,
+      content: newReflectionContent.trim(),
+      relatedUnit: newReflectionUnit.trim() || undefined,
+    };
+
+    const updated = [newRef, ...reflections];
+    setReflections(updated);
+    setNewReflectionContent('');
+    setNewReflectionUnit('');
+    setIsAddingReflection(false);
+
+    // 同步更新 reflections 與 notes 欄位 (向下相容)
+    const compiledNotes = updated
+      .map((r) => `### 📅 ${r.createdAt}${r.relatedUnit ? ` [${r.relatedUnit}]` : ''}\n${r.content}`)
+      .join('\n\n---\n\n');
+
+    saveProgressPatch({
+      reflections: updated,
+      notes: compiledNotes,
+    });
+    toast({ title: '心得札記已儲存', description: '已成功記錄至您的個人研習歷程！' });
+  };
+
+  const handleStartEditReflection = (item: PMLearningReflectionItem) => {
+    setEditingReflectionId(item.id);
+    setEditingContent(item.content);
+    setEditingUnit(item.relatedUnit || '');
+  };
+
+  const handleCancelEditReflection = () => {
+    setEditingReflectionId(null);
+    setEditingContent('');
+    setEditingUnit('');
+  };
+
+  const handleSaveEditReflection = (id: string) => {
+    if (!editingContent.trim()) {
+      toast({ title: '心得內容不可為空', variant: 'destructive' });
+      return;
+    }
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const updateTimeStr = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const updated = reflections.map((r) => {
+      if (r.id === id) {
+        return {
+          ...r,
+          content: editingContent.trim(),
+          relatedUnit: editingUnit.trim() || undefined,
+          updatedAt: updateTimeStr,
+        };
+      }
+      return r;
+    });
+
+    setReflections(updated);
+    setEditingReflectionId(null);
+    setEditingContent('');
+    setEditingUnit('');
+
+    const compiledNotes = updated
+      .map((r) => `### 📅 ${r.createdAt}${r.relatedUnit ? ` [${r.relatedUnit}]` : ''}\n${r.content}`)
+      .join('\n\n---\n\n');
+
+    saveProgressPatch({
+      reflections: updated,
+      notes: compiledNotes,
+    });
+    toast({ title: '心得札記已更新' });
+  };
+
+  const handleDeleteReflection = (id: string) => {
+    const updated = reflections.filter((r) => r.id !== id);
+    setReflections(updated);
+
+    const compiledNotes = updated
+      .map((r) => `### 📅 ${r.createdAt}${r.relatedUnit ? ` [${r.relatedUnit}]` : ''}\n${r.content}`)
+      .join('\n\n---\n\n');
+
+    saveProgressPatch({
+      reflections: updated,
+      notes: compiledNotes,
+    });
+    toast({ title: '心得札記已刪除' });
   };
 
   // 4. 新增雲端/附件連結
@@ -2299,101 +2451,388 @@ function PersonalCourseCard({
             )}
           </div>
 
-          {/* 3. 個人心得與筆記 (支援 Markdown 與富文本工具) */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
+          {/* 3. 個人研習歷程與心得札記 (支援時間軸、單元關聯與折疊展開) */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-indigo-600" />
+                <MessageSquare className="h-4 w-4 text-indigo-600" />
                 <span className="text-sm font-bold text-slate-800">
-                  個人心得與筆記 (支援 Markdown 語法)
+                  個人研習歷程與心得札記
                 </span>
+                <Badge
+                  variant="outline"
+                  className="text-[11px] text-indigo-700 bg-indigo-50/70 border-indigo-200 font-semibold py-0 px-2"
+                >
+                  {reflections.length} 則札記
+                </Badge>
               </div>
 
               <div className="flex items-center gap-2">
-                {isNotesEditing ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsNotesEditing(false)}
-                      className="h-7 text-xs text-slate-500"
-                    >
-                      取消編輯
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleSaveNotes}
-                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-semibold"
-                    >
-                      <Save className="h-3 w-3" />
-                      <span>儲存心得</span>
-                    </Button>
-                  </>
-                ) : (
+                {reflections.length > 1 && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    onClick={() => setIsNotesEditing(true)}
-                    className="h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold"
+                    onClick={() => setIsReflectionsExpanded(!isReflectionsExpanded)}
+                    className="h-7 text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/60 gap-1 font-medium"
+                    title={isReflectionsExpanded ? '縮回僅顯示最新 1 則' : '展開完整歷史歷程'}
                   >
-                    <span>編輯筆記</span>
+                    {isReflectionsExpanded ? (
+                      <>
+                        <ChevronUp className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>縮回僅顯示最新 (1 則)</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>展開全部歷程 ({reflections.length} 則)</span>
+                      </>
+                    )}
                   </Button>
                 )}
+
+                <Button
+                  type="button"
+                  variant={isAddingReflection ? 'ghost' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setIsAddingReflection(!isAddingReflection);
+                    if (!isAddingReflection) {
+                      setNewReflectionContent('');
+                      setNewReflectionUnit('');
+                    }
+                  }}
+                  className={
+                    isAddingReflection
+                      ? 'h-7 text-xs text-slate-500 gap-1'
+                      : 'h-7 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold'
+                  }
+                >
+                  {isAddingReflection ? (
+                    <>
+                      <X className="h-3 w-3" />
+                      <span>取消新增</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-3 w-3" />
+                      <span>記錄新想法</span>
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
 
-            {isNotesEditing ? (
-              <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+            {/* 新增札記表單區塊 */}
+            {isAddingReflection && (
+              <div className="border border-indigo-200 bg-indigo-50/20 rounded-xl p-3.5 space-y-3 shadow-sm animate-in fade-in-50 duration-150">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-indigo-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>記錄此刻研習心得與想法</span>
+                    <span className="text-[11px] font-normal text-slate-400">
+                      （儲存時自動標記當前時間）
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Tag className="h-3 w-3 text-slate-400" />
+                    <span className="text-slate-500 font-medium">關聯單元:</span>
+                    <select
+                      value={newReflectionUnit}
+                      onChange={(e) => setNewReflectionUnit(e.target.value)}
+                      className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[220px]"
+                    >
+                      <option value="">(無特定 / 綜合想法)</option>
+                      {availableUnitOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {/* Markdown 快捷工具列 */}
-                <div className="flex flex-wrap items-center gap-1 pb-2 border-b border-slate-100 text-[11px] text-slate-600">
+                <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-600">
                   <span className="text-[10px] text-slate-400 mr-1">快捷工具:</span>
                   <button
                     type="button"
-                    onClick={() => setNotesText((prev) => prev + '\n### 章節重點\n')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-mono"
+                    onClick={() =>
+                      setNewReflectionContent((prev) => prev + '\n### 💡 重點領悟\n')
+                    }
+                    className="px-1.5 py-0.5 rounded bg-white hover:bg-slate-100 border border-slate-200 font-mono text-[11px]"
                   >
                     H3標題
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNotesText((prev) => prev + '**重點字** ')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 font-bold"
+                    onClick={() =>
+                      setNewReflectionContent((prev) => prev + '**重要觀念** ')
+                    }
+                    className="px-1.5 py-0.5 rounded bg-white hover:bg-slate-100 border border-slate-200 font-bold text-[11px]"
                   >
                     粗體
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNotesText((prev) => prev + '\n- 條列要點一\n- 條列要點二\n')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200"
+                    onClick={() =>
+                      setNewReflectionContent(
+                        (prev) => prev + '\n- 啟發點一\n- 啟發點二\n'
+                      )
+                    }
+                    className="px-1.5 py-0.5 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[11px]"
                   >
                     條列
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNotesText((prev) => prev + '\n> 重要觀念摘錄\n')}
-                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 italic"
+                    onClick={() =>
+                      setNewReflectionContent(
+                        (prev) => prev + '\n> 重要觀念摘錄或反思\n'
+                      )
+                    }
+                    className="px-1.5 py-0.5 rounded bg-white hover:bg-slate-100 border border-slate-200 italic text-[11px]"
                   >
                     引言
                   </button>
                 </div>
 
                 <Textarea
-                  rows={6}
-                  value={notesText}
-                  onChange={(e) => setNotesText(e.target.value)}
-                  placeholder="紀錄這堂課的學習重點、對燁輝專案或億威內部落地之思考、疑難問題點..."
-                  className="text-xs font-mono leading-relaxed"
+                  rows={4}
+                  value={newReflectionContent}
+                  onChange={(e) => setNewReflectionContent(e.target.value)}
+                  placeholder="記錄此時此刻的學習心得、對燁輝專案或億威內部落地的想法、待解疑難問題..."
+                  className="text-xs font-mono leading-relaxed bg-white border-slate-200 focus:border-indigo-400 focus:ring-indigo-400"
+                  autoFocus
                 />
-                <div className="text-[11px] text-slate-400 text-right">
-                  支援 Markdown 格式（# 標題、**粗體**、- 列表、&gt; 引言）
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="text-[11px] text-slate-400">
+                    支援 Markdown 格式，儲存後會記錄在您的個人學習歷程中。
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsAddingReflection(false)}
+                      className="h-7 text-xs text-slate-500"
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddReflection}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-semibold shadow-sm"
+                    >
+                      <Save className="h-3 w-3" />
+                      <span>儲存這筆札記</span>
+                    </Button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* 札記時間軸展示區 */}
+            {reflections.length === 0 ? (
+              <div className="text-center py-6 px-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl">
+                <MessageSquare className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
+                <p className="text-xs text-slate-600 font-medium">尚無研習歷程與心得札記</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  線上研習跨越不同時間點，點擊上方「記錄新想法」記錄您在不同階段的心得與思考！
+                </p>
+              </div>
             ) : (
-              <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200">
-                <MarkdownPreview content={notesText} />
+              <div className="space-y-2.5">
+                {(isReflectionsExpanded ? reflections : reflections.slice(0, 1)).map((ref) => {
+                  const isEditingThis = editingReflectionId === ref.id;
+
+                  if (isEditingThis) {
+                    return (
+                      <div
+                        key={ref.id}
+                        className="border border-indigo-300 rounded-xl p-3.5 bg-white space-y-3 shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            <span className="font-mono">{ref.createdAt}</span>
+                            <span className="text-[10px] text-indigo-600 font-medium">
+                              (編輯中)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <Tag className="h-3 w-3 text-slate-400" />
+                            <span className="text-slate-500 font-medium">關聯單元:</span>
+                            <select
+                              value={editingUnit}
+                              onChange={(e) => setEditingUnit(e.target.value)}
+                              className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 text-slate-700 max-w-[200px]"
+                            >
+                              <option value="">(無特定 / 綜合想法)</option>
+                              {availableUnitOptions.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Markdown 快捷工具列 */}
+                        <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-600">
+                          <span className="text-[10px] text-slate-400 mr-1">快捷工具:</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingContent((prev) => prev + '\n### 💡 重點領悟\n')
+                            }
+                            className="px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 font-mono text-[11px]"
+                          >
+                            H3標題
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingContent((prev) => prev + '**重要觀念** ')
+                            }
+                            className="px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 font-bold text-[11px]"
+                          >
+                            粗體
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingContent(
+                                (prev) => prev + '\n- 啟發點一\n- 啟發點二\n'
+                              )
+                            }
+                            className="px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px]"
+                          >
+                            條列
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingContent(
+                                (prev) => prev + '\n> 重要觀念摘錄或反思\n'
+                              )
+                            }
+                            className="px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 border border-slate-200 italic text-[11px]"
+                          >
+                            引言
+                          </button>
+                        </div>
+
+                        <Textarea
+                          rows={4}
+                          value={editingContent}
+                          onChange={(e) => setEditingContent(e.target.value)}
+                          className="text-xs font-mono leading-relaxed bg-white border-slate-200 focus:border-indigo-400 focus:ring-indigo-400"
+                        />
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCancelEditReflection}
+                            className="h-7 text-xs text-slate-500"
+                          >
+                            取消
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveEditReflection(ref.id)}
+                            className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-semibold"
+                          >
+                            <Save className="h-3 w-3" />
+                            <span>儲存修訂</span>
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={ref.id}
+                      className="border border-slate-200/90 rounded-xl p-3.5 bg-white shadow-sm hover:border-slate-300 transition-all space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1 text-slate-500 font-medium">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            <span className="font-mono text-slate-600 font-semibold">
+                              {ref.createdAt}
+                            </span>
+                          </div>
+                          {ref.relatedUnit && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[11px] bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200/70 gap-1 font-normal py-0"
+                            >
+                              <Tag className="h-2.5 w-2.5 text-indigo-500" />
+                              <span>{ref.relatedUnit}</span>
+                            </Badge>
+                          )}
+                          {ref.updatedAt && (
+                            <span className="text-[10px] text-slate-400 italic">
+                              (已於 {ref.updatedAt} 修訂)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleStartEditReflection(ref)}
+                            className="h-6 px-1.5 text-xs text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+                            title="編輯此則札記"
+                          >
+                            <Edit3 className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (window.confirm('確定要刪除這筆心得札記嗎？')) {
+                                handleDeleteReflection(ref.id);
+                              }
+                            }}
+                            className="h-6 px-1.5 text-xs text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                            title="刪除此則札記"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-100 text-xs leading-relaxed text-slate-700">
+                        <MarkdownPreview content={ref.content} />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* 收折時的展開提示按鈕 */}
+                {!isReflectionsExpanded && reflections.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsReflectionsExpanded(true)}
+                    className="w-full py-2 bg-indigo-50/40 hover:bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100/70 flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span>
+                      展開其餘 {reflections.length - 1} 則歷史心得札記（共 {reflections.length} 則）
+                    </span>
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -31,6 +31,14 @@ export interface PMLearningAttachment {
   createdAt?: string;
 }
 
+export interface PMLearningReflectionItem {
+  id: string; // 唯一識別碼
+  createdAt: string; // 發布時間 (例：YYYY-MM-DD HH:mm)
+  updatedAt?: string; // 最後修訂時間
+  content: string; // 心得與想法內容 (支援 Markdown)
+  relatedUnit?: string; // 關聯單元/章節名稱 (選填，如：單元 1.2 或作業 3)
+}
+
 export interface PMLearningMemberProgress {
   userId: string;
   userName: string;
@@ -38,7 +46,8 @@ export interface PMLearningMemberProgress {
   progressPercent: number; // 0 - 100
   isCompleted: boolean;
   completedAt?: string;
-  notes?: string; // Markdown 或簡易富文本內容
+  notes?: string; // Markdown 或簡易富文本內容 (保留向下相容)
+  reflections?: PMLearningReflectionItem[]; // 個人歷程札記清單 (時間軸、關聯單元、展開/縮回)
   checklist: PMLearningChecklistItem[]; // 課程章節單元檢核清單
   attachments: PMLearningAttachment[];
   hoursSpent?: number; // 個人修習投入時數 (小時)

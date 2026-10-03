@@ -434,12 +434,28 @@ function fromDbRecord(c: any): PMLearningCourse {
         }));
       }
 
+      // 確保個人歷程札記清單存在，若有既有 notes 且無 reflections 則平滑遷移為第一筆歷程
+      let reflections = Array.isArray(prog.reflections) ? prog.reflections : [];
+      if (reflections.length === 0 && typeof prog.notes === 'string' && prog.notes.trim()) {
+        reflections = [
+          {
+            id: `legacy-${k}`,
+            createdAt: prog.updatedAt
+              ? String(prog.updatedAt).replace('T', ' ').slice(0, 16)
+              : new Date().toISOString().replace('T', ' ').slice(0, 16),
+            content: prog.notes.trim(),
+            relatedUnit: '課程初期心得',
+          },
+        ];
+      }
+
       cleanMemberProgress[k] = {
         ...prog,
         progressPercent: typeof prog.progressPercent === 'number' ? prog.progressPercent : 0,
         isCompleted: Boolean(prog.isCompleted),
         checklist: finalChecklist,
         attachments: Array.isArray(prog.attachments) ? prog.attachments : [],
+        reflections,
       };
     }
   });
@@ -916,6 +932,7 @@ export async function updatePMMemberProgress(
       progressPercent: 0,
       isCompleted: false,
       notes: '',
+      reflections: [],
       checklist: expandChecklistToItems(targetCourse.defaultChecklist || []),
       attachments: [],
     };
