@@ -57,6 +57,7 @@ import {
   HelpCircle,
   UploadCloud,
   Loader2,
+  Download,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -2262,14 +2263,37 @@ function PersonalCourseCard({
                       <ExternalLink className="h-3 w-3 shrink-0 text-slate-400" />
                     </a>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAttachment(att.id)}
-                      className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition-colors"
-                      title="移除此連結"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      <a
+                        href={(() => {
+                          const url = att?.url || '';
+                          const fileIdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+                          if (fileIdMatch && fileIdMatch[1]) {
+                            return `https://drive.google.com/uc?id=${fileIdMatch[1]}&export=download`;
+                          }
+                          const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                          if (idMatch && idMatch[1]) {
+                            return `https://drive.google.com/uc?id=${idMatch[1]}&export=download`;
+                          }
+                          return url || '#';
+                        })()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                        className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        title="下載檔案"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAttachment(att.id)}
+                        className="p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"
+                        title="移除此連結"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
