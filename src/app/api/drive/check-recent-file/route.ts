@@ -35,10 +35,11 @@ export async function POST(req: NextRequest) {
       }, { status: 500 });
     }
 
-    // 搜尋 Google Drive 中檔名相符且未被移至垃圾桶的檔案
-    const safeName = fileName.replace(/'/g, "\\'");
-    const query = `name = '${safeName}' and trashed = false`;
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&includeItemsFromAllDrives=true&q=${encodeURIComponent(query)}&orderBy=createdTime desc&pageSize=10&fields=files(id,name,size,mimeType,webViewLink,webContentLink,createdTime)`;
+    // 搜尋 Google Drive 中檔名相符且未被移至垃圾桶的檔案 (支援空白容錯與前綴比對)
+    const safeName = fileName.replace(/'/g, "\\'").trim();
+    const baseName = fileName.replace(/\.[^/.]+$/, '').trim().replace(/'/g, "\\'");
+    const query = `name contains '${baseName || safeName}' and trashed = false`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&includeItemsFromAllDrives=true&q=${encodeURIComponent(query)}&orderBy=createdTime desc&pageSize=15&fields=files(id,name,size,mimeType,webViewLink,webContentLink,createdTime)`;
 
     const searchRes = await fetch(searchUrl, {
       headers: {
@@ -69,16 +70,30 @@ export async function POST(req: NextRequest) {
     // 計算時間區間（預設檢查近 15 分鐘以內上傳之檔案）
     const thresholdTime = new Date(Date.now() - sinceMinutes * 60 * 1000).toISOString();
     
-    // 依據時間篩選或挑選最近建立的一筆
-    let matchedFile = files.find((f) => f.createdTime >= thresholdTime);
+    // 檔名正規化 (忽略空白與大小寫，徹底解決「1 電控系統 .doc」與「1 電控系統.doc」空格差異)
+    const normalize = (s: string) => (s || '').toLowerCase().replace(/\s+/g, '');
+    const targetNorm = normalize(fileName);
+
+    // 1. 優先比對：在時間範圍內且檔名正規化相符
+    let matchedFile = files.find(
+      (f) => f.createdTime >= thresholdTime && normalize(f.name) === targetNorm
+    );
+
+    // 2. 次要比對：在時間範圍內且大小相近
+    if (!matchedFile && fileSize) {
+      matchedFile = files.find(
+        (f) => f.createdTime >= thresholdTime && Math.abs(Number(f.size) - Number(fileSize)) < 2048
+      );
+    }
+
+    // 3. 再次比對：超出時間但檔名完全相符
     if (!matchedFile) {
-      // 若超過 15 分鐘但有同名且大小相符或同名的最新檔案，作為次要比對
-      if (fileSize) {
-        matchedFile = files.find((f) => Math.abs(Number(f.size) - Number(fileSize)) < 1024);
-      }
-      if (!matchedFile) {
-        matchedFile = files[0];
-      }
+      matchedFile = files.find((f) => normalize(f.name) === targetNorm);
+    }
+
+    // 4. 最低限度容錯：選取搜尋結果第一筆
+    if (!matchedFile) {
+      matchedFile = files[0];
     }
 
     // 自動發布讀取權限 (role: reader, type: anyone) 以確保連結所有人皆可檢視/下載
