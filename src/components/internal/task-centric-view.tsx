@@ -25,6 +25,7 @@ import {
   Layers,
   Paperclip,
   Copy,
+  Pin,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -41,6 +42,7 @@ interface TaskCentricViewProps {
   onEditItem: (item: ProjectActionItem) => void;
   onDeleteItem: (id: string) => Promise<void>;
   onToggleComplete: (item: ProjectActionItem) => Promise<void>;
+  onTogglePin?: (item: ProjectActionItem) => Promise<void> | void;
   onAddNewItem: (defaultProjectId?: string) => void;
   onSwitchToProjectView: (projectId: string) => void;
   uniqueWaitingOns: string[];
@@ -57,6 +59,7 @@ export function TaskCentricView({
   onEditItem,
   onDeleteItem,
   onToggleComplete,
+  onTogglePin,
   onAddNewItem,
   onSwitchToProjectView,
   uniqueWaitingOns,
@@ -365,8 +368,11 @@ export function TaskCentricView({
       return true;
     });
 
-    // 4. 排序
+    // 4. 排序 (置頂追蹤項目永遠固定排在最前面，未置頂者依使用者指定排序)
     return filtered.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
       if (sortBy === 'newest') {
         // 最新建立在前 (預設)
         const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -685,6 +691,8 @@ export function TaskCentricView({
                 className={`px-3.5 py-2.5 rounded-lg border transition-all ${
                   isDone
                     ? 'bg-slate-50/70 border-slate-200/80 opacity-75'
+                    : item.isPinned
+                    ? 'bg-amber-50/95 border-amber-300 hover:border-amber-400 shadow-xs ring-1 ring-amber-300/40'
                     : item.status === 'blocked'
                     ? 'bg-rose-50/25 border-rose-200 hover:border-rose-300 shadow-2xs'
                     : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
@@ -719,6 +727,14 @@ export function TaskCentricView({
                   <div className="flex-1 min-w-0 space-y-1.5">
                     {/* 第一行：(議題、等候誰、客戶、專案名) */}
                     <div className="flex items-center gap-2 flex-wrap text-xs">
+                      {/* 置頂標籤 */}
+                      {item.isPinned && !isDone && (
+                        <Badge className="bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 text-[11px] px-1.5 py-0.5 shadow-2xs flex items-center gap-1 shrink-0 font-bold">
+                          <Pin className="h-3 w-3 fill-amber-500 text-amber-700" />
+                          <span>置頂追蹤</span>
+                        </Badge>
+                      )}
+
                       {/* 議題 (標題) */}
                       <span
                         className={`text-sm font-bold text-slate-900 ${
@@ -890,6 +906,21 @@ export function TaskCentricView({
                           {/* 編輯 / 刪除 按鈕 */}
                           {isAdmin && (
                             <div className="flex items-center gap-0.5 ml-1 border-l pl-1.5 border-slate-200">
+                              {onTogglePin && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => onTogglePin(item)}
+                                  className={`h-7 w-7 p-0 cursor-pointer ${
+                                    item.isPinned
+                                      ? 'text-amber-600 hover:text-amber-700 bg-amber-100/80'
+                                      : 'text-slate-400 hover:text-amber-600'
+                                  }`}
+                                  title={item.isPinned ? '取消置頂追蹤 (恢復原排序)' : '設為置頂追蹤 (近期特別加強追蹤)'}
+                                >
+                                  <Pin className={`h-3.5 w-3.5 ${item.isPinned ? 'fill-amber-500' : ''}`} />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"

@@ -207,7 +207,7 @@ export function SearchableCombobox({
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95">
+        <div className="absolute z-50 mt-1 max-h-64 w-full min-w-full sm:min-w-[280px] left-0 overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95">
           {/* 自訂手動輸入提示按鈕 */}
           {isCustomValue && (
             <button
@@ -239,6 +239,7 @@ export function SearchableCombobox({
                   <button
                     key={opt.value}
                     type="button"
+                    title={opt.hint ? `${opt.label} (${opt.hint})` : opt.label}
                     onClick={() => handleSelect(opt.value)}
                     className={cn(
                       'w-full flex items-center justify-between px-2.5 py-1.5 rounded-sm text-xs text-left transition-colors',
@@ -249,10 +250,10 @@ export function SearchableCombobox({
                         : 'hover:bg-accent hover:text-accent-foreground'
                     )}
                   >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="truncate">{opt.label}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-slate-800 shrink-0">{opt.label}</span>
                       {opt.hint && (
-                        <span className="text-[10px] text-muted-foreground">({opt.hint})</span>
+                        <span className="text-[11px] text-muted-foreground truncate">({opt.hint})</span>
                       )}
                     </div>
                     {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1" />}

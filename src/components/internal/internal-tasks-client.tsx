@@ -42,6 +42,7 @@ import {
   X,
   PauseCircle,
   PlayCircle,
+  Pin,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { copyToClipboard } from '@/lib/utils';
@@ -827,6 +828,51 @@ export function InternalTasksClient({
     }
   };
 
+  // 切換待辦事項置頂追蹤（近期特別加強追蹤）
+  const handleTogglePin = async (item: ProjectActionItem) => {
+    if (!isAdmin) {
+      toast({
+        title: '權限不足',
+        description: '只有管理者具備設定或取消待辦置頂的權限。',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const newPinned = !item.isPinned;
+    // 樂觀更新
+    setActionItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, isPinned: newPinned } : i))
+    );
+    try {
+      const operator = currentUser ? {
+        uid: currentUser.uid,
+        name: currentUser.displayName || currentUser.username || currentUser.email,
+        email: currentUser.email,
+        role: currentUser.role,
+        department: currentUser.department,
+      } : undefined;
+      const res = await updateActionItem(item.id, { isPinned: newPinned, operator });
+      if (res.success) {
+        toast({
+          title: newPinned ? '📌 已設為置頂追蹤' : '已取消置頂追蹤',
+          description: newPinned
+            ? `待辦事項「${item.title}」已固定置頂於清單最前並突顯`
+            : `待辦事項「${item.title}」已恢復一般排序邏輯`,
+        });
+      } else {
+        setActionItems((prev) =>
+          prev.map((i) => (i.id === item.id ? { ...i, isPinned: !newPinned } : i))
+        );
+        toast({ title: '操作失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      setActionItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, isPinned: !newPinned } : i))
+      );
+      toast({ title: '操作異常', description: err?.message || '操作異常', variant: 'destructive' });
+    }
+  };
+
   const handleUpdateProjectStatus = async (projectId: string, payload: {
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
@@ -952,8 +998,12 @@ export function InternalTasksClient({
       <div
         key={item.id}
         id={`item-${item.id}`}
-        className={`py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row items-start justify-between gap-3 transition-colors ${
-          isDone ? 'opacity-70' : ''
+        className={`py-3 px-2 rounded-lg first:pt-2 last:pb-2 flex flex-col sm:flex-row items-start justify-between gap-3 transition-colors ${
+          isDone
+            ? 'opacity-70'
+            : item.isPinned
+            ? 'bg-amber-50/95 border border-amber-300 ring-1 ring-amber-300/40 shadow-2xs'
+            : ''
         }`}
       >
         {/* 左側：完成核選鈕 + 標題 + 標籤 + 歷程 */}
@@ -983,6 +1033,14 @@ export function InternalTasksClient({
 
           <div className="space-y-1.5 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* 置頂標籤 */}
+              {item.isPinned && !isDone && (
+                <Badge className="bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 text-[10px] px-1.5 py-0 shadow-2xs flex items-center gap-1 shrink-0 font-bold">
+                  <Pin className="h-2.5 w-2.5 fill-amber-500 text-amber-700" />
+                  <span>置頂追蹤</span>
+                </Badge>
+              )}
+
               <span
                 className={`text-sm font-semibold text-slate-900 ${
                   isDone ? 'line-through text-slate-500' : ''
@@ -1218,9 +1276,22 @@ export function InternalTasksClient({
             </span>
           )}
 
-          {/* 管理員編輯/刪除按鈕 */}
+          {/* 管理員置頂/編輯/刪除按鈕 */}
           {isAdmin && (
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleTogglePin(item)}
+                className={`h-7 w-7 p-0 cursor-pointer ${
+                  item.isPinned
+                    ? 'text-amber-600 hover:text-amber-700 bg-amber-100/80'
+                    : 'text-slate-400 hover:text-amber-600'
+                }`}
+                title={item.isPinned ? '取消置頂追蹤 (恢復原排序)' : '設為置頂追蹤 (近期特別加強追蹤)'}
+              >
+                <Pin className={`h-3.5 w-3.5 ${item.isPinned ? 'fill-amber-500' : ''}`} />
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1823,6 +1894,7 @@ export function InternalTasksClient({
           onEditItem={handleOpenEdit}
           onDeleteItem={handleDelete}
           onToggleComplete={handleQuickToggleComplete}
+          onTogglePin={handleTogglePin}
           onAddNewItem={(projId) => handleOpenAdd(projId)}
           onSwitchToProjectView={handleSwitchToProjectView}
           uniqueWaitingOns={uniqueWaitingOns}
@@ -2208,7 +2280,11 @@ export function InternalTasksClient({
         ) : (
           groupedByProject.map(({ project, items }) => {
             const isCollapsed = collapsedProjects[project.id] !== undefined ? collapsedProjects[project.id] : true;
-            const activeItems = items.filter((i) => i.status !== 'completed');
+            const activeItems = items.filter((i) => i.status !== 'completed').sort((a, b) => {
+              if (a.isPinned && !b.isPinned) return -1;
+              if (!a.isPinned && b.isPinned) return 1;
+              return 0;
+            });
             const completedItems = items.filter((i) => i.status === 'completed');
             const isCompletedExpanded = !!showCompletedMap[project.id];
             const blockedItems = items.filter((i) => i.status === 'blocked');

@@ -1729,13 +1729,19 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
-// 附件解析與備援編碼輔助函式 (雙軌相容：優先真實 attachments 欄位，備援 notes 嵌入標記)
+// 附件與置頂解析輔助函式 (雙軌相容：優先真實 attachments/is_pinned 欄位，備援 notes 嵌入標記)
 const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/g;
+const PINNED_MARKER_REGEX = /<!--PINNED:(true|false)-->/gi;
 
-function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string } {
+function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean } {
     let list: ActionItemAttachment[] = [];
-    // 徹底清除備註中可能殘留的 <!--ATTACHMENTS:...--> 隱藏標記字串，避免外露於使用者介面
-    let notes = (item.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+    const rawNotes = item.notes || '';
+    const isPinned = Boolean(item.is_pinned) || /<!--PINNED:true-->/i.test(rawNotes);
+    // 徹底清除備註中可能殘留的 <!--ATTACHMENTS:...--> 及 <!--PINNED:...--> 隱藏標記字串，避免外露於使用者介面
+    let notes = rawNotes
+        .replace(ATTACHMENTS_MARKER_REGEX, '')
+        .replace(PINNED_MARKER_REGEX, '')
+        .trim();
 
     if (item.attachments) {
         if (Array.isArray(item.attachments)) {
@@ -1754,11 +1760,11 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
         }
     }
 
-    return { attachments: list, cleanNotes: notes };
+    return { attachments: list, cleanNotes: notes, isPinned };
 }
 
 function encodeAttachmentsIntoNotes(notes: string, attachments?: ActionItemAttachment[]): string {
-    const baseNotes = (notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+    const baseNotes = (notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').replace(PINNED_MARKER_REGEX, '').trim();
     return baseNotes;
 }
 
@@ -1802,7 +1808,7 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
 
         return sortedData.map(item => {
             const proj = projMap.get(item.project_id);
-            const { attachments, cleanNotes } = extractAttachments(item);
+            const { attachments, cleanNotes, isPinned } = extractAttachments(item);
             return {
                 id: item.id,
                 projectId: item.project_id,
@@ -1826,6 +1832,7 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
                 projectName: proj?.name || '',
                 projectCaseNumber: proj?.caseNumber || '',
                 projectCategory: (proj?.category || '已開案') as ('評估案' | '已開案'),
+                isPinned,
             };
         });
     } catch (err) {
@@ -1847,6 +1854,7 @@ export async function createActionItem(data: {
     notes?: string;
     lessonLearnt?: string;
     attachments?: ActionItemAttachment[];
+    isPinned?: boolean;
     updatedAt?: string | null;
     operator?: AuditOperator;
 }) {
@@ -1856,7 +1864,14 @@ export async function createActionItem(data: {
         const initialStatus = data.status || 'pending';
         const isStarting = initialStatus === 'in_progress' || initialStatus === 'blocked';
         const initialStatusHistory = [{ from: 'new', to: initialStatus, at: nowIso }];
-        const cleanNotes = (data.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+        const isPinned = Boolean(data.isPinned);
+        let cleanNotes = (data.notes || '')
+            .replace(ATTACHMENTS_MARKER_REGEX, '')
+            .replace(PINNED_MARKER_REGEX, '')
+            .trim();
+        if (isPinned) {
+            cleanNotes = `${cleanNotes}\n<!--PINNED:true-->`.trim();
+        }
 
         const insertPayload: any = {
             project_id: data.projectId,
@@ -1875,7 +1890,8 @@ export async function createActionItem(data: {
             notes: cleanNotes,
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
-            updated_at: data.updatedAt ? new Date(data.updatedAt).toISOString() : nowIso
+            updated_at: data.updatedAt ? new Date(data.updatedAt).toISOString() : nowIso,
+            is_pinned: isPinned,
         };
 
         if (data.attachments && data.attachments.length > 0) {
@@ -1884,9 +1900,10 @@ export async function createActionItem(data: {
 
         let insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
 
-        // 若資料庫尚未建立 attachments 欄位 (error 42703: column does not exist)，自動移除欄位重試，依賴 notes 備援標記
-        if (insertRes.error && insertRes.error.code === '42703' && insertPayload.attachments) {
-            delete insertPayload.attachments;
+        // 若資料庫尚未建立 is_pinned 或 attachments 欄位 (error 42703: column does not exist)，自動移除欄位重試，依賴 notes 備援標記
+        if (insertRes.error && insertRes.error.code === '42703') {
+            if (insertPayload.is_pinned !== undefined) delete insertPayload.is_pinned;
+            if (insertPayload.attachments !== undefined) delete insertPayload.attachments;
             insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
         }
 
@@ -1899,6 +1916,11 @@ export async function createActionItem(data: {
             .select('name, case_number, status')
             .eq('id', data.projectId)
             .single();
+
+        const userNotes = (data.notes || '')
+            .replace(ATTACHMENTS_MARKER_REGEX, '')
+            .replace(PINNED_MARKER_REGEX, '')
+            .trim();
 
         const newItem: ProjectActionItem = {
             id: inserted.id,
@@ -1915,7 +1937,7 @@ export async function createActionItem(data: {
             completedAt: inserted.completed_at ? String(inserted.completed_at) : null,
             dueDateHistory: [],
             statusHistory: initialStatusHistory,
-            notes: cleanNotes,
+            notes: userNotes,
             lessonLearnt: inserted.lesson_learnt || '',
             attachments: data.attachments || [],
             createdAt: nowIso,
@@ -1923,6 +1945,7 @@ export async function createActionItem(data: {
             projectName: projData?.name || '',
             projectCaseNumber: projData?.case_number || '',
             projectCategory: (projData?.status === 'poc' || projData?.status === 'evaluation') ? '評估案' : '已開案',
+            isPinned,
         };
 
         // 寫入修改履歷
@@ -1962,6 +1985,7 @@ export async function updateActionItem(id: string, data: Partial<{
     notes: string;
     lessonLearnt: string;
     attachments: ActionItemAttachment[];
+    isPinned: boolean;
     updatedAt: string | null;
     operator?: AuditOperator;
 }>) {
@@ -1988,9 +2012,25 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
-        // 處理備註（徹底確保不會摻入 ATTACHMENTS 標記字串）
-        if (data.notes !== undefined) {
-            updatePayload.notes = (data.notes || '').replace(ATTACHMENTS_MARKER_REGEX, '').trim();
+        // 處理置頂與備註（雙軌相容：真實欄位 + 備援嵌入標記）
+        const targetPinned = data.isPinned !== undefined
+            ? Boolean(data.isPinned)
+            : (Boolean(existing.is_pinned) || /<!--PINNED:true-->/i.test(existing.notes || ''));
+
+        if (data.isPinned !== undefined) {
+            updatePayload.is_pinned = targetPinned;
+        }
+
+        if (data.notes !== undefined || data.isPinned !== undefined) {
+            const rawNotes = data.notes !== undefined ? data.notes : (existing.notes || '');
+            let clean = (rawNotes || '')
+                .replace(ATTACHMENTS_MARKER_REGEX, '')
+                .replace(PINNED_MARKER_REGEX, '')
+                .trim();
+            if (targetPinned) {
+                clean = `${clean}\n<!--PINNED:true-->`.trim();
+            }
+            updatePayload.notes = clean;
         }
 
         if (data.attachments !== undefined) {
@@ -2060,9 +2100,10 @@ export async function updateActionItem(id: string, data: Partial<{
             .select('*')
             .single();
 
-        // 若資料庫尚未建立 attachments 欄位 (error 42703)，自動移除欄位後重試
-        if (updateRes.error && updateRes.error.code === '42703' && updatePayload.attachments) {
-            delete updatePayload.attachments;
+        // 若資料庫尚未建立 is_pinned 或 attachments 欄位 (error 42703)，自動移除欄位後重試
+        if (updateRes.error && updateRes.error.code === '42703') {
+            if (updatePayload.is_pinned !== undefined) delete updatePayload.is_pinned;
+            if (updatePayload.attachments !== undefined) delete updatePayload.attachments;
             updateRes = await supabase
                 .from('project_action_items')
                 .update(updatePayload)
@@ -2074,7 +2115,7 @@ export async function updateActionItem(id: string, data: Partial<{
         if (updateRes.error) throw updateRes.error;
         const updated = updateRes.data;
 
-        const { attachments: extractedAtt, cleanNotes: extractedNotes } = extractAttachments(updated);
+        const { attachments: extractedAtt, cleanNotes: extractedNotes, isPinned: updatedPinned } = extractAttachments(updated);
 
         // 寫入修改履歷
         try {
@@ -2091,7 +2132,9 @@ export async function updateActionItem(id: string, data: Partial<{
             const op = data.operator || (updated?.owner ? { name: updated.owner } : (existing?.owner ? { name: existing.owner } : undefined));
 
             let actionDesc = `更新待辦事項「${itemTitle}」`;
-            if (data.status && existing && data.status !== existing.status) {
+            if (data.isPinned !== undefined && existing) {
+                actionDesc = `更新待辦事項「${itemTitle}」為【${data.isPinned ? '📌 置頂追蹤' : '取消置頂'}】`;
+            } else if (data.status && existing && data.status !== existing.status) {
                 const statusNames: Record<string, string> = {
                     pending: '待處理',
                     in_progress: '進行中',
@@ -2146,6 +2189,7 @@ export async function updateActionItem(id: string, data: Partial<{
                 attachments: extractedAtt,
                 createdAt: formatISO(updated.created_at),
                 updatedAt: formatISO(updated.updated_at),
+                isPinned: updatedPinned,
             } : undefined
         };
     } catch (err: any) {

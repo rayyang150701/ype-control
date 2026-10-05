@@ -342,8 +342,8 @@ export function NewPocProjectDialog({
       seen.add(p);
       list.push({
         value: p,
-        label: `${targetClient} - ${p}`,
-        hint: `主要窗口`,
+        label: p,
+        hint: `${targetClient} · 主要窗口`,
       });
     }
 
@@ -353,8 +353,8 @@ export function NewPocProjectDialog({
         seen.add(p);
         list.push({
           value: p,
-          label: `${targetClient} - ${p}`,
-          hint: `所屬成員`,
+          label: p,
+          hint: `${targetClient} · 所屬成員`,
         });
       }
     });
@@ -364,8 +364,8 @@ export function NewPocProjectDialog({
       ['黃裕峰', '張簡'].forEach((p) => {
         list.push({
           value: p,
-          label: `燁輝 - ${p}`,
-          hint: `預設窗口`,
+          label: p,
+          hint: `燁輝 · 預設窗口`,
         });
       });
     }
@@ -418,7 +418,7 @@ export function NewPocProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto z-[60]">
+      <DialogContent className="sm:max-w-3xl max-w-[95vw] max-h-[92vh] overflow-y-auto z-[60]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg font-bold">
             <FolderPlus className="h-5 w-5 text-purple-600" />

@@ -232,6 +232,7 @@ export interface ProjectActionItem {
   projectName?: string;
   projectCaseNumber?: string;
   projectCategory?: '評估案' | '已開案';
+  isPinned?: boolean;
 }
 
 export interface WeeklySnapshotItem {

@@ -415,8 +415,8 @@ export function EditInternalProjectDialog({
       seen.add(p);
       list.push({
         value: p,
-        label: `${targetClient} - ${p}`,
-        hint: `主要窗口`,
+        label: p,
+        hint: `${targetClient} · 主要窗口`,
       });
     }
 
@@ -426,8 +426,8 @@ export function EditInternalProjectDialog({
         seen.add(p);
         list.push({
           value: p,
-          label: `${targetClient} - ${p}`,
-          hint: `所屬成員`,
+          label: p,
+          hint: `${targetClient} · 所屬成員`,
         });
       }
     });
@@ -437,8 +437,8 @@ export function EditInternalProjectDialog({
       ['黃裕峰', '張簡'].forEach((p) => {
         list.push({
           value: p,
-          label: `燁輝 - ${p}`,
-          hint: `預設窗口`,
+          label: p,
+          hint: `燁輝 · 預設窗口`,
         });
       });
     }
@@ -493,7 +493,7 @@ export function EditInternalProjectDialog({
     <>
       <Dialog open={open} onOpenChange={handleDialogChange}>
         <DialogContent
-          className="max-w-lg max-h-[90vh] overflow-y-auto"
+          className="sm:max-w-3xl max-w-[95vw] max-h-[92vh] overflow-y-auto"
           onPointerDownOutside={(e) => {
             if (showDeleteConfirm || isDeleting) {
               e.preventDefault();

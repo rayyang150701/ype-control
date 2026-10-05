@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
-import { Building2 } from 'lucide-react';
+import { Building2, Pin } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
@@ -88,6 +88,7 @@ export function ActionItemDialog({
   const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => getLocalTodayDateStr());
 
   const [title, setTitle] = useState(item?.title || '');
+  const [isPinned, setIsPinned] = useState(item?.isPinned || false);
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '1.2 施工階段');
   const [status, setStatus] = useState<ActionItemStatus>(item?.status || 'pending');
   const [owner, setOwner] = useState(item?.owner || '');
@@ -310,6 +311,7 @@ export function ActionItemDialog({
         setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
         setLessonLearnt(item.lessonLearnt || '');
         setAttachments(item.attachments || []);
+        setIsPinned(Boolean(item.isPinned));
       } else {
         const targetProjId = defaultProjectId || (projects[0]?.id || '');
         const targetProj = projects.find((p) => p.id === targetProjId);
@@ -330,6 +332,7 @@ export function ActionItemDialog({
         setNotes('');
         setLessonLearnt('');
         setAttachments([]);
+        setIsPinned(false);
       }
     }
   }, [open, item, defaultProjectId, projects]);
@@ -416,6 +419,7 @@ export function ActionItemDialog({
           notes: cleanNotes,
           lessonLearnt,
           attachments,
+          isPinned,
           operator,
         });
         if (res.success) {
@@ -439,6 +443,7 @@ export function ActionItemDialog({
           notes: cleanNotes,
           lessonLearnt,
           attachments,
+          isPinned,
           operator,
         });
         if (res.success) {
@@ -579,6 +584,37 @@ export function ActionItemDialog({
               onChange={(e) => setTitle(e.target.value)}
               required
             />
+          </div>
+
+          {/* 置頂追蹤（近期特別加強追蹤） */}
+          <div className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+            isPinned
+              ? 'bg-amber-50/95 border-amber-300 ring-1 ring-amber-300/50 text-amber-950 shadow-2xs'
+              : 'bg-slate-50/80 border-slate-200 text-slate-700 hover:bg-slate-100/70'
+          }`}>
+            <label htmlFor="action-item-pin-checkbox" className="flex items-start sm:items-center gap-2.5 cursor-pointer select-none flex-1">
+              <input
+                type="checkbox"
+                id="action-item-pin-checkbox"
+                checked={isPinned}
+                onChange={(e) => setIsPinned(e.target.checked)}
+                className="mt-0.5 sm:mt-0 h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500 cursor-pointer shrink-0"
+              />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold flex items-center gap-1 text-amber-950">
+                  <Pin className={`h-3.5 w-3.5 ${isPinned ? 'text-amber-600 fill-amber-500' : 'text-slate-400'}`} />
+                  📌 置頂追蹤（近期特別加強追蹤）
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  — 勾選後該待辦將固定置頂於總覽與清單最前，並以淺黃色背景突顯
+                </span>
+              </div>
+            </label>
+            {isPinned && (
+              <span className="text-[10px] bg-amber-200/90 text-amber-900 font-bold px-2 py-0.5 rounded-full shrink-0 ml-2">
+                已設置頂
+              </span>
+            )}
           </div>
 
           {/* 階段與狀態 */}
