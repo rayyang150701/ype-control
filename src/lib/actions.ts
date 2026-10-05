@@ -1733,6 +1733,16 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/g;
 const PINNED_MARKER_REGEX = /<!--PINNED:(true|false)-->/gi;
 
+function isColumnMissingError(err: any): boolean {
+    if (!err) return false;
+    const code = String(err.code || '');
+    const msg = String(err.message || '').toLowerCase();
+    return code === '42703' || code === 'PGRST204' || msg.includes('column') || msg.includes('is_pinned') || msg.includes('attachments') || msg.includes('schema cache');
+}
+
+// 標記資料庫是否已具備 is_pinned 實體欄位（預設 false 採 notes 標記無痛儲存，杜絕 PostgREST PGRST204 報錯）
+let dbSupportsPinnedColumn = false;
+
 function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean } {
     let list: ActionItemAttachment[] = [];
     const rawNotes = item.notes || '';
@@ -1891,8 +1901,11 @@ export async function createActionItem(data: {
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
             updated_at: data.updatedAt ? new Date(data.updatedAt).toISOString() : nowIso,
-            is_pinned: isPinned,
         };
+
+        if (dbSupportsPinnedColumn) {
+            insertPayload.is_pinned = isPinned;
+        }
 
         if (data.attachments && data.attachments.length > 0) {
             insertPayload.attachments = JSON.stringify(data.attachments);
@@ -1900,9 +1913,12 @@ export async function createActionItem(data: {
 
         let insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
 
-        // 若資料庫尚未建立 is_pinned 或 attachments 欄位 (error 42703: column does not exist)，自動移除欄位重試，依賴 notes 備援標記
-        if (insertRes.error && insertRes.error.code === '42703') {
-            if (insertPayload.is_pinned !== undefined) delete insertPayload.is_pinned;
+        // 若資料庫尚未建立 is_pinned 或 attachments 欄位，自動移除欄位重試，依賴 notes 備援標記
+        if (insertRes.error && isColumnMissingError(insertRes.error)) {
+            if (insertPayload.is_pinned !== undefined) {
+                delete insertPayload.is_pinned;
+                dbSupportsPinnedColumn = false;
+            }
             if (insertPayload.attachments !== undefined) delete insertPayload.attachments;
             insertRes = await supabase.from('project_action_items').insert(insertPayload).select('*').single();
         }
@@ -2017,7 +2033,7 @@ export async function updateActionItem(id: string, data: Partial<{
             ? Boolean(data.isPinned)
             : (Boolean(existing.is_pinned) || /<!--PINNED:true-->/i.test(existing.notes || ''));
 
-        if (data.isPinned !== undefined) {
+        if (data.isPinned !== undefined && dbSupportsPinnedColumn) {
             updatePayload.is_pinned = targetPinned;
         }
 
@@ -2100,9 +2116,12 @@ export async function updateActionItem(id: string, data: Partial<{
             .select('*')
             .single();
 
-        // 若資料庫尚未建立 is_pinned 或 attachments 欄位 (error 42703)，自動移除欄位後重試
-        if (updateRes.error && updateRes.error.code === '42703') {
-            if (updatePayload.is_pinned !== undefined) delete updatePayload.is_pinned;
+        // 若資料庫尚未建立 is_pinned 或 attachments 欄位，自動移除欄位後重試
+        if (updateRes.error && isColumnMissingError(updateRes.error)) {
+            if (updatePayload.is_pinned !== undefined) {
+                delete updatePayload.is_pinned;
+                dbSupportsPinnedColumn = false;
+            }
             if (updatePayload.attachments !== undefined) delete updatePayload.attachments;
             updateRes = await supabase
                 .from('project_action_items')

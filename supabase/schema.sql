@@ -149,8 +149,9 @@ INSERT INTO public.clients (name, code, contact_person, notes)
 VALUES ('燁輝', 'YP', '黃裕峰', '系統核心預設客戶')
 ON CONFLICT (name) DO NOTHING;
 
--- 7. 擴充欄位 (若既有資料庫尚未具備附件欄位，可執行以下語法)
+-- 7. 擴充欄位 (若既有資料庫尚未具備附件或置頂欄位，可執行以下語法)
 ALTER TABLE public.project_action_items ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.project_action_items ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;
 
 -- 8. 出差與行事曆行程資料表 (Business Trips)
 CREATE TABLE IF NOT EXISTS public.business_trips (

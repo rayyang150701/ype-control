@@ -853,6 +853,11 @@ export function InternalTasksClient({
       } : undefined;
       const res = await updateActionItem(item.id, { isPinned: newPinned, operator });
       if (res.success) {
+        if (res.data) {
+          setActionItems((prev) =>
+            prev.map((i) => (i.id === item.id ? { ...i, ...res.data, isPinned: newPinned } : i))
+          );
+        }
         toast({
           title: newPinned ? '📌 已設為置頂追蹤' : '已取消置頂追蹤',
           description: newPinned
