@@ -57,7 +57,7 @@ export function EditInternalProjectDialog({
   const [name, setName] = useState('');
   const [caseNumber, setCaseNumber] = useState('');
   const [category, setCategory] = useState<'評估案' | '已開案'>('評估案');
-  const [internalStatus, setInternalStatus] = useState<'in_progress' | 'completed' | 'terminated'>('in_progress');
+  const [internalStatus, setInternalStatus] = useState<'in_progress' | 'completed' | 'terminated' | 'on_hold'>('in_progress');
   const [sourceType, setSourceType] = useState<ProjectSourceType>('億威內部自建專案');
   const [clientName, setClientName] = useState('燁輝');
   const [responsiblePm, setResponsiblePm] = useState('');
@@ -97,7 +97,7 @@ export function EditInternalProjectDialog({
       setCaseNumber(project.caseNumber || '');
       const cat = project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案');
       setCategory(cat);
-      const st = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      const st = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' || (project.status as any) === 'terminated' ? 'terminated' : (project.status === 'on-hold' || (project.status as any) === 'on_hold' || project.isOnHold ? 'on_hold' : 'in_progress')));
       setInternalStatus(st);
       
       const isPur = (project.caseNumber || '').toUpperCase().startsWith('PUR');
@@ -635,6 +635,7 @@ export function EditInternalProjectDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="in_progress">⏳ 進行中 / 評估中</SelectItem>
+                    <SelectItem value="on_hold">⏸️ 暫緩 (暫停)</SelectItem>
                     <SelectItem value="completed">✅ 已結案 (完成)</SelectItem>
                     <SelectItem value="terminated">⛔ 專案終止 (取消)</SelectItem>
                   </SelectContent>

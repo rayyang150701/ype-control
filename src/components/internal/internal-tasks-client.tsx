@@ -40,6 +40,8 @@ import {
   Briefcase,
   Sparkles,
   X,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { copyToClipboard } from '@/lib/utils';
@@ -173,8 +175,8 @@ export function InternalTasksClient({
 
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '已結案' | '專案終止'>('all');
-  const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'completed' | 'terminated'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '暫緩' | '已結案' | '專案終止'>('all');
+  const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'on_hold' | 'completed' | 'terminated'>('all');
   const [selectedSourceType, setSelectedSourceType] = useState<'all' | ProjectSourceType>('all');
   const [selectedClient, setSelectedClient] = useState<string>('all');
   const [selectedPm, setSelectedPm] = useState<string>('all');
@@ -319,7 +321,20 @@ export function InternalTasksClient({
       overdueCount,
       completedCount,
     };
-  }, [actionItems, projects]);
+  }, [projects, actionItems]);
+
+  // 取得內部專案生命週期狀態 (進行中 / 暫緩 / 已結案 / 專案終止)
+  const getProjectInternalStatus = (p: {
+    internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
+    status?: string;
+    isOnHold?: boolean;
+  }): 'in_progress' | 'completed' | 'terminated' | 'on_hold' => {
+    if (p.internalStatus) return p.internalStatus;
+    if (p.status === 'completed') return 'completed';
+    if (p.status === 'cancelled' || p.status === 'terminated') return 'terminated';
+    if (p.status === 'on-hold' || p.status === 'on_hold' || p.isOnHold) return 'on_hold';
+    return 'in_progress';
+  };
 
   // 燁輝 TPM 同仁已知姓名清單（用於嚴格區隔億威 PM 與燁輝 TPM 窗口）
   const isTpmPerson = (name?: string | null): boolean => {
@@ -418,25 +433,28 @@ export function InternalTasksClient({
     });
   }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn, selectedPm, selectedTpm, projectMap, projects]);
 
-  // 統計評估案 vs 已開案 vs 已結案 vs 專案終止
+  // 統計評估案 vs 已開案 vs 暫緩 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
     let pocCount = 0;
     let activeCount = 0;
+    let onHoldCount = 0;
     let completedCount = 0;
     let terminatedCount = 0;
     projects.forEach((p) => {
-      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
+      const status = getProjectInternalStatus(p);
       if (status === 'completed') {
         completedCount++;
       } else if (status === 'terminated') {
         terminatedCount++;
+      } else if (status === 'on_hold') {
+        onHoldCount++;
       } else {
         const cat = p.projectCategory || ((p.status as any) === 'poc' ? '評估案' : '已開案');
         if (cat === '評估案') pocCount++;
         else activeCount++;
       }
     });
-    return { all: projects.length, poc: pocCount, active: activeCount, completed: completedCount, terminated: terminatedCount };
+    return { all: projects.length, poc: pocCount, active: activeCount, onHold: onHoldCount, completed: completedCount, terminated: terminatedCount };
   }, [projects]);
 
   // 整理所有客戶選項與專案數量統計
@@ -449,18 +467,20 @@ export function InternalTasksClient({
     return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
   }, [projects]);
 
-  // 統計內部專案狀態 (進行中/評估中、已結案、專案終止)
+  // 統計內部專案狀態 (進行中/評估中、暫緩、已結案、專案終止)
   const internalStatusCounts = useMemo(() => {
     let inProgress = 0;
+    let onHold = 0;
     let completed = 0;
     let terminated = 0;
     projects.forEach((p) => {
-      const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
+      const status = getProjectInternalStatus(p);
       if (status === 'completed') completed++;
       else if (status === 'terminated') terminated++;
+      else if (status === 'on_hold') onHold++;
       else inProgress++;
     });
-    return { all: projects.length, inProgress, completed, terminated };
+    return { all: projects.length, inProgress, onHold, completed, terminated };
   }, [projects]);
 
   // 自然序號比較函數 (1, 2, ... 10, ... 55)
@@ -495,35 +515,40 @@ export function InternalTasksClient({
   const groupedByProject = useMemo(() => {
     let projectList = [...projects];
 
-    // 1. 類別與生命週期標籤篩選 (評估案 vs 已開案 vs 已結案)
+    // 1. 類別與生命週期標籤篩選 (評估案 vs 已開案 vs 暫緩 vs 已結案 vs 專案終止)
     if (selectedCategory === '評估案') {
       projectList = projectList.filter((p) => {
-        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
-        return cat === '評估案' && status !== 'completed' && status !== 'terminated';
+        const cat = p.projectCategory || ((p.status as any) === 'poc' ? '評估案' : '已開案');
+        const status = getProjectInternalStatus(p);
+        return cat === '評估案' && status !== 'completed' && status !== 'terminated' && status !== 'on_hold';
       });
     } else if (selectedCategory === '已開案') {
       projectList = projectList.filter((p) => {
-        const cat = p.projectCategory || (p.status === 'poc' ? '評估案' : '已開案');
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : (p.status === 'cancelled' ? 'terminated' : 'in_progress'));
-        return cat === '已開案' && status !== 'completed' && status !== 'terminated';
+        const cat = p.projectCategory || ((p.status as any) === 'poc' ? '評估案' : '已開案');
+        const status = getProjectInternalStatus(p);
+        return cat === '已開案' && status !== 'completed' && status !== 'terminated' && status !== 'on_hold';
+      });
+    } else if (selectedCategory === '暫緩') {
+      projectList = projectList.filter((p) => {
+        const status = getProjectInternalStatus(p);
+        return status === 'on_hold';
       });
     } else if (selectedCategory === '已結案') {
       projectList = projectList.filter((p) => {
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
+        const status = getProjectInternalStatus(p);
         return status === 'completed';
       });
     } else if (selectedCategory === '專案終止') {
       projectList = projectList.filter((p) => {
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
+        const status = getProjectInternalStatus(p);
         return status === 'terminated';
       });
     }
 
-    // 2. 專案生命週期狀態篩選 (進行中/評估中、已結案、專案終止)
+    // 2. 專案生命週期狀態篩選 (進行中/評估中、暫緩、已結案、專案終止)
     if (selectedInternalStatus !== 'all') {
       projectList = projectList.filter((p) => {
-        const status = p.internalStatus || (p.status === 'completed' ? 'completed' : ((p.status as any) === 'cancelled' ? 'terminated' : 'in_progress'));
+        const status = getProjectInternalStatus(p);
         return status === selectedInternalStatus;
       });
     }
@@ -804,7 +829,7 @@ export function InternalTasksClient({
 
   const handleUpdateProjectStatus = async (projectId: string, payload: {
     category?: '評估案' | '已開案';
-    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
   }) => {
     try {
       const res = await updateInternalProjectStatus(projectId, payload);
@@ -827,7 +852,7 @@ export function InternalTasksClient({
               internalStatus: updatedInternalStatus,
               evaluationDate: updatedEvaluationDate,
               kickoffDate: updatedKickoffDate,
-              autoCompletedByClient: payload.internalStatus === 'in_progress' ? false : p.autoCompletedByClient,
+              autoCompletedByClient: (payload.internalStatus === 'in_progress' || payload.internalStatus === 'on_hold') ? false : p.autoCompletedByClient,
             };
           })
         );
@@ -1576,6 +1601,25 @@ export function InternalTasksClient({
 
               <button
                 type="button"
+                onClick={() => setSelectedCategory('暫緩')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+                  selectedCategory === '暫緩'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'text-amber-700 bg-amber-50/80 hover:bg-amber-100 border-amber-200'
+                }`}
+              >
+                <span>⏸️ 暫緩</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                    selectedCategory === '暫緩' ? 'bg-amber-700 text-white' : 'bg-amber-200 text-amber-800'
+                  }`}
+                >
+                  {categoryCounts.onHold}
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setSelectedCategory('已結案')}
                 className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer border ${
                   selectedCategory === '已結案'
@@ -1920,6 +1964,7 @@ export function InternalTasksClient({
                 <SelectContent>
                   <SelectItem value="all">全部專案狀態 ({projects.length})</SelectItem>
                   <SelectItem value="in_progress">⏳ 進行/評估中 ({internalStatusCounts.inProgress})</SelectItem>
+                  <SelectItem value="on_hold">⏸️ 暫緩 ({internalStatusCounts.onHold})</SelectItem>
                   <SelectItem value="completed">✅ 已結案 ({internalStatusCounts.completed})</SelectItem>
                   <SelectItem value="terminated">⛔ 專案終止 ({internalStatusCounts.terminated})</SelectItem>
                 </SelectContent>
@@ -2053,7 +2098,7 @@ export function InternalTasksClient({
             )}
             {selectedInternalStatus !== 'all' && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                <span>📌 專案: {selectedInternalStatus === 'in_progress' ? '進行中' : selectedInternalStatus === 'completed' ? '已結案' : '專案終止'}</span>
+                <span>📌 專案: {selectedInternalStatus === 'in_progress' ? '進行中' : selectedInternalStatus === 'on_hold' ? '暫緩' : selectedInternalStatus === 'completed' ? '已結案' : '專案終止'}</span>
                 <button
                   type="button"
                   onClick={() => setSelectedInternalStatus('all')}
@@ -2172,16 +2217,17 @@ export function InternalTasksClient({
               return differenceInCalendarDays(new Date(), new Date(i.dueDate)) > 0;
             });
 
-            const isEvalCategory = (project.projectCategory || (project.status === 'poc' ? '評估案' : '已開案')) === '評估案';
-            const internalStatus = project.internalStatus || (project.status === 'completed' ? 'completed' : (project.status === 'cancelled' ? 'terminated' : 'in_progress'));
+            const isEvalCategory = (project.projectCategory || ((project.status as any) === 'poc' ? '評估案' : '已開案')) === '評估案';
+            const internalStatus = getProjectInternalStatus(project);
             const isCompleted = internalStatus === 'completed';
             const isTerminated = internalStatus === 'terminated';
-            const isInProgress = !isCompleted && !isTerminated;
+            const isOnHold = internalStatus === 'on_hold';
+            const isInProgress = !isCompleted && !isTerminated && !isOnHold;
 
             const projExpectedDate = project.expectedCompletionDate ? new Date(project.expectedCompletionDate) : null;
             const projDiffDays = projExpectedDate ? differenceInCalendarDays(new Date(), projExpectedDate) : 0;
-            const isProjOverdue = !isCompleted && projExpectedDate && projDiffDays > 0;
-            const isProjUpcoming = !isCompleted && projExpectedDate && projDiffDays >= -7 && projDiffDays <= 0;
+            const isProjOverdue = !isCompleted && !isOnHold && projExpectedDate && projDiffDays > 0;
+            const isProjUpcoming = !isCompleted && !isOnHold && projExpectedDate && projDiffDays >= -7 && projDiffDays <= 0;
 
             return (
               <div
@@ -2194,6 +2240,8 @@ export function InternalTasksClient({
                     ? 'border-emerald-300 bg-emerald-50/50 shadow-sm'
                     : isTerminated
                     ? 'border-rose-300 bg-rose-50/50 shadow-sm'
+                    : isOnHold
+                    ? 'border-amber-300 bg-amber-50/50 shadow-sm'
                     : 'border-slate-200 bg-white shadow-sm'
                 }`}
               >
@@ -2205,6 +2253,8 @@ export function InternalTasksClient({
                     ? 'bg-emerald-100/70 border-emerald-200/90'
                     : isTerminated
                     ? 'bg-rose-100/70 border-rose-200/90'
+                    : isOnHold
+                    ? 'bg-amber-100/70 border-amber-200/90'
                     : 'bg-white border-slate-100'
                 }`}>
                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -2247,7 +2297,19 @@ export function InternalTasksClient({
                       )}
 
                       {/* 專案類別標籤 (開案狀態，置於名稱前) */}
-                      {isEvalCategory ? (
+                      {isCompleted ? (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                          <span>✅ 已結案</span>
+                        </Badge>
+                      ) : isTerminated ? (
+                        <Badge className="bg-rose-600 hover:bg-rose-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                          <span>⛔ 專案終止</span>
+                        </Badge>
+                      ) : isOnHold ? (
+                        <Badge className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
+                          <span>⏸️ 暫緩</span>
+                        </Badge>
+                      ) : isEvalCategory ? (
                         <Badge className="bg-purple-600 hover:bg-purple-700 text-white text-[11px] px-1.5 py-0.5 shadow-xs flex items-center gap-1 shrink-0">
                           <span>📝 評估案</span>
                         </Badge>
@@ -2445,6 +2507,38 @@ export function InternalTasksClient({
                             {isInProgress && (
                               <>
                                 <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'on_hold' })}
+                                  className="cursor-pointer py-1.5 text-amber-700 focus:text-amber-800 focus:bg-amber-50"
+                                >
+                                  <PauseCircle className="h-3.5 w-3.5 text-amber-600 mr-2" />
+                                  標記為暫緩 (暫停執行)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'completed' })}
+                                  className="cursor-pointer py-1.5 text-emerald-700 focus:text-emerald-800 focus:bg-emerald-50"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mr-2" />
+                                  手動標記為已結案
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'terminated' })}
+                                  className="cursor-pointer py-1.5 text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                                >
+                                  <Ban className="h-3.5 w-3.5 text-rose-600 mr-2" />
+                                  專案終止 (不繼續執行)
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {isOnHold && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'in_progress' })}
+                                  className="cursor-pointer py-1.5 text-blue-700 focus:text-blue-800 focus:bg-blue-50"
+                                >
+                                  <PlayCircle className="h-3.5 w-3.5 text-blue-600 mr-2" />
+                                  恢復執行 (重設為進行中)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
                                   onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'completed' })}
                                   className="cursor-pointer py-1.5 text-emerald-700 focus:text-emerald-800 focus:bg-emerald-50"
                                 >
@@ -2461,13 +2555,22 @@ export function InternalTasksClient({
                               </>
                             )}
                             {(isCompleted || isTerminated) && (
-                              <DropdownMenuItem
-                                onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'in_progress' })}
-                                className="cursor-pointer py-1.5 text-blue-700 focus:text-blue-800 focus:bg-blue-50"
-                              >
-                                <RotateCcw className="h-3.5 w-3.5 text-blue-600 mr-2" />
-                                重新開啟專案 (重設為進行中)
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'in_progress' })}
+                                  className="cursor-pointer py-1.5 text-blue-700 focus:text-blue-800 focus:bg-blue-50"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5 text-blue-600 mr-2" />
+                                  重新開啟專案 (重設為進行中)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateProjectStatus(project.id, { internalStatus: 'on_hold' })}
+                                  className="cursor-pointer py-1.5 text-amber-700 focus:text-amber-800 focus:bg-amber-50"
+                                >
+                                  <PauseCircle className="h-3.5 w-3.5 text-amber-600 mr-2" />
+                                  標記為暫緩 (暫停執行)
+                                </DropdownMenuItem>
+                              </>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -2491,7 +2594,7 @@ export function InternalTasksClient({
                 {/* 待辦事項清單 (分層架構：未完成直接展示，已完成可收合) */}
                 {!isCollapsed && (
                   <div className={`p-4 space-y-2.5 ${
-                    isCompleted ? 'bg-emerald-50/20' : isTerminated ? 'bg-rose-50/20' : 'bg-white'
+                    isCompleted ? 'bg-emerald-50/20' : isTerminated ? 'bg-rose-50/20' : isOnHold ? 'bg-amber-50/20' : 'bg-white'
                   }`}>
                     {items.length === 0 ? (
                       <div className={`py-6 text-center text-xs rounded border border-dashed ${
@@ -2499,6 +2602,8 @@ export function InternalTasksClient({
                           ? 'text-emerald-800/80 bg-emerald-50/40 border-emerald-200'
                           : isTerminated
                           ? 'text-rose-800/80 bg-rose-50/40 border-rose-200'
+                          : isOnHold
+                          ? 'text-amber-800/80 bg-amber-50/40 border-amber-200'
                           : 'text-muted-foreground bg-slate-50/40 border-slate-200'
                       }`}>
                         此專案尚未建立任何待辦或歷程項目。

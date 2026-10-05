@@ -197,7 +197,7 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-slate-500">[{p.caseNumber}]</span>
                             <span className="font-medium">{p.name}</span>
-                            <span className="text-[10px] text-muted-foreground">({p.category} · {p.internalStatus === 'completed' ? '已結案' : p.internalStatus === 'terminated' ? '已終止' : '進行中'})</span>
+                            <span className="text-[10px] text-muted-foreground">({p.category} · {p.internalStatus === 'completed' ? '已結案' : p.internalStatus === 'terminated' ? '已終止' : p.internalStatus === 'on_hold' ? '暫緩' : '進行中'})</span>
                           </div>
                         </SelectItem>
                       ))}

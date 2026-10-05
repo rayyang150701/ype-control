@@ -57,7 +57,7 @@ export interface Project {
   status: ProjectStatus;
   isInternal?: boolean;
   projectCategory?: '評估案' | '已開案';
-  internalStatus?: 'in_progress' | 'completed' | 'terminated';
+  internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
   sourceType?: ProjectSourceType;
   clientName?: string;
   responsiblePm?: string;
@@ -105,7 +105,7 @@ export interface InternalProjectOption {
   caseNumber: string;
   name: string;
   category: '評估案' | '已開案';
-  internalStatus: 'in_progress' | 'completed' | 'terminated';
+  internalStatus: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
   sourceType?: ProjectSourceType;
   clientName?: string;
   responsiblePm?: string;

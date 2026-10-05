@@ -61,7 +61,7 @@ const getCurrentReportingPeriod = () => {
 interface ProjectMeta {
     isInternal?: boolean;
     category?: '評估案' | '已開案';
-    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
     sourceType?: ProjectSourceType;
     clientName?: string;
     responsiblePm?: string;
@@ -2283,13 +2283,15 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
         const meta = parseProjectMeta(doc.on_hold_notes);
         const isEval = meta.category ? meta.category === '評估案' : (doc.status === 'poc' || doc.status === 'evaluation');
         
-        let internalStatus: 'in_progress' | 'completed' | 'terminated' = 'in_progress';
+        let internalStatus: 'in_progress' | 'completed' | 'terminated' | 'on_hold' = 'in_progress';
         if (meta.internalStatus) {
             internalStatus = meta.internalStatus;
         } else if (doc.status === 'completed') {
             internalStatus = 'completed';
         } else if (doc.status === 'terminated' || doc.status === 'cancelled') {
             internalStatus = 'terminated';
+        } else if (doc.status === 'on_hold' || doc.status === 'on-hold' || doc.is_on_hold) {
+            internalStatus = 'on_hold';
         }
 
         const clientName = meta.clientName?.trim() || '燁輝';
@@ -2442,7 +2444,7 @@ export async function updateInternalProject(projectId: string, data: {
     name: string;
     caseNumber?: string;
     category?: '評估案' | '已開案';
-    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
     sourceType?: ProjectSourceType;
     clientName?: string;
     responsiblePm?: string;
@@ -2530,8 +2532,12 @@ export async function updateInternalProject(projectId: string, data: {
             updateData.status = 'completed';
         } else if (data.internalStatus === 'terminated') {
             updateData.status = 'cancelled';
+        } else if (data.internalStatus === 'on_hold') {
+            updateData.status = 'on_hold';
+            updateData.is_on_hold = true;
         } else if (data.internalStatus === 'in_progress') {
             updateData.status = meta.category === '評估案' ? 'evaluation' : 'active';
+            updateData.is_on_hold = false;
             meta.autoCompletedByClient = false;
             updateData.on_hold_notes = serializeProjectMeta(meta);
         }
@@ -2578,7 +2584,7 @@ export const createPocProject = createInternalProject;
 
 export async function updateInternalProjectStatus(projectId: string, payload: {
     category?: '評估案' | '已開案';
-    internalStatus?: 'in_progress' | 'completed' | 'terminated';
+    internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -2623,8 +2629,12 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
             updateData.status = 'completed';
         } else if (payload.internalStatus === 'terminated') {
             updateData.status = 'cancelled';
+        } else if (payload.internalStatus === 'on_hold') {
+            updateData.status = 'on_hold';
+            updateData.is_on_hold = true;
         } else if (payload.internalStatus === 'in_progress') {
             updateData.status = meta.category === '評估案' ? 'evaluation' : 'active';
+            updateData.is_on_hold = false;
             meta.autoCompletedByClient = false;
         }
 
@@ -2644,7 +2654,8 @@ export async function updateInternalProjectStatus(projectId: string, payload: {
         if (payload.category === '已開案') msg = '已成功轉為「已開案」！';
         else if (payload.internalStatus === 'completed') msg = '專案已標記為「已結案」！';
         else if (payload.internalStatus === 'terminated') msg = '專案已標記為「專案終止」！';
-        else if (payload.internalStatus === 'in_progress') msg = '專案已重新開啟為「進行中」！';
+        else if (payload.internalStatus === 'on_hold') msg = '專案已標記為「暫緩」！';
+        else if (payload.internalStatus === 'in_progress') msg = '專案已設為「進行中」！';
 
         return { 
             success: true, 
@@ -2772,7 +2783,7 @@ export async function getLinkedInternalProjectDetails(internalProjectId: string)
             status: (proj.status || 'active') as any,
             isInternal: true,
             projectCategory: isEval ? '評估案' : '已開案',
-            internalStatus: meta.internalStatus || (proj.status === 'completed' ? 'completed' : proj.status === 'terminated' || proj.status === 'cancelled' ? 'terminated' : 'in_progress'),
+            internalStatus: meta.internalStatus || (proj.status === 'completed' ? 'completed' : proj.status === 'terminated' || proj.status === 'cancelled' ? 'terminated' : proj.status === 'on_hold' || proj.status === 'on-hold' || proj.is_on_hold ? 'on_hold' : 'in_progress'),
             sourceType,
             clientName,
             responsiblePm,

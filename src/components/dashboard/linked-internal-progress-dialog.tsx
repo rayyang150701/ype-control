@@ -302,6 +302,14 @@ export function LinkedInternalProgressDialog({
         </Badge>
       );
     }
+    if (status === 'on_hold') {
+      return (
+        <Badge className="bg-amber-600 text-white gap-1 text-xs">
+          <Clock className="h-3 w-3" />
+          ⏸️ 暫緩
+        </Badge>
+      );
+    }
 
     if (cat === '評估案') {
       return (
