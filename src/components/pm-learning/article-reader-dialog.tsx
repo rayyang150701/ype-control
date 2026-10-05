@@ -39,8 +39,9 @@ import {
   Trash2,
   HelpCircle,
   Loader2,
+  Bookmark,
 } from 'lucide-react';
-import { PMLearningCourse, CONTENT_TYPE_CONFIG } from '@/types/pm-learning';
+import { PMLearningCourse, PMLearningReflectionItem, CONTENT_TYPE_CONFIG } from '@/types/pm-learning';
 import { MarkdownPreview } from './markdown-preview';
 import { analyzeArticleContentAction, askArticleQuestionAction, updatePMMemberProgress } from '@/lib/pm-learning-actions';
 import { useToast } from '@/hooks/use-toast';
@@ -81,7 +82,12 @@ export function ArticleReaderDialog({
   const [questionInput, setQuestionInput] = useState('');
   const [isAsking, setIsAsking] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
+  const [savedNoteIndex, setSavedNoteIndex] = useState<number | null>(null);
   const chatBottomRef = React.useRef<HTMLDivElement>(null);
+
+  // 本機對話快取 Key (離開視窗或重新整理後依然保留對話)
+  const chatStorageKey = course?.id ? `pm_learning_chat_${course.id}_${currentUserId || 'default'}` : '';
 
   // 監聽是否外部傳入預設開啟 AI 提問
   React.useEffect(() => {
@@ -90,14 +96,28 @@ export function ArticleReaderDialog({
     }
   }, [isOpen, initialOpenChat]);
 
-  // 切換文章時，重置對話歷程
+  // 切換文章時，載入本機快取之問答對話歷程 (防離開後遺失)
   React.useEffect(() => {
-    if (course?.id) {
+    if (!chatStorageKey) {
       setChatMessages([]);
-      setQuestionInput('');
-      setIsAsking(false);
+      return;
     }
-  }, [course?.id]);
+    try {
+      const saved = localStorage.getItem(chatStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChatMessages(parsed);
+          setQuestionInput('');
+          setIsAsking(false);
+          return;
+        }
+      }
+    } catch {}
+    setChatMessages([]);
+    setQuestionInput('');
+    setIsAsking(false);
+  }, [chatStorageKey]);
 
   // 初始化個人筆記
   React.useEffect(() => {
@@ -159,7 +179,13 @@ export function ArticleReaderDialog({
       createdAt: nowStr,
     };
 
-    setChatMessages((prev) => [...prev, userMsg]);
+    const newChatWithUser = [...chatMessages, userMsg];
+    setChatMessages(newChatWithUser);
+    if (chatStorageKey) {
+      try {
+        localStorage.setItem(chatStorageKey, JSON.stringify(newChatWithUser));
+      } catch {}
+    }
     setQuestionInput('');
     setIsAsking(true);
     setIsChatOpen(true);
@@ -178,7 +204,15 @@ export function ArticleReaderDialog({
           model: res.model || 'gpt-6-luna',
           createdAt: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
         };
-        setChatMessages((prev) => [...prev, assistantMsg]);
+        setChatMessages((prev) => {
+          const updated = [...prev, assistantMsg];
+          if (chatStorageKey) {
+            try {
+              localStorage.setItem(chatStorageKey, JSON.stringify(updated));
+            } catch {}
+          }
+          return updated;
+        });
       } else {
         toast({
           title: 'AI 回答失敗',
@@ -197,6 +231,111 @@ export function ArticleReaderDialog({
       setTimeout(() => {
         chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
+    }
+  };
+
+  // 清空此文章的對話紀錄
+  const handleClearChat = () => {
+    setChatMessages([]);
+    if (chatStorageKey) {
+      try {
+        localStorage.removeItem(chatStorageKey);
+      } catch {}
+    }
+    toast({ title: '已清空對話紀錄' });
+  };
+
+  // 方案二：一鍵將 AI 深度解析與問題存入個人研讀心得筆記與歷程札記 (雲端永久保存)
+  const handleSaveAnswerToNotes = async (
+    msg: { role: string; content: string; model?: string },
+    idx: number
+  ) => {
+    if (!currentUserId) {
+      toast({ title: '請先登入後儲存心得筆記', variant: 'destructive' });
+      return;
+    }
+
+    setSavingNoteIndex(idx);
+    try {
+      // 往前尋找對應的使用者提問
+      let relatedQ = '';
+      for (let i = idx - 1; i >= 0; i--) {
+        if (chatMessages[i].role === 'user') {
+          relatedQ = chatMessages[i].content;
+          break;
+        }
+      }
+
+      const existingProg = (course.memberProgress || {})[currentUserId];
+      const timeStr = new Date().toLocaleString('zh-TW', { hour12: false });
+      const nowIso = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+      // 1. 格式化為 Markdown 筆記段落
+      const noteEntry = [
+        `### 💡 AI 智庫深度探討 (${msg.model || 'gpt-6-luna'}) - ${timeStr}`,
+        relatedQ ? `> **提問**：${relatedQ}` : '',
+        '',
+        msg.content,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const existingNotes = personalNotes.trim();
+      const updatedNotes = existingNotes ? `${existingNotes}\n\n---\n\n${noteEntry}` : noteEntry;
+
+      // 2. 同步建立一筆歷程札記 (Reflection Item) 供時間軸檢視
+      const newReflection: PMLearningReflectionItem = {
+        id: `ref-ai-${Date.now()}`,
+        createdAt: nowIso,
+        content: `**💡 AI 智庫深度探討 (${msg.model || 'gpt-6-luna'})**\n\n${relatedQ ? `> **問**：${relatedQ}\n\n` : ''}${msg.content}`,
+        relatedUnit: '🤖 GPT-6 Luna 智庫問答',
+      };
+      const existingReflections: PMLearningReflectionItem[] = Array.isArray(existingProg?.reflections)
+        ? existingProg.reflections
+        : [];
+      const updatedReflections = [newReflection, ...existingReflections];
+
+      const res = await updatePMMemberProgress(course.id, currentUserId, {
+        notes: updatedNotes,
+        reflections: updatedReflections,
+        progressPercent: existingProg?.progressPercent ?? (updatedNotes ? 100 : 0),
+        isCompleted: existingProg?.isCompleted ?? Boolean(updatedNotes),
+      });
+
+      if (res.success && res.data) {
+        setPersonalNotes(updatedNotes);
+        const updatedCourse: PMLearningCourse = {
+          ...course,
+          memberProgress: {
+            ...(course.memberProgress || {}),
+            [currentUserId]: res.data,
+          },
+        };
+        if (onCourseUpdated) {
+          onCourseUpdated(updatedCourse);
+        }
+        setSavedNoteIndex(idx);
+        setTimeout(() => setSavedNoteIndex(null), 3000);
+        setShowNotesEditor(true);
+        toast({
+          title: '📌 已成功存入個人研讀心得筆記！',
+          description: '已同步歸檔至雲端資料庫（實務心得與歷程札記）。',
+        });
+      } else {
+        toast({
+          title: '儲存失敗',
+          description: res.message || '無法寫入心得紀錄',
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: '儲存出錯',
+        description: err?.message || '未知錯誤',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingNoteIndex(null);
     }
   };
 
@@ -529,7 +668,7 @@ export function ArticleReaderDialog({
                     {chatMessages.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setChatMessages([])}
+                        onClick={handleClearChat}
                         className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 cursor-pointer"
                         title="清空目前對話紀錄"
                       >
@@ -620,7 +759,36 @@ export function ArticleReaderDialog({
                           )}
 
                           {msg.role === 'assistant' && (
-                            <div className="pt-1 flex justify-end">
+                            <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveAnswerToNotes(msg, idx)}
+                                disabled={savingNoteIndex === idx}
+                                className={`text-[11px] font-medium flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer shadow-2xs ${
+                                  savedNoteIndex === idx
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 font-semibold'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 hover:border-amber-300 active:scale-98'
+                                }`}
+                                title="將此問答與 AI 深入解析一鍵存入個人研讀心得筆記 (雲端永久保存)"
+                              >
+                                {savedNoteIndex === idx ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>已存入心得筆記</span>
+                                  </>
+                                ) : savingNoteIndex === idx ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                                    <span>儲存中...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Bookmark className="w-3.5 h-3.5 text-amber-600 fill-amber-600/30" />
+                                    <span>📌 存入心得筆記</span>
+                                  </>
+                                )}
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -628,16 +796,16 @@ export function ArticleReaderDialog({
                                   setCopiedIndex(idx);
                                   setTimeout(() => setCopiedIndex(null), 2000);
                                 }}
-                                className="text-[10px] text-slate-400 hover:text-purple-700 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-purple-50 transition-colors cursor-pointer"
+                                className="text-[11px] text-slate-500 hover:text-purple-700 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-purple-50 transition-colors cursor-pointer"
                               >
                                 {copiedIndex === idx ? (
                                   <>
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                    <span className="text-emerald-600">已複製</span>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-600 font-medium">已複製</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Copy className="w-3 h-3" />
+                                    <Copy className="w-3.5 h-3.5" />
                                     <span>複製回答</span>
                                   </>
                                 )}
