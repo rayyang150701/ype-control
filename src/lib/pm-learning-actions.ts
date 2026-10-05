@@ -691,31 +691,47 @@ export async function analyzeArticleContentAction(
     let modelName = 'AI 智慧分析引擎';
 
     const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
+    const envModel = process.env.OPENAI_MODEL?.trim();
+    // 優先採用 gpt-6-luna，若環境變數仍為舊版 gpt-5.6-luna 自動升級為 gpt-6-luna
+    const model = (!envModel || envModel === 'gpt-5.6-luna') ? 'gpt-6-luna' : envModel;
 
     if (apiKey) {
       try {
+        const isReasoningOrLuna =
+          model.includes('luna') ||
+          model.includes('o1') ||
+          model.includes('o3') ||
+          model.includes('5.6') ||
+          model.includes('6');
+
+        const requestPayload: any = {
+          model: model,
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是一位精通智慧製造（如鋼鐵表面處理、產線自動化、MES）與企業級專案管理 (PMP / Agile) 的資深顧問。請閱讀使用者提供的付費文章或知識內容，輸出結構化 JSON，格式為：\n{"summary": "200字核心摘要", "keyTakeaways": ["重點觀點1", "重點觀點2", "重點觀點3"], "actionableInsights": ["PM落地實務建議1 (針對現場/協同)", "PM落地實務建議2"]}\n只回傳合法 JSON 字串，不要包含額外文字。',
+            },
+            {
+              role: 'user',
+              content: `文章標題：${target.title}\n領域：${target.category}\n出刊/來源：${target.source || ''} (${target.issueDate || ''})\n\n文章全文：\n${textToAnalyze.slice(0, 8000)}`,
+            },
+          ],
+          response_format: { type: 'json_object' },
+        };
+
+        // gpt-6-luna / luna / o1 / o3 等推理模型僅支援預設 temperature (1)，自訂數值會觸發 400 錯誤
+        if (!isReasoningOrLuna) {
+          requestPayload.temperature = 0.3;
+        }
+
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  '你是一位精通智慧製造（如鋼鐵表面處理、產線自動化、MES）與企業級專案管理 (PMP / Agile) 的資深顧問。請閱讀使用者提供的付費文章或知識內容，輸出結構化 JSON，格式為：\n{"summary": "200字核心摘要", "keyTakeaways": ["重點觀點1", "重點觀點2", "重點觀點3"], "actionableInsights": ["PM落地實務建議1 (針對現場/協同)", "PM落地實務建議2"]}\n只回傳合法 JSON 字串，不要包含額外文字。',
-              },
-              {
-                role: 'user',
-                content: `文章標題：${target.title}\n領域：${target.category}\n出刊/來源：${target.source || ''} (${target.issueDate || ''})\n\n文章全文：\n${textToAnalyze.slice(0, 8000)}`,
-              },
-            ],
-            temperature: 0.3,
-          }),
+          body: JSON.stringify(requestPayload),
         });
 
         if (response.ok) {
@@ -729,6 +745,9 @@ export async function analyzeArticleContentAction(
             actionableInsights = Array.isArray(parsed.actionableInsights) ? parsed.actionableInsights : [];
             modelName = jsonRes.model || model;
           }
+        } else {
+          const errData = await response.json().catch(() => ({}));
+          console.error('[OpenAI 導讀分析異常]:', response.status, errData);
         }
       } catch (aiErr) {
         console.warn('呼叫 OpenAI API 失敗，切換為智慧結構化分析備援:', aiErr);
@@ -807,7 +826,9 @@ export async function askArticleQuestionAction(
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
+    const envModel = process.env.OPENAI_MODEL?.trim();
+    // 優先採用 gpt-6-luna，若環境變數仍為舊版 gpt-5.6-luna 自動升級為 gpt-6-luna
+    const model = (!envModel || envModel === 'gpt-5.6-luna') ? 'gpt-6-luna' : envModel;
     const textToAnalyze = (target.content || target.description || target.title).trim();
 
     // 彙整文章核心背景與已萃取之 AI 導讀成果作為智庫記憶庫
@@ -844,21 +865,34 @@ ${backgroundContext}
           content: msg.content,
         }));
 
+        const isReasoningOrLuna =
+          model.includes('luna') ||
+          model.includes('o1') ||
+          model.includes('o3') ||
+          model.includes('5.6') ||
+          model.includes('6');
+
+        const requestPayload: any = {
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...validHistory,
+            { role: 'user', content: trimmedQ },
+          ],
+        };
+
+        // gpt-6-luna / luna / o1 / o3 僅支援預設 temperature (1)，若傳入自訂數值會觸發 400 錯誤
+        if (!isReasoningOrLuna) {
+          requestPayload.temperature = 0.5;
+        }
+
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              ...validHistory,
-              { role: 'user', content: trimmedQ },
-            ],
-            temperature: 0.5,
-          }),
+          body: JSON.stringify(requestPayload),
         });
 
         if (response.ok) {
@@ -873,26 +907,24 @@ ${backgroundContext}
           }
         } else {
           const errData = await response.json().catch(() => ({}));
-          console.warn('OpenAI 問答 API 回應異常:', response.status, errData);
+          console.error('[OpenAI 問答 API 回應異常]:', response.status, errData);
+          return {
+            success: false,
+            message: `OpenAI API 回應異常 (${response.status}): ${errData?.error?.message || '模型暫時無法提供回答'}`,
+          };
         }
-      } catch (callErr) {
-        console.warn('呼叫問答 API 異常，啟動備援回答機制:', callErr);
+      } catch (callErr: any) {
+        console.error('呼叫問答 API 異常:', callErr);
+        return {
+          success: false,
+          message: `連線 API 異常: ${callErr?.message || '網路連線失敗'}`,
+        };
       }
     }
 
-    // 備援智慧回應（當離線或 API 暫時不可用時）
-    const fallbackAnswer = `### 💡 針對問題「${trimmedQ}」之深度解析\n\n根據文章《**${target.title}**》的脈絡：\n\n` +
-      `1. **核心立論對照**：\n` +
-      `   ${target.aiAnalysis?.summary || textToAnalyze.slice(0, 180) + '...'}\n\n` +
-      `2. **專案管理與現場借鏡建議**：\n` +
-      `   - 在推動智慧製造與跨部門專案時，建議將問題核心納入每週進度管制點中核對。\n` +
-      `   - 可檢視目前涉及的窗口職責與等候關係，避免因溝通落差延宕後續排程。\n\n` +
-      `> ℹ️ *本回答由系統內建智庫引擎備援產出，待網路與 API 復原後將自動銜接完整模型輸出。*`;
-
     return {
-      success: true,
-      answer: fallbackAnswer,
-      model: model,
+      success: false,
+      message: '系統未設定 OPENAI_API_KEY，請確認環境變數配置',
     };
   } catch (err: any) {
     console.error('執行文章問答失敗:', err);

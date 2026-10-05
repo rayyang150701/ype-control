@@ -96,7 +96,7 @@ export function AIAnalysisDialog({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [apiProviderInput, setApiProviderInput] = useState<'gemini' | 'openai'>('openai');
-  const [apiModelInput, setApiModelInput] = useState('gpt-5.6-luna');
+  const [apiModelInput, setApiModelInput] = useState('gpt-6-luna');
   const [savedApiKey, setSavedApiKey] = useState('');
   const [savedProvider, setSavedProvider] = useState<'gemini' | 'openai'>('openai');
   const [savedModel, setSavedModel] = useState('');
@@ -123,8 +123,9 @@ export function AIAnalysisDialog({
       }
 
       const storedProvider = (localStorage.getItem('user_ai_provider') as 'gemini' | 'openai') || (storedKey.startsWith('AIza') ? 'gemini' : 'openai');
-      const defaultModel = storedProvider === 'openai' ? 'gpt-5.6-luna' : 'gemini-1.5-flash';
-      const storedModel = localStorage.getItem('user_ai_model') || defaultModel;
+      const defaultModel = storedProvider === 'openai' ? 'gpt-6-luna' : 'gemini-1.5-flash';
+      const rawStored = localStorage.getItem('user_ai_model');
+      const storedModel = (!rawStored || rawStored === 'gpt-5.6-luna') ? defaultModel : rawStored;
 
       setSavedApiKey(storedKey);
       setApiKeyInput(storedKey);
@@ -727,7 +728,7 @@ export function AIAnalysisDialog({
                 <span>支援 OpenAI 全系列與 Google Gemini 模型</span>
               </div>
               <p className="leading-relaxed text-blue-900">
-                若您的 OpenAI 帳號支援 <strong className="font-mono bg-blue-100 px-1 py-0.5 rounded text-indigo-800">gpt-5.6-luna</strong>（擁有高達 5,000,000 TPD 的充裕額度），可直接於下方指定使用！
+                若您的 OpenAI 帳號支援 <strong className="font-mono bg-blue-100 px-1 py-0.5 rounded text-indigo-800">gpt-6-luna</strong>，可直接於下方指定使用！
               </p>
             </div>
 
@@ -739,7 +740,7 @@ export function AIAnalysisDialog({
                 onValueChange={(val: 'gemini' | 'openai') => {
                   setApiProviderInput(val);
                   if (val === 'openai' && (!apiModelInput || apiModelInput.includes('gemini'))) {
-                    setApiModelInput('gpt-5.6-luna');
+                    setApiModelInput('gpt-6-luna');
                   } else if (val === 'gemini' && (!apiModelInput || apiModelInput.includes('gpt'))) {
                     setApiModelInput('gemini-1.5-flash');
                   }
@@ -749,7 +750,7 @@ export function AIAnalysisDialog({
                   <SelectValue placeholder="請選擇模型提供商" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="openai">OpenAI (支援 gpt-5.6-luna, gpt-4o-mini 等)</SelectItem>
+                  <SelectItem value="openai">OpenAI (支援 gpt-6-luna, gpt-4o-mini 等)</SelectItem>
                   <SelectItem value="gemini">Google Gemini (支援 1.5 Flash, 2.0 Flash 等)</SelectItem>
                 </SelectContent>
               </Select>
@@ -766,9 +767,9 @@ export function AIAnalysisDialog({
               {apiProviderInput === 'openai' ? (
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    { id: 'gpt-5.6-luna', label: '⭐ gpt-5.6-luna (500萬 TPD 首選)', hot: true },
+                    { id: 'gpt-6-luna', label: '⭐ gpt-6-luna (最新主力首選)', hot: true },
+                    { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna (500萬 TPD)' },
                     { id: 'gpt-4o-mini', label: 'gpt-4o-mini (200萬 TPD)' },
-                    { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra (90萬 TPD)' },
                     { id: 'gpt-4o', label: 'gpt-4o (旗艦版)' },
                     { id: 'o3-mini', label: 'o3-mini (深度推理)' },
                   ].map((m) => (
@@ -814,7 +815,7 @@ export function AIAnalysisDialog({
               )}
 
               <Input
-                placeholder={apiProviderInput === 'openai' ? '例如: gpt-5.6-luna' : '例如: gemini-1.5-flash'}
+                placeholder={apiProviderInput === 'openai' ? '例如: gpt-6-luna' : '例如: gemini-1.5-flash'}
                 value={apiModelInput}
                 onChange={(e) => setApiModelInput(e.target.value)}
                 className="bg-white text-xs font-mono h-9"
@@ -844,7 +845,7 @@ export function AIAnalysisDialog({
                 className="bg-white text-xs font-mono h-9"
               />
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                💡 若您已在伺服端 <code>.env</code> 寫入 <code>OPENAI_API_KEY</code>，此處<strong>直接留空</strong>即可，系統會自動呼叫伺服端的 <code>gpt-5.6-luna</code>！
+                💡 若您已在伺服端 <code>.env</code> 寫入 <code>OPENAI_API_KEY</code>，此處<strong>直接留空</strong>即可，系統會自動呼叫伺服端的 <code>gpt-6-luna</code>！
               </p>
             </div>
           </div>

@@ -387,7 +387,7 @@ export function ArticleReaderDialog({
                     <span>AI 重點導讀與專案落地分析</span>
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 font-mono">
                       <Sparkles className="w-2.5 h-2.5 text-purple-600" />
-                      <span>{course.aiAnalysis?.modelName?.replace(/gpt-4o-mini.*/i, 'gpt-6-luna') || 'gpt-6-luna'}</span>
+                      <span>{course.aiAnalysis?.modelName?.replace(/(gpt-4o-mini|gpt-5\.6-luna).*/i, 'gpt-6-luna') || 'gpt-6-luna'}</span>
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-500">

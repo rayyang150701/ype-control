@@ -299,9 +299,10 @@ ${JSON.stringify(formattedItems, null, 2)}
     }
 
     // 模型指定：
-    let defaultModel = 'gpt-5.6-luna';
+    let defaultModel = 'gpt-6-luna';
     if (provider === 'openai') {
-      defaultModel = process.env.OPENAI_MODEL?.trim() || 'gpt-5.6-luna';
+      const envModel = process.env.OPENAI_MODEL?.trim();
+      defaultModel = (!envModel || envModel === 'gpt-5.6-luna') ? 'gpt-6-luna' : envModel;
     } else {
       defaultModel = process.env.GEMINI_MODEL?.trim() || 'gemini-1.5-flash';
     }
@@ -315,7 +316,7 @@ ${JSON.stringify(formattedItems, null, 2)}
       } else if (provider === 'gemini' && cm.toLowerCase().includes('gpt')) {
         selectedModel = defaultModel;
       } else {
-        selectedModel = cm;
+        selectedModel = cm === 'gpt-5.6-luna' ? 'gpt-6-luna' : cm;
       }
     }
 
@@ -344,8 +345,8 @@ ${JSON.stringify(formattedItems, null, 2)}
           model: selectedModel,
           messages: openaiMessages,
         };
-        // gpt-5.6 / luna / o1 / o3 等新世代推理模型不支援自訂 temperature (僅支援預設 1)
-        if (!selectedModel.includes('5.6') && !selectedModel.includes('luna') && !selectedModel.includes('o1') && !selectedModel.includes('o3')) {
+        // gpt-6-luna / gpt-5.6 / luna / o1 / o3 等新世代推理模型不支援自訂 temperature (僅支援預設 1)
+        if (!selectedModel.includes('5.6') && !selectedModel.includes('6') && !selectedModel.includes('luna') && !selectedModel.includes('o1') && !selectedModel.includes('o3')) {
           requestPayload.temperature = 0.4;
         }
 
