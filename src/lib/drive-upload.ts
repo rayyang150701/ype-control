@@ -146,19 +146,122 @@ async function pollReconcileRecentFile(
 }
 
 /**
+ * 專屬資料夾描述：一個專案或一堂課程只對應一個資料夾。
+ * - key：穩定識別碼 (例如 project:<id>、course:<id>)，改名後仍能找回同一個資料夾
+ * - name：資料夾顯示名稱 (例如「案號_專案名稱」)
+ * - parentFolderId：父資料夾 ID，未帶則由 GAS 使用待辦預設根資料夾
+ */
+export interface DriveFolderContext {
+  key?: string;
+  name: string;
+  parentFolderId?: string;
+}
+
+export interface UploadFileOptions {
+  folderContext?: DriveFolderContext;
+}
+
+// 同一個資料夾只解析一次：並行上傳多個檔案時共用同一個進行中的請求，避免重複建立
+const folderResolveCache = new Map<string, Promise<string | null>>();
+
+function sanitizeFolderName(name: string): string {
+  return (name || '')
+    .replace(/[\\/:*?"<>|\r\n\t]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 100);
+}
+
+async function requestEnsureFolder(ctx: DriveFolderContext): Promise<string | null> {
+  const body = {
+    action: 'ensureFolder',
+    folderName: sanitizeFolderName(ctx.name),
+    key: ctx.key || '',
+    parentFolderId: ctx.parentFolderId || '',
+  };
+
+  // 1. 優先走同源內部代理
+  try {
+    const res = await fetch('/api/drive/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.success && data.folder?.id) return data.folder.id as string;
+    }
+  } catch {
+    // 回退至直接端點
+  }
+
+  // 2. 備援：直接呼叫 GAS
+  try {
+    const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.success && data.folder?.id) return data.folder.id as string;
+    }
+  } catch (err) {
+    console.warn('建立專屬雲端資料夾失敗:', err);
+  }
+
+  return null;
+}
+
+/**
+ * 取得專案/課程專屬資料夾 ID (不存在則由 GAS 建立)。
+ * 失敗時回傳 null，呼叫端應退回預設資料夾，確保上傳流程不中斷。
+ */
+export function ensureDriveFolder(ctx: DriveFolderContext): Promise<string | null> {
+  if (!sanitizeFolderName(ctx.name)) return Promise.resolve(null);
+
+  const cacheKey = `${ctx.parentFolderId || 'default'}|${ctx.key || ''}|${sanitizeFolderName(ctx.name)}`;
+  const cached = folderResolveCache.get(cacheKey);
+  if (cached) return cached;
+
+  const promise = requestEnsureFolder(ctx).then((id) => {
+    // 失敗不快取，下次上傳可重試
+    if (!id) folderResolveCache.delete(cacheKey);
+    return id;
+  });
+  folderResolveCache.set(cacheKey, promise);
+  return promise;
+}
+
+/**
  * 透過 Google Apps Script 端點直傳 Google 雲端硬碟 (使用 5TB 空間)
  * 策略：
  * 1. 檔案 <= 4MB 時，優先透過內部代理 (/api/drive/upload) 轉發，免除跨域 (CORS)、企業防火牆與 Google 帳號衝突。
  * 2. 檔案 > 4MB (避開 Vercel 4.5MB 限制) 或內部代理異常時，自動切換至 GAS 直傳。
  * 3. 雙重保險：直傳遇網路中斷或逾時 (30s 企業防火牆限制) 時，自動觸發雲端收件校驗 (Auto-Reconciliation)，保證檔案絕不漏失！
+ * 4. 若提供 options.folderContext，檔案會存入該專案/課程的專屬資料夾 (自動建立，不重複)。
  */
 export async function uploadFileToDrive(
   file: File,
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  options?: UploadFileOptions
 ): Promise<ActionItemAttachment> {
   const MAX_SIZE = 50 * 1024 * 1024;
   if (file.size > MAX_SIZE) {
     throw new Error(`檔案大小 (${formatFileSize(file.size)}) 超過 50MB 上限，請先壓縮後再上傳`);
+  }
+
+  // 0. 解析專屬資料夾 (失敗則退回預設資料夾)
+  let targetFolderId: string | null = null;
+  if (options?.folderContext) {
+    onProgress?.(3, 'requesting_session', {
+      percent: 3,
+      status: 'requesting_session',
+      stageMessage: '正在準備專屬雲端資料夾...',
+    });
+    targetFolderId = await ensureDriveFolder(options.folderContext);
   }
 
   // 1. 讀取並轉換檔案為 Base64
@@ -182,6 +285,7 @@ export async function uploadFileToDrive(
     fileName: file.name,
     mimeType: file.type || 'application/octet-stream',
     base64: base64,
+    ...(targetFolderId ? { folderId: targetFolderId } : {}),
   });
 
   // 輔助函式：透過直接 GAS 端點直傳 (備援或 > 4MB 大檔案)

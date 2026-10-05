@@ -48,8 +48,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data);
     }
 
+    // 處理專屬資料夾建立 / 尋找 (一個專案或課程只對應一個資料夾)
+    if (body.action === 'ensureFolder') {
+      const { folderName, key, parentFolderId } = body;
+      if (!folderName) {
+        return NextResponse.json({ success: false, message: '缺少 folderName' }, { status: 400 });
+      }
+
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'ensureFolder', folderName, key, parentFolderId }),
+        redirect: 'follow',
+      });
+
+      if (!res.ok) {
+        return NextResponse.json(
+          { success: false, message: `雲端硬碟建立資料夾回應 HTTP ${res.status}` },
+          { status: res.status }
+        );
+      }
+
+      const data = await res.json();
+      return NextResponse.json(data);
+    }
+
     // 處理檔案上傳
-    const { fileName, mimeType, base64 } = body;
+    const { fileName, mimeType, base64, folderId } = body;
     if (!fileName || !base64) {
       return NextResponse.json(
         { success: false, message: '缺少檔案名稱或 Base64 內容' },
@@ -65,6 +90,7 @@ export async function POST(req: NextRequest) {
         fileName,
         mimeType: mimeType || 'application/octet-stream',
         base64,
+        ...(folderId ? { folderId } : {}),
       }),
       redirect: 'follow',
     });

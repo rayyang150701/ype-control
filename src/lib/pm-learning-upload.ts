@@ -75,19 +75,25 @@ function fileToBase64(file: File, onProgress?: (percent: number) => void): Promi
   });
 }
 
+export interface PMLearningUploadOptions {
+  courseId?: string;
+  courseTitle?: string;
+}
+
 /**
  * 專案-Map 專用 Google Drive 檔案上傳主函式
  * 流程：
  * 1. 檔名與副檔名檢查（擋 .exe/.bat/.sh，上限 100MB）
- * 2. 呼叫後端 /api/pm-learning/upload-session 取得驗證過的專屬 folderId 與端點
+ * 2. 呼叫後端 /api/pm-learning/upload-session 取得驗證過的課程專屬 folderId 與端點 (一堂課程只有一個專屬資料夾)
  * 3. 讀取 Base64
- * 4. 根據檔案大小（<= 4MB 優先走內部代理，> 4MB 透過 fetch 支援 302 重導向直傳 GAS 端點）
+ * 4. 透過 fetch 直傳 GAS 端點 (支援 302 重導向並存入課程專屬資料夾)
  * 5. 上傳成功自動回傳 PMLearningAttachment 物件
  */
 export async function uploadPMLearningFile(
   file: File,
   targetFileName: string,
-  onProgress?: PMLearningProgressCallback
+  onProgress?: PMLearningProgressCallback,
+  options?: PMLearningUploadOptions
 ): Promise<PMLearningAttachment> {
   // 1. 本地前置校驗
   const lowerName = file.name.toLowerCase();
@@ -99,8 +105,8 @@ export async function uploadPMLearningFile(
     throw new Error(`檔案大小 (${formatFileSize(file.size)}) 超過單檔 100MB 上限，請先壓縮後再上傳。`);
   }
 
-  // 2. 向伺服器申請 upload-session，確保 GOOGLE_DRIVE_PM_LEARNING_FOLDER_ID 存在且合法
-  onProgress?.({ percent: 5, stageMessage: '向伺服器驗證上傳權限與目標資料夾...' });
+  // 2. 向伺服器申請 upload-session，確保 GOOGLE_DRIVE_PM_LEARNING_FOLDER_ID 存在並準備課程專屬資料夾
+  onProgress?.({ percent: 5, stageMessage: '向伺服器驗證上傳權限與準備課程專屬資料夾...' });
 
   const sessionRes = await fetch('/api/pm-learning/upload-session', {
     method: 'POST',
@@ -109,6 +115,8 @@ export async function uploadPMLearningFile(
       fileName: targetFileName,
       fileSize: file.size,
       fileType: file.type || 'application/octet-stream',
+      courseId: options?.courseId,
+      courseTitle: options?.courseTitle,
     }),
   });
 

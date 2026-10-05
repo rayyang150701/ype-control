@@ -103,6 +103,24 @@ export function ActionItemDialog({
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
 
+  // 專屬雲端資料夾：一個專案只對應一個資料夾 (不論底下有幾個待辦)
+  // - 既有專案：以專案 ID 為識別碼，專案改名後仍會沿用同一個資料夾
+  // - 尚在建立中的新專案：暫以「案號_名稱」尋找/建立，之後以專案 ID 認領同一個資料夾
+  const uploadFolderContext = (() => {
+    if (isCreatingNewProject) {
+      const n = newProjectName.trim();
+      if (!n) return undefined;
+      const c = newProjectCaseNumber.trim();
+      return { name: c ? `${c}_${n}` : n };
+    }
+    const p = projects.find((x) => x.id === projectId);
+    if (!p) return undefined;
+    return {
+      key: `project:${p.id}`,
+      name: p.caseNumber ? `${p.caseNumber}_${p.name}` : p.name,
+    };
+  })();
+
   // 當附件完成上傳時，若為既有待辦，自動同步至資料庫以保證 100% 不漏失
   const handleAttachmentUploaded = async (
     newAttachment: ActionItemAttachment,
@@ -942,6 +960,7 @@ export function ActionItemDialog({
             disabled={isSubmitting}
             onUploadingChange={setIsUploadingAttachments}
             onAttachmentUploaded={handleAttachmentUploaded}
+            folderContext={uploadFolderContext}
           />
 
           {/* 經驗檢討 (Lesson Learnt) */}

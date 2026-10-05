@@ -1650,15 +1650,23 @@ function PersonalCourseCard({
         });
 
         try {
-          const newAtt = await uploadPMLearningFile(file, targetFileName, (prog) => {
-            setUploadProgressInfo({
-              percent: prog.percent,
-              stageMessage: prog.stageMessage,
-              currentFileName: targetFileName,
-              index: i + 1,
-              total: fileList.length,
-            });
-          });
+          const newAtt = await uploadPMLearningFile(
+            file,
+            targetFileName,
+            (prog) => {
+              setUploadProgressInfo({
+                percent: prog.percent,
+                stageMessage: prog.stageMessage,
+                currentFileName: targetFileName,
+                index: i + 1,
+                total: fileList.length,
+              });
+            },
+            {
+              courseId: course.id,
+              courseTitle: course.title,
+            }
+          );
 
           currentAttachmentsList = [...currentAttachmentsList, newAtt];
           setAttachments(currentAttachmentsList);

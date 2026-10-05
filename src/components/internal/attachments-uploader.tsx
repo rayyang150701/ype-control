@@ -24,7 +24,7 @@ import {
   RotateCw,
   Search,
 } from 'lucide-react';
-import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive, checkRecentFileInDrive } from '@/lib/drive-upload';
+import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive, checkRecentFileInDrive, type DriveFolderContext } from '@/lib/drive-upload';
 import { copyToClipboard } from '@/lib/utils';
 import type { ActionItemAttachment } from '@/types';
 
@@ -34,6 +34,8 @@ interface AttachmentsUploaderProps {
   disabled?: boolean;
   onUploadingChange?: (isUploading: boolean) => void;
   onAttachmentUploaded?: (newAttachment: ActionItemAttachment, updatedList: ActionItemAttachment[]) => void;
+  /** 專屬資料夾 (專案)：有提供時檔案存入該專案的專屬資料夾；未提供則使用預設資料夾 (例如 KM 知識庫) */
+  folderContext?: DriveFolderContext;
 }
 
 interface UploadTask {
@@ -52,6 +54,7 @@ export function AttachmentsUploader({
   disabled = false,
   onUploadingChange,
   onAttachmentUploaded,
+  folderContext,
 }: AttachmentsUploaderProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,21 +120,25 @@ export function AttachmentsUploader({
 
   const uploadSingleFile = async (task: UploadTask) => {
     try {
-      const attachment = await uploadFileToDrive(task.file, (percent, status, info) => {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.tempId === task.tempId
-              ? {
-                  ...t,
-                  percent,
-                  status,
-                  speedText: info?.speedText,
-                  stageMessage: info?.stageMessage,
-                }
-              : t
-          )
-        );
-      });
+      const attachment = await uploadFileToDrive(
+        task.file,
+        (percent, status, info) => {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.tempId === task.tempId
+                ? {
+                    ...t,
+                    percent,
+                    status,
+                    speedText: info?.speedText,
+                    stageMessage: info?.stageMessage,
+                  }
+                : t
+            )
+          );
+        },
+        { folderContext }
+      );
 
       // 成功完成：使用最新 ref 疊加新附件，排除重複
       const currentList = attachmentsRef.current || [];

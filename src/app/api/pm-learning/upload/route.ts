@@ -118,6 +118,8 @@ export async function POST(req: NextRequest) {
       process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL ||
       DEFAULT_GAS_URL;
 
+    const targetFolderId = body.folderId ? String(body.folderId).trim() : folderId.trim();
+
     const gasRes = await fetch(gasUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -125,7 +127,7 @@ export async function POST(req: NextRequest) {
         fileName,
         mimeType: mimeType || 'application/octet-stream',
         base64,
-        folderId: folderId.trim(), // 嚴格帶入專案-Map 專用資料夾 ID
+        folderId: targetFolderId,
       }),
       redirect: 'follow',
     });
