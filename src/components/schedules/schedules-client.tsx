@@ -116,10 +116,13 @@ export function SchedulesClient({
     const waitingOn = searchParams.get('waitingOn') || '';
     const rawCategory = searchParams.get('category');
     const location = searchParams.get('location') || '';
+    const meetingUrl = searchParams.get('meetingUrl') || '';
 
     let category: TripCategory = 'business';
     if (rawCategory && ['business', 'meeting', 'online_meeting', 'other'].includes(rawCategory)) {
       category = rawCategory as TripCategory;
+    } else if (meetingUrl) {
+      category = 'online_meeting';
     } else {
       const lower = (subject + ' ' + notes).toLowerCase();
       if (lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
@@ -144,6 +147,7 @@ export function SchedulesClient({
       customerName: matchedClient?.name || customerName || matchedProject?.clientName || '',
       travelers,
       location: location || (category === 'online_meeting' ? '線上會議' : ''),
+      meetingUrl: meetingUrl || undefined,
       startDate: tripDate,
       endDate: tripDate,
       startTime: '09:00',

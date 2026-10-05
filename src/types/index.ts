@@ -233,6 +233,7 @@ export interface ProjectActionItem {
   projectCaseNumber?: string;
   projectCategory?: '評估案' | '已開案';
   isPinned?: boolean;
+  meetingUrl?: string;
 }
 
 export interface WeeklySnapshotItem {

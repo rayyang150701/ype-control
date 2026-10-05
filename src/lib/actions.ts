@@ -1729,9 +1729,10 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 
 // --- 內部細部待辦事項與專案歷程追蹤 (Action Items) ---
 
-// 附件與置頂解析輔助函式 (雙軌相容：優先真實 attachments/is_pinned 欄位，備援 notes 嵌入標記)
+// 附件、置頂與線上會議解析輔助函式 (雙軌相容：優先真實 attachments/is_pinned 欄位，備援 notes 嵌入標記)
 const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/g;
 const PINNED_MARKER_REGEX = /<!--PINNED:(true|false)-->/gi;
+const MEETING_URL_MARKER_REGEX = /<!--MEETING_URL:([\s\S]*?)-->/gi;
 
 function isColumnMissingError(err: any): boolean {
     if (!err) return false;
@@ -1743,14 +1744,22 @@ function isColumnMissingError(err: any): boolean {
 // 標記資料庫是否已具備 is_pinned 實體欄位（預設 false 採 notes 標記無痛儲存，杜絕 PostgREST PGRST204 報錯）
 let dbSupportsPinnedColumn = false;
 
-function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean } {
+function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean; meetingUrl?: string } {
     let list: ActionItemAttachment[] = [];
     const rawNotes = item.notes || '';
     const isPinned = Boolean(item.is_pinned) || /<!--PINNED:true-->/i.test(rawNotes);
-    // 徹底清除備註中可能殘留的 <!--ATTACHMENTS:...--> 及 <!--PINNED:...--> 隱藏標記字串，避免外露於使用者介面
+    let meetingUrl = item.meeting_url || '';
+    if (!meetingUrl && rawNotes) {
+        const matchMeeting = rawNotes.match(/<!--MEETING_URL:([\s\S]*?)-->/i);
+        if (matchMeeting && matchMeeting[1]) {
+            meetingUrl = matchMeeting[1].trim();
+        }
+    }
+    // 徹底清除備註中可能殘留的 <!--ATTACHMENTS:...-->、<!--PINNED:...--> 及 <!--MEETING_URL:...--> 隱藏標記字串，避免外露於使用者介面
     let notes = rawNotes
         .replace(ATTACHMENTS_MARKER_REGEX, '')
         .replace(PINNED_MARKER_REGEX, '')
+        .replace(MEETING_URL_MARKER_REGEX, '')
         .trim();
 
     if (item.attachments) {
@@ -1770,7 +1779,7 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
         }
     }
 
-    return { attachments: list, cleanNotes: notes, isPinned };
+    return { attachments: list, cleanNotes: notes, isPinned, meetingUrl: meetingUrl || undefined };
 }
 
 function encodeAttachmentsIntoNotes(notes: string, attachments?: ActionItemAttachment[]): string {
@@ -1818,7 +1827,7 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
 
         return sortedData.map(item => {
             const proj = projMap.get(item.project_id);
-            const { attachments, cleanNotes, isPinned } = extractAttachments(item);
+            const { attachments, cleanNotes, isPinned, meetingUrl } = extractAttachments(item);
             return {
                 id: item.id,
                 projectId: item.project_id,
@@ -1843,6 +1852,7 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
                 projectCaseNumber: proj?.caseNumber || '',
                 projectCategory: (proj?.category || '已開案') as ('評估案' | '已開案'),
                 isPinned,
+                meetingUrl,
             };
         });
     } catch (err) {
@@ -1865,6 +1875,7 @@ export async function createActionItem(data: {
     lessonLearnt?: string;
     attachments?: ActionItemAttachment[];
     isPinned?: boolean;
+    meetingUrl?: string;
     updatedAt?: string | null;
     operator?: AuditOperator;
 }) {
@@ -1875,12 +1886,17 @@ export async function createActionItem(data: {
         const isStarting = initialStatus === 'in_progress' || initialStatus === 'blocked';
         const initialStatusHistory = [{ from: 'new', to: initialStatus, at: nowIso }];
         const isPinned = Boolean(data.isPinned);
+        const meetingUrl = data.meetingUrl ? data.meetingUrl.trim() : '';
         let cleanNotes = (data.notes || '')
             .replace(ATTACHMENTS_MARKER_REGEX, '')
             .replace(PINNED_MARKER_REGEX, '')
+            .replace(MEETING_URL_MARKER_REGEX, '')
             .trim();
         if (isPinned) {
             cleanNotes = `${cleanNotes}\n<!--PINNED:true-->`.trim();
+        }
+        if (meetingUrl) {
+            cleanNotes = `${cleanNotes}\n<!--MEETING_URL:${meetingUrl}-->`.trim();
         }
 
         const insertPayload: any = {
@@ -1936,6 +1952,7 @@ export async function createActionItem(data: {
         const userNotes = (data.notes || '')
             .replace(ATTACHMENTS_MARKER_REGEX, '')
             .replace(PINNED_MARKER_REGEX, '')
+            .replace(MEETING_URL_MARKER_REGEX, '')
             .trim();
 
         const newItem: ProjectActionItem = {
@@ -1962,6 +1979,7 @@ export async function createActionItem(data: {
             projectCaseNumber: projData?.case_number || '',
             projectCategory: (projData?.status === 'poc' || projData?.status === 'evaluation') ? '評估案' : '已開案',
             isPinned,
+            meetingUrl: meetingUrl || undefined,
         };
 
         // 寫入修改履歷
@@ -2002,6 +2020,7 @@ export async function updateActionItem(id: string, data: Partial<{
     lessonLearnt: string;
     attachments: ActionItemAttachment[];
     isPinned: boolean;
+    meetingUrl?: string;
     updatedAt: string | null;
     operator?: AuditOperator;
 }>) {
@@ -2028,23 +2047,32 @@ export async function updateActionItem(id: string, data: Partial<{
         if (data.waitingOn !== undefined) updatePayload.waiting_on = data.waitingOn;
         if (data.lessonLearnt !== undefined) updatePayload.lesson_learnt = data.lessonLearnt;
 
-        // 處理置頂與備註（雙軌相容：真實欄位 + 備援嵌入標記）
+        // 處理置頂、會議連結與備註（雙軌相容：真實欄位 + 備援嵌入標記）
         const targetPinned = data.isPinned !== undefined
             ? Boolean(data.isPinned)
             : (Boolean(existing.is_pinned) || /<!--PINNED:true-->/i.test(existing.notes || ''));
 
-        if (data.isPinned !== undefined && dbSupportsPinnedColumn) {
-            updatePayload.is_pinned = targetPinned;
+        let existingMeetingUrl = existing.meeting_url || '';
+        if (!existingMeetingUrl && existing.notes) {
+            const matchM = existing.notes.match(/<!--MEETING_URL:([\s\S]*?)-->/i);
+            if (matchM && matchM[1]) existingMeetingUrl = matchM[1].trim();
         }
+        const targetMeetingUrl = data.meetingUrl !== undefined
+            ? (data.meetingUrl ? data.meetingUrl.trim() : '')
+            : existingMeetingUrl;
 
-        if (data.notes !== undefined || data.isPinned !== undefined) {
+        if (data.notes !== undefined || data.isPinned !== undefined || data.meetingUrl !== undefined) {
             const rawNotes = data.notes !== undefined ? data.notes : (existing.notes || '');
             let clean = (rawNotes || '')
                 .replace(ATTACHMENTS_MARKER_REGEX, '')
                 .replace(PINNED_MARKER_REGEX, '')
+                .replace(MEETING_URL_MARKER_REGEX, '')
                 .trim();
             if (targetPinned) {
                 clean = `${clean}\n<!--PINNED:true-->`.trim();
+            }
+            if (targetMeetingUrl) {
+                clean = `${clean}\n<!--MEETING_URL:${targetMeetingUrl}-->`.trim();
             }
             updatePayload.notes = clean;
         }
@@ -2134,7 +2162,7 @@ export async function updateActionItem(id: string, data: Partial<{
         if (updateRes.error) throw updateRes.error;
         const updated = updateRes.data;
 
-        const { attachments: extractedAtt, cleanNotes: extractedNotes, isPinned: updatedPinned } = extractAttachments(updated);
+        const { attachments: extractedAtt, cleanNotes: extractedNotes, isPinned: updatedPinned, meetingUrl: updatedMeetingUrl } = extractAttachments(updated);
 
         // 寫入修改履歷
         try {
@@ -2209,6 +2237,7 @@ export async function updateActionItem(id: string, data: Partial<{
                 createdAt: formatISO(updated.created_at),
                 updatedAt: formatISO(updated.updated_at),
                 isPinned: updatedPinned,
+                meetingUrl: updatedMeetingUrl,
             } : undefined
         };
     } catch (err: any) {

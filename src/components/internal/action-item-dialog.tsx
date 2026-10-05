@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
-import { Building2, Pin, CalendarPlus } from 'lucide-react';
+import { Building2, Pin, CalendarPlus, Video, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
@@ -90,6 +90,7 @@ export function ActionItemDialog({
   const [newProjectEvaluationDate, setNewProjectEvaluationDate] = useState<string>(() => getLocalTodayDateStr());
 
   const [title, setTitle] = useState(item?.title || '');
+  const [meetingUrl, setMeetingUrl] = useState(item?.meetingUrl || '');
   const [isPinned, setIsPinned] = useState(item?.isPinned || false);
   const [phase, setPhase] = useState<ActionItemPhase>(item?.phase || '1.2 施工階段');
   const [status, setStatus] = useState<ActionItemStatus>(item?.status || 'pending');
@@ -302,6 +303,7 @@ export function ActionItemDialog({
         setProjectId(item.projectId);
         setIsCreatingNewProject(false);
         setTitle(item.title);
+        setMeetingUrl(item.meetingUrl || '');
         setPhase(item.phase);
         setStatus(item.status);
         setOwner(item.owner || '');
@@ -324,6 +326,7 @@ export function ActionItemDialog({
         setNewProjectCategory('評估案');
         setNewProjectEvaluationDate(todayStr);
         setTitle('');
+        setMeetingUrl('');
         setPhase('1.2 施工階段');
         setStatus('pending');
         setOwner(targetProj?.clientName || '燁輝');
@@ -340,8 +343,8 @@ export function ActionItemDialog({
   }, [open, item, defaultProjectId, projects]);
 
   const isMeetingRelated = useMemo(() => {
-    return /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${title} ${notes || ''}`);
-  }, [title, notes]);
+    return Boolean(meetingUrl) || /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${title} ${notes || ''}`);
+  }, [title, notes, meetingUrl]);
 
   const handleJumpToSchedule = () => {
     if (!title.trim()) {
@@ -360,9 +363,12 @@ export function ActionItemDialog({
     if (notes) params.set('notes', notes.trim());
 
     const lower = `${title} ${notes || ''}`.toLowerCase();
-    if (lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
+    if (meetingUrl.trim() || lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
       params.set('category', 'online_meeting');
       params.set('location', '線上會議');
+      if (meetingUrl.trim()) {
+        params.set('meetingUrl', meetingUrl.trim());
+      }
     } else if (lower.includes('會議') || lower.includes('開會') || lower.includes('訪談') || lower.includes('討論') || lower.includes('審查')) {
       params.set('category', 'meeting');
     } else {
@@ -456,6 +462,7 @@ export function ActionItemDialog({
           lessonLearnt,
           attachments,
           isPinned,
+          meetingUrl: meetingUrl.trim() || undefined,
           operator,
         });
         if (res.success) {
@@ -480,6 +487,7 @@ export function ActionItemDialog({
           lessonLearnt,
           attachments,
           isPinned,
+          meetingUrl: meetingUrl.trim() || undefined,
           operator,
         });
         if (res.success) {
@@ -622,27 +630,74 @@ export function ActionItemDialog({
             />
           </div>
 
-          {/* 會議快捷提示 (若標題或備註涉及會議) */}
-          {isMeetingRelated && (
-            <div className="flex items-center justify-between p-2.5 rounded-lg border border-indigo-200 bg-indigo-50/90 text-indigo-900 shadow-2xs">
-              <div className="flex items-center gap-2 text-xs">
-                <CalendarPlus className="h-4 w-4 text-indigo-600 shrink-0" />
-                <div>
-                  <span className="font-bold">本事項涉及會議討論</span>
-                  <span className="text-[11px] text-indigo-700 ml-1.5 hidden sm:inline">
-                    可直接轉至「專案行程」排定日期、時段與參與人員
-                  </span>
+          {/* 會議設定與 Google Meet 快捷 (若標題/備註涉及會議或已有會議連結) */}
+          {(isMeetingRelated || meetingUrl) ? (
+            <div className="p-3 rounded-lg border border-indigo-200 bg-indigo-50/80 text-indigo-950 space-y-2.5 shadow-2xs animate-in fade-in-50 duration-200">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-900">
+                  <CalendarPlus className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <span>視訊會議設定 / Google Meet 快速選項</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMeetingUrl('https://meet.google.com/home')}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-white hover:bg-indigo-100 border border-indigo-300 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
+                    title="快速帶入 Google Meet 網址 (https://meet.google.com/home)"
+                  >
+                    ⚡ 帶入 Google Meet
+                  </button>
+                  <a
+                    href="https://meet.google.com/home"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
+                    title="另開分頁前往 Google Meet 建立或取得新會議連結"
+                  >
+                    <ExternalLink className="h-3 w-3 text-blue-600" />
+                    取得會議連結
+                  </a>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleJumpToSchedule}
+                    className="h-6 text-[11px] bg-indigo-600 text-white hover:bg-indigo-700 hover:text-white border-transparent font-medium shrink-0 ml-1 px-2 cursor-pointer"
+                  >
+                    排定行程 →
+                  </Button>
                 </div>
               </div>
-              <Button
+              <div className="relative">
+                <Input
+                  type="url"
+                  value={meetingUrl}
+                  onChange={(e) => setMeetingUrl(e.target.value)}
+                  placeholder="可貼上 Google Meet (如 https://meet.google.com/xxx-xxxx-xxx) 或 Teams 連結"
+                  className="bg-white border-indigo-200 focus-visible:ring-indigo-400 text-xs pr-16 h-8"
+                />
+                {meetingUrl && (
+                  <a
+                    href={meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-indigo-50"
+                  >
+                    開啟 <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end -mt-1">
+              <button
                 type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleJumpToSchedule}
-                className="h-7 text-xs bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:text-indigo-900 font-medium shrink-0 ml-2"
+                onClick={() => setMeetingUrl('https://meet.google.com/home')}
+                className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 py-0.5 cursor-pointer"
               >
-                轉至新增行程 →
-              </Button>
+                <Video className="h-3.5 w-3.5" />
+                <span>+ 加入 Google Meet 會議連結</span>
+              </button>
             </div>
           )}
 

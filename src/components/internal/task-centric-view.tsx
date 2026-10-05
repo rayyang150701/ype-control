@@ -27,6 +27,7 @@ import {
   Copy,
   Pin,
   CalendarPlus,
+  Video,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -747,8 +748,39 @@ export function TaskCentricView({
                         {item.title}
                       </span>
 
+                      {/* 視訊會議 / Google Meet 快捷連結 */}
+                      {item.meetingUrl ? (
+                        <a
+                          href={item.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 hover:text-purple-900 border border-purple-200 px-2 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
+                          title={`點擊進入視訊會議：${item.meetingUrl}`}
+                        >
+                          <Video className="h-3 w-3 text-purple-600" />
+                          <span>視訊會議</span>
+                          <ExternalLink className="h-2.5 w-2.5 text-purple-500" />
+                        </a>
+                      ) : (
+                        /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`) && (
+                          <a
+                            href="https://meet.google.com/home"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
+                            title="前往 Google Meet 取得或發起會議連結"
+                          >
+                            <Video className="h-3 w-3 text-emerald-600" />
+                            <span>Google Meet</span>
+                            <ExternalLink className="h-2.5 w-2.5 text-emerald-500" />
+                          </a>
+                        )
+                      )}
+
                       {/* 若涉及到會議，顯示直覺的快捷排定按鈕 */}
-                      {onScheduleTrip && !isDone && /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`) && (
+                      {onScheduleTrip && !isDone && (item.meetingUrl || /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`)) && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -939,6 +971,18 @@ export function TaskCentricView({
                                 >
                                   <Pin className={`h-3.5 w-3.5 ${item.isPinned ? 'fill-amber-500' : ''}`} />
                                 </Button>
+                              )}
+                              {(item.meetingUrl || /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`)) && (
+                                <a
+                                  href={item.meetingUrl || 'https://meet.google.com/home'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-7 w-7 inline-flex items-center justify-center text-slate-400 hover:text-purple-600 cursor-pointer rounded-md hover:bg-purple-50 transition-colors"
+                                  title={item.meetingUrl ? `開啟視訊會議：${item.meetingUrl}` : '前往 Google Meet 取得會議連結 (https://meet.google.com/home)'}
+                                >
+                                  <Video className="h-3.5 w-3.5" />
+                                </a>
                               )}
                               {onScheduleTrip && (
                                 <Button

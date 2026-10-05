@@ -27,6 +27,7 @@ import {
   Sparkles,
   Filter,
   Video,
+  ExternalLink,
   FolderPlus,
   ChevronDown,
   X,
@@ -999,20 +1000,56 @@ export function TripFormDialog({
 
           {/* 2. 線上會議連結 (當類別為線上會議時顯示，不強制) */}
           {formData.category === 'online_meeting' && (
-            <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2 animate-in fade-in-50 duration-200">
-              <Label className="text-sm font-semibold text-purple-900 flex items-center gap-1.5">
-                <Video className="w-4 h-4 text-purple-600" />
-                <span>線上會議連結 <span className="text-xs text-purple-600 font-normal">(選填)</span></span>
-              </Label>
-              <Input
-                type="url"
-                value={formData.meetingUrl}
-                onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
-                placeholder="例：https://meet.google.com/xxx-xxxx-xxx 或 Teams / Zoom 視訊會議網址"
-                className="bg-white border-purple-200 focus:ring-purple-400 text-sm"
-              />
+            <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2.5 animate-in fade-in-50 duration-200">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <Label className="text-sm font-semibold text-purple-900 flex items-center gap-1.5">
+                  <Video className="w-4 h-4 text-purple-600" />
+                  <span>線上會議連結 <span className="text-xs text-purple-600 font-normal">(選填)</span></span>
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, meetingUrl: 'https://meet.google.com/home' }));
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-white hover:bg-purple-100 border border-purple-300 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
+                    title="快速帶入 Google Meet 網址 (https://meet.google.com/home)"
+                  >
+                    ⚡ 帶入 Google Meet
+                  </button>
+                  <a
+                    href="https://meet.google.com/home"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded shadow-2xs transition-colors cursor-pointer"
+                    title="另開分頁前往 Google Meet 建立或取得新會議連結"
+                  >
+                    <ExternalLink className="w-3 h-3 text-blue-600" />
+                    取得會議連結
+                  </a>
+                </div>
+              </div>
+              <div className="relative">
+                <Input
+                  type="url"
+                  value={formData.meetingUrl}
+                  onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
+                  placeholder="例：https://meet.google.com/xxx-xxxx-xxx 或 Teams / Zoom 視訊會議網址"
+                  className="bg-white border-purple-200 focus:ring-purple-400 text-sm pr-16"
+                />
+                {formData.meetingUrl && (
+                  <a
+                    href={formData.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium text-purple-600 hover:text-purple-800 flex items-center gap-1 px-2 py-1 rounded hover:bg-purple-50"
+                  >
+                    開啟 <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
               <p className="text-[11px] text-purple-600">
-                💡 可填寫 Google Meet、MS Teams 或 Zoom 連結，系統將同步加入通知與行事曆。
+                💡 可點擊「取得會議連結」直接前往 Google Meet 發起並取得會議代碼，或按「帶入 Google Meet」快捷代入。
               </p>
             </div>
           )}
