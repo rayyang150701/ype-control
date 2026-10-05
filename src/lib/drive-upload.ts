@@ -432,10 +432,27 @@ export async function uploadFileToDrive(
         }
       }
 
-      console.warn('內部代理上傳回應異常，切換至直接端點備援...');
+      console.warn('內部代理上傳回應異常，檢查雲端硬碟收件狀態或切換備援...');
     } catch (proxyErr) {
       clearInterval(proxyInterval);
-      console.warn('內部代理端點連線異常，切換至直接端點備援:', proxyErr);
+      console.warn('內部代理端點連線異常，檢查雲端硬碟收件狀態或切換備援:', proxyErr);
+    }
+
+    // ★ 重複檔案防護：切換備援直傳前，先檢查 Google 雲端硬碟是否其實「已經」成功收件！
+    // (因伺服器端如 Vercel 10s 逾時限制中斷了 HTTP 連線，但 GAS 實際上已成功寫入 5TB 雲端硬碟)
+    // 若已成功寫入，直接沿用該檔案物件，絕不重複發起第二次上傳，避免雙重建檔！
+    try {
+      const reconciled = await pollReconcileRecentFile(file.name, file.size, 2, 1200);
+      if (reconciled) {
+        onProgress?.(100, 'done', {
+          percent: 100,
+          status: 'done',
+          stageMessage: '已完成上傳與權限發布！',
+        });
+        return reconciled;
+      }
+    } catch (checkErr) {
+      console.warn('代理失敗後之雲端自動校驗檢查異常:', checkErr);
     }
   }
 

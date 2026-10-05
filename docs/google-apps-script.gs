@@ -62,6 +62,39 @@ function doPost(e) {
     var targetFolderId = data.folderId ? String(data.folderId).trim() : DEFAULT_TODO_FOLDER_ID;
     var folder = DriveApp.getFolderById(targetFolderId);
 
+    // ★ 重複上傳防護 (冪等性 Idempotency)：
+    // 檢查該資料夾內 5 分鐘內是否已存在同名檔案。
+    // 若有 (通常因伺服器代理逾時、連線中斷重試或雙重上傳導致)，直接沿用並回傳該檔案，絕不重複建立！
+    var existingFiles = folder.getFilesByName(fileName);
+    var now = new Date().getTime();
+    while (existingFiles.hasNext()) {
+      var ef = existingFiles.next();
+      var diffMs = now - ef.getDateCreated().getTime();
+      // 5 分鐘內建立的同名檔案視為同一次上傳作業，直接沿用
+      if (diffMs >= 0 && diffMs < 5 * 60 * 1000) {
+        var existingId = ef.getId();
+        var existingWebView = 'https://drive.google.com/file/d/' + existingId + '/view?usp=drivesdk';
+        var existingWebContent = 'https://drive.google.com/uc?id=' + existingId + '&export=download';
+        try {
+          existingWebView = ef.getUrl() || existingWebView;
+        } catch (uErr) {}
+
+        return responseJSON({
+          success: true,
+          file: {
+            id: existingId,
+            name: ef.getName(),
+            size: ef.getSize(),
+            mimeType: ef.getMimeType(),
+            webViewLink: existingWebView,
+            webContentLink: existingWebContent,
+            uploadedAt: ef.getDateCreated().toISOString()
+          },
+          reused: true
+        });
+      }
+    }
+
     // 解碼 Base64 並建立檔案
     var decoded = Utilities.base64Decode(base64);
     var blob = Utilities.newBlob(decoded, mimeType, fileName);
