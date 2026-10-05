@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
-import { Building2, Pin } from 'lucide-react';
+import { Building2, Pin, CalendarPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
@@ -59,6 +60,7 @@ export function ActionItemDialog({
   actionItems = [],
   onSuccess,
 }: ActionItemDialogProps) {
+  const router = useRouter();
   const { currentUser } = useAdmin();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -337,6 +339,40 @@ export function ActionItemDialog({
     }
   }, [open, item, defaultProjectId, projects]);
 
+  const isMeetingRelated = useMemo(() => {
+    return /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${title} ${notes || ''}`);
+  }, [title, notes]);
+
+  const handleJumpToSchedule = () => {
+    if (!title.trim()) {
+      toast({ title: '請先輸入事項名稱', variant: 'destructive' });
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('newTrip', 'true');
+    params.set('title', title.trim());
+    if (projectId) params.set('projectId', projectId);
+    const matchedProj = projects.find((p) => p.id === projectId);
+    if (matchedProj?.name) params.set('projectName', matchedProj.name);
+    if (dueDate) params.set('dueDate', dueDate);
+    if (owner && owner !== '未指定') params.set('customerName', owner);
+    if (waitingOn) params.set('waitingOn', waitingOn);
+    if (notes) params.set('notes', notes.trim());
+
+    const lower = `${title} ${notes || ''}`.toLowerCase();
+    if (lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
+      params.set('category', 'online_meeting');
+      params.set('location', '線上會議');
+    } else if (lower.includes('會議') || lower.includes('開會') || lower.includes('訪談') || lower.includes('討論') || lower.includes('審查')) {
+      params.set('category', 'meeting');
+    } else {
+      params.set('category', 'business');
+    }
+
+    onOpenChange(false);
+    router.push(`/schedules?${params.toString()}`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploadingAttachments) {
@@ -585,6 +621,30 @@ export function ActionItemDialog({
               required
             />
           </div>
+
+          {/* 會議快捷提示 (若標題或備註涉及會議) */}
+          {isMeetingRelated && (
+            <div className="flex items-center justify-between p-2.5 rounded-lg border border-indigo-200 bg-indigo-50/90 text-indigo-900 shadow-2xs">
+              <div className="flex items-center gap-2 text-xs">
+                <CalendarPlus className="h-4 w-4 text-indigo-600 shrink-0" />
+                <div>
+                  <span className="font-bold">本事項涉及會議討論</span>
+                  <span className="text-[11px] text-indigo-700 ml-1.5 hidden sm:inline">
+                    可直接轉至「專案行程」排定日期、時段與參與人員
+                  </span>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleJumpToSchedule}
+                className="h-7 text-xs bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-100 hover:text-indigo-900 font-medium shrink-0 ml-2"
+              >
+                轉至新增行程 →
+              </Button>
+            </div>
+          )}
 
           {/* 置頂追蹤（近期特別加強追蹤） */}
           <div className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
@@ -854,28 +914,41 @@ export function ActionItemDialog({
             </div>
           )}
 
-          <DialogFooter className="pt-2">
+          <DialogFooter className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2">
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
+              onClick={handleJumpToSchedule}
+              className="mr-auto text-indigo-700 bg-indigo-50/70 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 flex items-center gap-1.5 text-xs font-medium cursor-pointer w-full sm:w-auto"
+              title="將本事項名稱與專案直接帶入「新增行程」"
             >
-              取消
+              <CalendarPlus className="h-3.5 w-3.5 text-indigo-600" />
+              <span>排定會議 / 新增行程</span>
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || isUploadingAttachments}
-              className={isUploadingAttachments ? 'opacity-80 cursor-not-allowed' : ''}
-            >
-              {isSubmitting
-                ? '儲存中...'
-                : isUploadingAttachments
-                ? '檔案直傳中，請稍候...'
-                : item
-                ? '確認更新'
-                : '建立待辦'}
-            </Button>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                取消
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || isUploadingAttachments}
+                className={isUploadingAttachments ? 'opacity-80 cursor-not-allowed' : ''}
+              >
+                {isSubmitting
+                  ? '儲存中...'
+                  : isUploadingAttachments
+                  ? '檔案直傳中，請稍候...'
+                  : item
+                  ? '確認更新'
+                  : '建立待辦'}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

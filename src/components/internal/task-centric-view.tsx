@@ -26,6 +26,7 @@ import {
   Paperclip,
   Copy,
   Pin,
+  CalendarPlus,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -43,6 +44,7 @@ interface TaskCentricViewProps {
   onDeleteItem: (id: string) => Promise<void>;
   onToggleComplete: (item: ProjectActionItem) => Promise<void>;
   onTogglePin?: (item: ProjectActionItem) => Promise<void> | void;
+  onScheduleTrip?: (item: ProjectActionItem) => void;
   onAddNewItem: (defaultProjectId?: string) => void;
   onSwitchToProjectView: (projectId: string) => void;
   uniqueWaitingOns: string[];
@@ -60,6 +62,7 @@ export function TaskCentricView({
   onDeleteItem,
   onToggleComplete,
   onTogglePin,
+  onScheduleTrip,
   onAddNewItem,
   onSwitchToProjectView,
   uniqueWaitingOns,
@@ -744,6 +747,22 @@ export function TaskCentricView({
                         {item.title}
                       </span>
 
+                      {/* 若涉及到會議，顯示直覺的快捷排定按鈕 */}
+                      {onScheduleTrip && !isDone && /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onScheduleTrip(item);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200/80 px-2 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs group shrink-0"
+                          title="本事項涉及會議，點擊直接跳至「專案行程」新增會議行程"
+                        >
+                          <CalendarPlus className="h-3 w-3 text-indigo-600 group-hover:scale-110 transition-transform" />
+                          <span>排定行程</span>
+                        </button>
+                      )}
+
                       {/* 等候誰 */}
                       {item.waitingOn ? (
                         <Badge
@@ -919,6 +938,17 @@ export function TaskCentricView({
                                   title={item.isPinned ? '取消置頂追蹤 (恢復原排序)' : '設為置頂追蹤 (近期特別加強追蹤)'}
                                 >
                                   <Pin className={`h-3.5 w-3.5 ${item.isPinned ? 'fill-amber-500' : ''}`} />
+                                </Button>
+                              )}
+                              {onScheduleTrip && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => onScheduleTrip(item)}
+                                  className="h-7 w-7 p-0 text-slate-400 hover:text-indigo-600 cursor-pointer"
+                                  title="轉至專案行程（新增行程 / 排定會議）"
+                                >
+                                  <CalendarPlus className="h-3.5 w-3.5" />
                                 </Button>
                               )}
                               <Button

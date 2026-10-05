@@ -920,7 +920,13 @@ export function TripFormDialog({
         <DialogHeader className="px-6 py-4 border-b bg-gray-50/80 sticky top-0 z-10">
           <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-600" />
-            {trip ? '編輯出差行程' : '新增出差行程'}
+            {trip && trip.id
+              ? '編輯出差行程'
+              : formData.category === 'online_meeting'
+              ? '新增線上會議行程'
+              : formData.category === 'meeting'
+              ? '新增會議行程'
+              : '新增出差行程'}
           </DialogTitle>
         </DialogHeader>
 

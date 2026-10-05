@@ -43,6 +43,7 @@ import {
   PauseCircle,
   PlayCircle,
   Pin,
+  CalendarPlus,
 } from 'lucide-react';
 import { differenceInCalendarDays, parseISO, isPast } from 'date-fns';
 import { copyToClipboard } from '@/lib/utils';
@@ -878,6 +879,31 @@ export function InternalTasksClient({
     }
   };
 
+  // 待辦事項跳轉至新增行程（排定會議 / 出差）
+  const handleScheduleTrip = (item: ProjectActionItem) => {
+    const params = new URLSearchParams();
+    params.set('newTrip', 'true');
+    if (item.title) params.set('title', item.title);
+    if (item.projectId) params.set('projectId', item.projectId);
+    if (item.projectName) params.set('projectName', item.projectName);
+    if (item.dueDate) params.set('dueDate', item.dueDate);
+    if (item.owner && item.owner !== '未指定') params.set('customerName', item.owner);
+    if (item.waitingOn) params.set('waitingOn', item.waitingOn);
+    if (item.notes) params.set('notes', item.notes);
+
+    const lower = `${item.title} ${item.notes || ''}`.toLowerCase();
+    if (lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
+      params.set('category', 'online_meeting');
+      params.set('location', '線上會議');
+    } else if (lower.includes('會議') || lower.includes('開會') || lower.includes('訪談') || lower.includes('討論') || lower.includes('審查')) {
+      params.set('category', 'meeting');
+    } else {
+      params.set('category', 'business');
+    }
+
+    router.push(`/schedules?${params.toString()}`);
+  };
+
   const handleUpdateProjectStatus = async (projectId: string, payload: {
     category?: '評估案' | '已開案';
     internalStatus?: 'in_progress' | 'completed' | 'terminated' | 'on_hold';
@@ -1053,6 +1079,22 @@ export function InternalTasksClient({
               >
                 {item.title}
               </span>
+
+              {/* 若涉及到會議，顯示直覺的快捷排定按鈕 */}
+              {!isDone && /(會議|開會|訪談|線上|視訊|teams|meet|zoom|討論)/i.test(`${item.title} ${item.notes || ''}`) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScheduleTrip(item);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200/80 px-2 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs group shrink-0"
+                  title="本事項涉及會議，點擊直接跳至「專案行程」新增會議行程"
+                >
+                  <CalendarPlus className="h-3 w-3 text-indigo-600 group-hover:scale-110 transition-transform" />
+                  <span>排定行程</span>
+                </button>
+              )}
 
               {/* 專案類別標籤 */}
               {item.projectCategory && (
@@ -1296,6 +1338,15 @@ export function InternalTasksClient({
                 title={item.isPinned ? '取消置頂追蹤 (恢復原排序)' : '設為置頂追蹤 (近期特別加強追蹤)'}
               >
                 <Pin className={`h-3.5 w-3.5 ${item.isPinned ? 'fill-amber-500' : ''}`} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleScheduleTrip(item)}
+                className="h-7 w-7 p-0 text-slate-400 hover:text-indigo-600 cursor-pointer"
+                title="轉至專案行程（新增行程 / 排定會議）"
+              >
+                <CalendarPlus className="h-3.5 w-3.5" />
               </Button>
               <Button
                 variant="ghost"
@@ -1900,6 +1951,7 @@ export function InternalTasksClient({
           onDeleteItem={handleDelete}
           onToggleComplete={handleQuickToggleComplete}
           onTogglePin={handleTogglePin}
+          onScheduleTrip={handleScheduleTrip}
           onAddNewItem={(projId) => handleOpenAdd(projId)}
           onSwitchToProjectView={handleSwitchToProjectView}
           uniqueWaitingOns={uniqueWaitingOns}

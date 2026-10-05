@@ -13,7 +13,7 @@ import {
   ArrowDownToLine,
   Lock,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,7 @@ import {
   WeekInfo,
   Holiday,
   TRIP_CATEGORIES,
+  TripCategory,
 } from '@/types/businessTrip';
 import type { Client, Project, User } from '@/types';
 import {
@@ -71,6 +72,7 @@ export function SchedulesClient({
   initialHolidays,
 }: SchedulesClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { permissions, isLoaded, setIsLoginDialogOpen, currentUser } = useAdmin();
 
@@ -97,6 +99,68 @@ export function SchedulesClient({
   const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [isSyncingNotion, setIsSyncingNotion] = useState(false);
   const [lastNotionSync, setLastNotionSync] = useState<string | null>(null);
+
+  // 監聽 URL 參數：支援從待辦事項一鍵跳轉至「新增行程 / 會議」
+  useEffect(() => {
+    if (!searchParams) return;
+    const isNew = searchParams.get('newTrip') === 'true' || searchParams.get('createTrip') === 'true';
+    if (!isNew) return;
+
+    const subject = searchParams.get('subject') || searchParams.get('title') || '';
+    const projectId = searchParams.get('projectId') || '';
+    const projectName = searchParams.get('projectName') || '';
+    const customerId = searchParams.get('customerId') || '';
+    const customerName = searchParams.get('customerName') || '';
+    const dueDate = searchParams.get('dueDate') || searchParams.get('date') || '';
+    const notes = searchParams.get('notes') || '';
+    const waitingOn = searchParams.get('waitingOn') || '';
+    const rawCategory = searchParams.get('category');
+    const location = searchParams.get('location') || '';
+
+    let category: TripCategory = 'business';
+    if (rawCategory && ['business', 'meeting', 'online_meeting', 'other'].includes(rawCategory)) {
+      category = rawCategory as TripCategory;
+    } else {
+      const lower = (subject + ' ' + notes).toLowerCase();
+      if (lower.includes('線上') || lower.includes('視訊') || lower.includes('teams') || lower.includes('meet') || lower.includes('zoom')) {
+        category = 'online_meeting';
+      } else if (lower.includes('會議') || lower.includes('開會') || lower.includes('訪談') || lower.includes('討論') || lower.includes('審查')) {
+        category = 'meeting';
+      }
+    }
+
+    const matchedProject = projects.find((p) => p.id === projectId || (p.name && projectName && p.name === projectName));
+    const matchedClient = clients.find((c) => c.id === customerId || (c.name && customerName && c.name === customerName));
+
+    const travelers = waitingOn ? [waitingOn] : [''];
+    const tripDate = dueDate ? dueDate.slice(0, 10) : formatDate(new Date());
+
+    const prefilledTrip: BusinessTrip = {
+      id: '',
+      subject: subject || '待辦事項會議',
+      projectId: matchedProject?.id || projectId,
+      projectName: matchedProject?.name || projectName,
+      customerId: matchedClient?.id || customerId,
+      customerName: matchedClient?.name || customerName || matchedProject?.clientName || '',
+      travelers,
+      location: location || (category === 'online_meeting' ? '線上會議' : ''),
+      startDate: tripDate,
+      endDate: tripDate,
+      startTime: '09:00',
+      endTime: '10:00',
+      category,
+      status: 'pending',
+      lunchBoxes: 0,
+      notes: notes ? `來源待辦事項：\n${notes}` : (subject ? `由待辦事項「${subject}」轉入` : ''),
+    };
+
+    setSelectedTrip(prefilledTrip);
+    setSelectedDate(new Date(tripDate + 'T00:00:00'));
+    setShowTripForm(true);
+
+    // 清理 URL 參數避免後續重整時重複開啟
+    router.replace('/schedules', { scroll: false });
+  }, [searchParams, projects, clients, router]);
 
   // 重新載入行程與假日資料
   const reloadData = async () => {
@@ -349,7 +413,7 @@ export function SchedulesClient({
       department: currentUser.department,
     } : undefined;
 
-    if (selectedTrip) {
+    if (selectedTrip && selectedTrip.id) {
       const res = await updateBusinessTrip(selectedTrip.id, tripData, operator);
       if (res.success) {
         toast({ title: '更新成功', description: '行程資料已成功更新' });
