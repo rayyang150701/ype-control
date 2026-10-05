@@ -31,17 +31,27 @@ import {
   Share2,
   Maximize2,
   Minimize2,
+  MessageSquare,
+  MessageSquareQuote,
+  Send,
+  Copy,
+  Check,
+  Trash2,
+  HelpCircle,
+  Loader2,
 } from 'lucide-react';
 import { PMLearningCourse, CONTENT_TYPE_CONFIG } from '@/types/pm-learning';
 import { MarkdownPreview } from './markdown-preview';
-import { analyzeArticleContentAction, updatePMMemberProgress } from '@/lib/pm-learning-actions';
+import { analyzeArticleContentAction, askArticleQuestionAction, updatePMMemberProgress } from '@/lib/pm-learning-actions';
 import { useToast } from '@/hooks/use-toast';
+import { copyToClipboard } from '@/lib/utils';
 
 interface ArticleReaderDialogProps {
   isOpen: boolean;
   onClose: () => void;
   course: PMLearningCourse | null;
   currentUserId?: string;
+  initialOpenChat?: boolean;
   onEdit?: (course: PMLearningCourse) => void;
   onCourseUpdated?: (course: PMLearningCourse) => void;
 }
@@ -51,6 +61,7 @@ export function ArticleReaderDialog({
   onClose,
   course,
   currentUserId,
+  initialOpenChat = false,
   onEdit,
   onCourseUpdated,
 }: ArticleReaderDialogProps) {
@@ -61,6 +72,32 @@ export function ArticleReaderDialog({
   const [personalNotes, setPersonalNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // AI 提問對話狀態 (GPT-6 Luna)
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<
+    { role: 'user' | 'assistant'; content: string; createdAt?: string; model?: string }[]
+  >([]);
+  const [questionInput, setQuestionInput] = useState('');
+  const [isAsking, setIsAsking] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const chatBottomRef = React.useRef<HTMLDivElement>(null);
+
+  // 監聽是否外部傳入預設開啟 AI 提問
+  React.useEffect(() => {
+    if (isOpen && initialOpenChat) {
+      setIsChatOpen(true);
+    }
+  }, [isOpen, initialOpenChat]);
+
+  // 切換文章時，重置對話歷程
+  React.useEffect(() => {
+    if (course?.id) {
+      setChatMessages([]);
+      setQuestionInput('');
+      setIsAsking(false);
+    }
+  }, [course?.id]);
 
   // 初始化個人筆記
   React.useEffect(() => {
@@ -106,6 +143,60 @@ export function ArticleReaderDialog({
       });
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // 透過 GPT-6 Luna 進行文章互動提問
+  const handleSendQuestion = async (customQuestion?: string) => {
+    if (!course) return;
+    const q = (customQuestion || questionInput).trim();
+    if (!q || isAsking) return;
+
+    const nowStr = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    const userMsg = {
+      role: 'user' as const,
+      content: q,
+      createdAt: nowStr,
+    };
+
+    setChatMessages((prev) => [...prev, userMsg]);
+    setQuestionInput('');
+    setIsAsking(true);
+    setIsChatOpen(true);
+
+    try {
+      const historyPayload = chatMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const res = await askArticleQuestionAction(course.id, q, historyPayload);
+      if (res.success && res.answer) {
+        const assistantMsg = {
+          role: 'assistant' as const,
+          content: res.answer,
+          model: res.model || 'gpt-6-luna',
+          createdAt: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
+        };
+        setChatMessages((prev) => [...prev, assistantMsg]);
+      } else {
+        toast({
+          title: 'AI 回答失敗',
+          description: res.message || '請稍後再試',
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: '提問發生異常',
+        description: err?.message || '未知錯誤',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAsking(false);
+      setTimeout(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
   };
 
@@ -292,13 +383,12 @@ export function ArticleReaderDialog({
                   <Sparkles className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    AI 重點導讀與專案落地分析
-                    {course.aiAnalysis?.modelName && (
-                      <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
-                        {course.aiAnalysis.modelName}
-                      </span>
-                    )}
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                    <span>AI 重點導讀與專案落地分析</span>
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 font-mono">
+                      <Sparkles className="w-2.5 h-2.5 text-purple-600" />
+                      <span>{course.aiAnalysis?.modelName?.replace(/gpt-4o-mini.*/i, 'gpt-6-luna') || 'gpt-6-luna'}</span>
+                    </span>
                   </h3>
                   <p className="text-[11px] text-slate-500">
                     針對製造業排程、專案管理基線與跨部門協同提煉核心洞察
@@ -310,9 +400,31 @@ export function ArticleReaderDialog({
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() => setIsChatOpen((prev) => !prev)}
+                  className={`h-8 text-xs font-semibold gap-1.5 shadow-2xs transition-all cursor-pointer ${
+                    isChatOpen
+                      ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                      : 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 hover:text-purple-900'
+                  }`}
+                  title="開啟 AI 互動問答對話介面 (GPT-6 Luna)"
+                >
+                  <MessageSquareQuote className="w-3.5 h-3.5" />
+                  <span>{isChatOpen ? '收起問答' : '💬 向 AI 提問'}</span>
+                  {chatMessages.length > 0 && (
+                    <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      isChatOpen ? 'bg-white text-purple-700' : 'bg-purple-200 text-purple-900'
+                    }`}>
+                      {chatMessages.length}
+                    </span>
+                  )}
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
                   disabled={isAnalyzing}
                   onClick={handleTriggerAI}
-                  className="h-8 text-xs font-semibold gap-1.5 border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50 shadow-2xs"
+                  className="h-8 text-xs font-semibold gap-1.5 border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50 shadow-2xs cursor-pointer"
                 >
                   {isAnalyzing ? (
                     <>
@@ -388,6 +500,209 @@ export function ArticleReaderDialog({
                 <p className="text-xs text-slate-600 font-medium">
                   尚未產出 AI 摘要。點擊上方「一鍵 AI 摘要導讀」，快速提煉本文核心重點與專案落地做法！
                 </p>
+              </div>
+            )}
+
+            {/* AI 互動問答對話介面 (GPT-6 Luna) */}
+            {isChatOpen && (
+              <div className="mt-4 rounded-xl border border-purple-200 bg-white shadow-sm overflow-hidden animate-in fade-in-50 duration-200">
+                {/* 對話框標題列 */}
+                <div className="px-4 py-2.5 bg-linear-to-r from-purple-50 via-indigo-50/50 to-white border-b border-purple-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-md bg-purple-600 text-white shadow-2xs">
+                      <MessageSquareQuote className="w-3.5 h-3.5" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                        <span>AI 深度問答與研討對話</span>
+                        <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                          gpt-6-luna
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-purple-600">
+                        針對本文論述、製造業落地或未盡事宜隨時提出疑問，由 GPT-6 Luna 即時解答
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {chatMessages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setChatMessages([])}
+                        className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-rose-50 cursor-pointer"
+                        title="清空目前對話紀錄"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>清空對話</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 對話歷程區 */}
+                <div className="p-4 space-y-3.5 max-h-[420px] overflow-y-auto bg-slate-50/50">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center py-6 px-4 space-y-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mx-auto shadow-2xs">
+                        <Bot className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-slate-800">
+                          歡迎向 GPT-6 Luna 智庫顧問提問！
+                        </p>
+                        <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                          導讀後仍有不甚清楚或想深入探討之處？您可以直接點選下列常見提問，或在下方輸入框提出任何問題：
+                        </p>
+                      </div>
+
+                      {/* 預設建議問題按鈕 */}
+                      <div className="flex flex-wrap gap-1.5 justify-center max-w-lg mx-auto pt-2">
+                        {[
+                          '💡 這篇文章對智慧製造與產線排程有何核心啟發？',
+                          '💡 導入此概念時，常見風險與阻礙是什麼？',
+                          '💡 作為專案經理 (PM)，下週可落地的 3 項具體行動方案？',
+                          '💡 請針對本文第 2 點核心觀點為我進一步深入解讀',
+                        ].map((prompt, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSendQuestion(prompt.replace(/^[💡\s]+/, ''))}
+                            disabled={isAsking}
+                            className="text-[11px] bg-white hover:bg-purple-50 text-purple-900 border border-purple-200 hover:border-purple-300 rounded-lg px-2.5 py-1.5 text-left transition-all shadow-2xs hover:shadow-xs cursor-pointer active:scale-98"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex gap-2.5 ${
+                          msg.role === 'user' ? 'justify-end' : 'justify-start'
+                        }`}
+                      >
+                        {msg.role === 'assistant' && (
+                          <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </div>
+                        )}
+
+                        <div
+                          className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed shadow-2xs ${
+                            msg.role === 'user'
+                              ? 'bg-linear-to-br from-indigo-600 to-purple-600 text-white rounded-tr-xs'
+                              : 'bg-white border border-slate-200/90 text-slate-800 rounded-tl-xs space-y-1.5'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3 text-[10px] opacity-75 mb-1">
+                            <span className="font-semibold">
+                              {msg.role === 'user' ? '您' : 'GPT-6 Luna 智庫顧問'}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {msg.model && (
+                                <span className="font-mono bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded text-[9px]">
+                                  {msg.model}
+                                </span>
+                              )}
+                              <span>{msg.createdAt}</span>
+                            </div>
+                          </div>
+
+                          {msg.role === 'user' ? (
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          ) : (
+                            <div className="prose prose-xs max-w-none text-slate-800 prose-headings:text-indigo-950 prose-headings:font-bold prose-headings:my-1.5 prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 prose-strong:text-purple-900">
+                              <MarkdownPreview content={msg.content} />
+                            </div>
+                          )}
+
+                          {msg.role === 'assistant' && (
+                            <div className="pt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  copyToClipboard(msg.content);
+                                  setCopiedIndex(idx);
+                                  setTimeout(() => setCopiedIndex(null), 2000);
+                                }}
+                                className="text-[10px] text-slate-400 hover:text-purple-700 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-purple-50 transition-colors cursor-pointer"
+                              >
+                                {copiedIndex === idx ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span className="text-emerald-600">已複製</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3" />
+                                    <span>複製回答</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {msg.role === 'user' && (
+                          <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 shadow-2xs mt-0.5 font-bold text-xs">
+                            我
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+
+                  {/* 等候回答狀態 */}
+                  {isAsking && (
+                    <div className="flex gap-2.5 justify-start">
+                      <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs animate-pulse">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="bg-white border border-purple-200 text-slate-700 rounded-2xl rounded-tl-xs p-3 text-xs shadow-2xs flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 text-purple-600 animate-spin" />
+                        <span className="font-medium text-purple-900">
+                          GPT-6 Luna 正在研讀全文脈絡並深度思考回答中...
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={chatBottomRef} />
+                </div>
+
+                {/* 底部輸入列 */}
+                <div className="p-3 bg-white border-t border-purple-100 flex items-end gap-2">
+                  <Textarea
+                    value={questionInput}
+                    onChange={(e) => setQuestionInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendQuestion();
+                      }
+                    }}
+                    placeholder="針對這篇文章提出疑問（例如：這篇概念如何應用到鋼鐵產線排程？）... (Enter 送出)"
+                    rows={1}
+                    className="min-h-[38px] max-h-[120px] text-xs resize-none bg-slate-50/70 border-purple-200 focus-visible:ring-purple-400 py-2"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isAsking || !questionInput.trim()}
+                    onClick={() => handleSendQuestion()}
+                    className="h-[38px] px-3.5 bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs gap-1.5 shadow-2xs shrink-0 cursor-pointer"
+                  >
+                    {isAsking ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>送出</span>
+                  </Button>
+                </div>
               </div>
             )}
           </div>

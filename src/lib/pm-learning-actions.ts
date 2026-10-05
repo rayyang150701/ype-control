@@ -691,7 +691,7 @@ export async function analyzeArticleContentAction(
     let modelName = 'AI 智慧分析引擎';
 
     const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
 
     if (apiKey) {
       try {
@@ -702,7 +702,7 @@ export async function analyzeArticleContentAction(
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: model.includes('luna') ? 'gpt-4o-mini' : model,
+            model: model,
             messages: [
               {
                 role: 'system',
@@ -711,7 +711,7 @@ export async function analyzeArticleContentAction(
               },
               {
                 role: 'user',
-                content: `文章標題：${target.title}\n領域：${target.category}\n出刊/來源：${target.source || ''} (${target.issueDate || ''})\n\n文章全文：\n${textToAnalyze.slice(0, 4000)}`,
+                content: `文章標題：${target.title}\n領域：${target.category}\n出刊/來源：${target.source || ''} (${target.issueDate || ''})\n\n文章全文：\n${textToAnalyze.slice(0, 8000)}`,
               },
             ],
             temperature: 0.3,
@@ -778,6 +778,128 @@ export async function analyzeArticleContentAction(
   } catch (err: any) {
     console.error('AI 分析文章失敗:', err);
     return { success: false, message: err?.message || '分析失敗' };
+  }
+}
+
+/**
+ * 針對指定知識文章，向 AI 進行互動式提問與深入探討 (支援多輪對話歷程，模型採用 gpt-6-luna)
+ */
+export async function askArticleQuestionAction(
+  courseId: string,
+  question: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = []
+): Promise<{
+  success: boolean;
+  answer?: string;
+  model?: string;
+  message?: string;
+}> {
+  try {
+    const trimmedQ = (question || '').trim();
+    if (!trimmedQ) {
+      return { success: false, message: '請輸入您想詢問的問題' };
+    }
+
+    const list = await getPMLearningCourses();
+    const target = list.find((c) => c.id === courseId);
+    if (!target) {
+      return { success: false, message: '找不到指定文章' };
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    const model = process.env.OPENAI_MODEL || 'gpt-6-luna';
+    const textToAnalyze = (target.content || target.description || target.title).trim();
+
+    // 彙整文章核心背景與已萃取之 AI 導讀成果作為智庫記憶庫
+    const backgroundContext = [
+      `【文章基本資訊】`,
+      `標題：${target.title}`,
+      `領域：${target.category}`,
+      `出刊/來源：${target.source || target.instructorOrPlatform || '專案知識庫'}${target.subSource ? ` (${target.subSource})` : ''}`,
+      target.issueDate ? `出刊期別：${target.issueDate}` : '',
+      target.aiAnalysis?.summary ? `\n【AI 核心摘要】\n${target.aiAnalysis.summary}` : '',
+      target.aiAnalysis?.keyTakeaways?.length ? `\n【核心啟發 (Key Takeaways)】\n${target.aiAnalysis.keyTakeaways.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}` : '',
+      target.aiAnalysis?.actionableInsights?.length ? `\n【實務落地建議】\n${target.aiAnalysis.actionableInsights.map((a) => `▸ ${a}`).join('\n')}` : '',
+      `\n【文章完整內文】\n${textToAnalyze.slice(0, 10000)}`
+    ].filter(Boolean).join('\n');
+
+    const systemPrompt = `你是一位精通智慧製造（如鋼鐵表面處理、熱浸鍍鋅、產線自動化、MES系統、產線OT連網）與企業級專案管理 (PMP / Agile / 卡關跟催) 的資深顧問兼智庫教練。
+使用者正在研讀文章《${target.title}》，並向你深入提問或請教專案落地做法。
+
+【研讀文章脈絡與背景】
+${backgroundContext}
+
+【回答指導原則】
+1. 請以親切、專業、條理分明的「繁體中文（台灣）」回答。
+2. 緊扣文章內文的主軸與論述，切中問題要害。
+3. 結合智慧製造現場（如燁輝、億威等製造與專案實務）提供「具體且可落地的實務建議或解讀」。
+4. 格式請善用清晰的 Markdown（標題、清單列表、重點粗體），使研讀者容易理解消化。
+5. 若問題超出文章範圍，請誠實說明文章未提及，並以資深專案顧問的專業經驗給予補充視角。`;
+
+    if (apiKey) {
+      try {
+        // 取最近 6 則對話維持上下文連貫性
+        const validHistory = (history || []).slice(-6).map((msg) => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content,
+        }));
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...validHistory,
+              { role: 'user', content: trimmedQ },
+            ],
+            temperature: 0.5,
+          }),
+        });
+
+        if (response.ok) {
+          const jsonRes = await response.json();
+          const answer = jsonRes?.choices?.[0]?.message?.content?.trim();
+          if (answer) {
+            return {
+              success: true,
+              answer,
+              model: jsonRes.model || model,
+            };
+          }
+        } else {
+          const errData = await response.json().catch(() => ({}));
+          console.warn('OpenAI 問答 API 回應異常:', response.status, errData);
+        }
+      } catch (callErr) {
+        console.warn('呼叫問答 API 異常，啟動備援回答機制:', callErr);
+      }
+    }
+
+    // 備援智慧回應（當離線或 API 暫時不可用時）
+    const fallbackAnswer = `### 💡 針對問題「${trimmedQ}」之深度解析\n\n根據文章《**${target.title}**》的脈絡：\n\n` +
+      `1. **核心立論對照**：\n` +
+      `   ${target.aiAnalysis?.summary || textToAnalyze.slice(0, 180) + '...'}\n\n` +
+      `2. **專案管理與現場借鏡建議**：\n` +
+      `   - 在推動智慧製造與跨部門專案時，建議將問題核心納入每週進度管制點中核對。\n` +
+      `   - 可檢視目前涉及的窗口職責與等候關係，避免因溝通落差延宕後續排程。\n\n` +
+      `> ℹ️ *本回答由系統內建智庫引擎備援產出，待網路與 API 復原後將自動銜接完整模型輸出。*`;
+
+    return {
+      success: true,
+      answer: fallbackAnswer,
+      model: model,
+    };
+  } catch (err: any) {
+    console.error('執行文章問答失敗:', err);
+    return {
+      success: false,
+      message: err?.message || '提問處理失敗，請稍後再試',
+    };
   }
 }
 

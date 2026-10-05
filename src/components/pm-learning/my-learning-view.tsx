@@ -60,6 +60,7 @@ import {
   Loader2,
   Download,
   MessageSquare,
+  MessageSquareQuote,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -181,9 +182,11 @@ export function MyLearningView({
   // 文章閱讀視窗狀態
   const [readerCourse, setReaderCourse] = useState<PMLearningCourse | null>(null);
   const [isReaderOpen, setIsReaderOpen] = useState(false);
+  const [readerInitialOpenChat, setReaderInitialOpenChat] = useState(false);
 
-  const handleOpenReader = (c: PMLearningCourse) => {
+  const handleOpenReader = (c: PMLearningCourse, openChat: boolean = false) => {
     setReaderCourse(c);
+    setReaderInitialOpenChat(openChat);
     setIsReaderOpen(true);
   };
 
@@ -972,8 +975,10 @@ export function MyLearningView({
         onClose={() => {
           setIsReaderOpen(false);
           setReaderCourse(null);
+          setReaderInitialOpenChat(false);
         }}
         course={readerCourse}
+        initialOpenChat={readerInitialOpenChat}
         currentUserId={activeMember?.uid}
         onEdit={(c) => {
           setIsReaderOpen(false);
@@ -1058,7 +1063,7 @@ function PersonalCourseCard({
   onUpdateCourse: (course: PMLearningCourse) => void;
   onEditCourse: (course: PMLearningCourse) => void;
   onDeleteCourse: (courseId: string, title: string) => void;
-  onOpenReader: (course: PMLearningCourse) => void;
+  onOpenReader: (course: PMLearningCourse, openChat?: boolean) => void;
 }) {
   const { toast } = useToast();
   const rawProgress = (course.memberProgress || {})[userId];
@@ -1889,22 +1894,36 @@ function PersonalCourseCard({
 
           {/* 右側操作群：符號化按鈕 (閱讀全文、原文網址、編輯筆、刪除、展開符號) */}
           <div className="shrink-0 flex items-center gap-1.5 self-end lg:self-center pl-7 lg:pl-0">
-            {/* 知識文章「閱讀全文」符號按鈕 */}
+            {/* 知識文章「閱讀全文」與「向 AI 提問」符號按鈕 */}
             {(course.type === 'article' || course.content) && (
-              <Button
-                type="button"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenReader(course);
-                }}
-                className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
-                title="📄 閱讀全文（點擊開啟沉浸式閱讀視窗與 AI 導讀）"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300" />}
-                <HelpCircle className="h-3 w-3 text-emerald-200 hover:text-white" />
-              </Button>
+              <div className="inline-flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenReader(course, false);
+                  }}
+                  className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
+                  title="📄 閱讀全文（點擊開啟沉浸式閱讀視窗與 AI 導讀）"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300" />}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenReader(course, true);
+                  }}
+                  className="h-8 px-2 rounded-lg border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
+                  title="💬 向 GPT-6 Luna AI 提問（針對本文深入探討）"
+                >
+                  <MessageSquareQuote className="h-3.5 w-3.5 text-purple-600" />
+                </Button>
+              </div>
             )}
 
             {/* 外部傳送門 / 原文網址符號按鈕 */}
@@ -2045,15 +2064,28 @@ function PersonalCourseCard({
                   )}
                 </div>
 
-                <Button
-                  size="sm"
-                  onClick={() => onOpenReader(course)}
-                  className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-2xs"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>開啟沉浸式閱讀視窗</span>
-                  {course.aiAnalysis?.summary && <Sparkles className="w-3 h-3 text-amber-300" />}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => onOpenReader(course, false)}
+                    className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-2xs"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>開啟沉浸式閱讀視窗</span>
+                    {course.aiAnalysis?.summary && <Sparkles className="w-3 h-3 text-amber-300" />}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onOpenReader(course, true)}
+                    className="h-8 border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs gap-1.5 shadow-2xs"
+                    title="針對此文章向 GPT-6 Luna AI 提問與深度探討"
+                  >
+                    <MessageSquareQuote className="w-3.5 h-3.5 text-purple-600" />
+                    <span>向 AI 提問</span>
+                  </Button>
+                </div>
               </div>
 
               {course.aiAnalysis?.summary ? (
