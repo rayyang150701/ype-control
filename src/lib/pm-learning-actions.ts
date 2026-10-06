@@ -356,6 +356,7 @@ function toDbPayload(c: PMLearningCourse) {
     aiAnalysis: c.aiAnalysis || null,
     videoTimestampNotes: c.videoTimestampNotes || '',
     bookQuotesAndReflections: c.bookQuotesAndReflections || '',
+    isPinned: Boolean(c.isPinned),
   };
   return {
     id: c.id,
@@ -453,6 +454,8 @@ function fromDbRecord(c: any): PMLearningCourse {
         ...prog,
         progressPercent: typeof prog.progressPercent === 'number' ? prog.progressPercent : 0,
         isCompleted: Boolean(prog.isCompleted),
+        isPinned: Boolean(prog.isPinned),
+        sortOrder: typeof prog.sortOrder === 'number' ? prog.sortOrder : undefined,
         checklist: finalChecklist,
         attachments: Array.isArray(prog.attachments) ? prog.attachments : [],
         reflections,
@@ -487,6 +490,7 @@ function fromDbRecord(c: any): PMLearningCourse {
       ? c.defaultChecklist
       : [],
     memberProgress: cleanMemberProgress,
+    isPinned: Boolean(c.is_pinned ?? c.isPinned ?? meta.isPinned ?? false),
     content: c.content || meta.content || '',
     source: c.source || meta.source || '',
     subSource: c.subSource || meta.subSource || '',
@@ -628,8 +632,10 @@ export async function createPMLearningCourse(
       assignedUserNames: assignedNames,
       defaultChecklist,
       memberProgress,
+      isPinned: Boolean(courseData.isPinned),
       content: courseData.content || '',
       source: courseData.source || '',
+      subSource: courseData.subSource || '',
       issueDate: courseData.issueDate || '',
       timelinessType: courseData.timelinessType || 'evergreen',
       aiAnalysis: courseData.aiAnalysis,
@@ -680,10 +686,38 @@ export async function analyzeArticleContentAction(
       return { success: false, message: '找不到指定文章' };
     }
 
-    const textToAnalyze = (customText || target.content || target.description || target.title).trim();
+    const textToAnalyze = (
+      customText ||
+      target.content ||
+      target.bookQuotesAndReflections ||
+      target.videoTimestampNotes ||
+      target.description ||
+      target.title
+    ).trim();
     if (!textToAnalyze) {
-      return { success: false, message: '文章尚無內文可供 AI 分析' };
+      return { success: false, message: '目前尚無重點內容或內文可供 AI 分析' };
     }
+
+    const typeLabel =
+      target.type === 'book'
+        ? '個人閱讀書籍'
+        : target.type === 'video'
+        ? '影音資源'
+        : target.type === 'course'
+        ? '線上課程'
+        : '知識文章';
+
+    const chaptersContext =
+      Array.isArray(target.defaultChecklist) && target.defaultChecklist.length > 0
+        ? `\n章節單元大綱：\n` +
+          target.defaultChecklist
+            .map((c: any) =>
+              typeof c === 'string'
+                ? `- ${c}`
+                : `- ${c.title}${Array.isArray(c.subUnits) && c.subUnits.length > 0 ? ` (${c.subUnits.join(', ')})` : ''}`
+            )
+            .join('\n')
+        : '';
 
     let summary = '';
     let keyTakeaways: string[] = [];
@@ -710,11 +744,11 @@ export async function analyzeArticleContentAction(
             {
               role: 'system',
               content:
-                '你是一位精通智慧製造（如鋼鐵表面處理、產線自動化、MES）與企業級專案管理 (PMP / Agile) 的資深顧問。請閱讀使用者提供的付費文章或知識內容，輸出結構化 JSON，格式為：\n{"summary": "200字核心摘要", "keyTakeaways": ["重點觀點1", "重點觀點2", "重點觀點3"], "actionableInsights": ["PM落地實務建議1 (針對現場/協同)", "PM落地實務建議2"]}\n只回傳合法 JSON 字串，不要包含額外文字。',
+                '你是一位精通智慧製造（如鋼鐵表面處理、產線自動化、MES）與企業級專案管理 (PMP / Agile) 的資深顧問兼教練。請閱讀使用者提供的內容（包含付費文章、線上課程講義、影音重點筆記或個人閱讀書籍反思），輸出結構化 JSON，格式為：\n{"summary": "200字核心摘要", "keyTakeaways": ["重點觀點1", "重點觀點2", "重點觀點3"], "actionableInsights": ["PM落地實務建議1 (針對現場/協同)", "PM落地實務建議2"]}\n只回傳合法 JSON 字串，不要包含額外文字。',
             },
             {
               role: 'user',
-              content: `文章標題：${target.title}\n領域：${target.category}\n出刊/來源：${target.source || ''} (${target.issueDate || ''})\n\n文章全文：\n${textToAnalyze.slice(0, 8000)}`,
+              content: `標題：${target.title}\n載體類型：${typeLabel}\n領域：${target.category}\n出刊/來源：${target.source || target.instructorOrPlatform || ''}${target.subSource ? ` (${target.subSource})` : ''}${target.issueDate ? ` (${target.issueDate})` : ''}\n${chaptersContext}\n\n重點內容與全文：\n${textToAnalyze.slice(0, 8000)}`,
             },
           ],
           response_format: { type: 'json_object' },
@@ -763,7 +797,7 @@ export async function analyzeArticleContentAction(
 
       summary =
         paragraphs.slice(0, 2).join(' ') ||
-        `本文深入剖析「${target.title}」之核心架構，歸納在${target.category}領域之實務脈絡與時效趨勢。`;
+        `本項目深入剖析「${target.title}」之核心架構，歸納在${target.category}領域之實務脈絡與落地重點。`;
 
       keyTakeaways = [
         `聚焦「${target.category}」的核心思維與前沿架構，建立標準化檢核流程。`,
@@ -774,8 +808,8 @@ export async function analyzeArticleContentAction(
       ];
 
       actionableInsights = [
-        '可將本文所提方法，評估導入於當前專案與例行會議之管控檢核表。',
-        '建議於週報卡關複盤時，引導成員參考本文架構進行根因探討。',
+        '可將本內容所提方法，評估導入於當前專案與例行會議之管控檢核表。',
+        '建議於週報卡關複盤時，引導成員參考本架構進行根因探討與行動方案。',
       ];
       modelName = '智慧結構化萃取 (內建)';
     }
@@ -829,33 +863,62 @@ export async function askArticleQuestionAction(
     const envModel = process.env.OPENAI_MODEL?.trim();
     // 優先採用 gpt-6-luna，若環境變數仍為舊版 gpt-5.6-luna 自動升級為 gpt-6-luna
     const model = (!envModel || envModel === 'gpt-5.6-luna') ? 'gpt-6-luna' : envModel;
-    const textToAnalyze = (target.content || target.description || target.title).trim();
+    const typeLabel =
+      target.type === 'book'
+        ? '個人閱讀書籍'
+        : target.type === 'video'
+        ? '影音資源'
+        : target.type === 'course'
+        ? '線上課程'
+        : '知識文章';
 
-    // 彙整文章核心背景與已萃取之 AI 導讀成果作為智庫記憶庫
+    const textToAnalyze = (
+      target.content ||
+      target.bookQuotesAndReflections ||
+      target.videoTimestampNotes ||
+      target.description ||
+      target.title
+    ).trim();
+
+    const chaptersContext =
+      Array.isArray(target.defaultChecklist) && target.defaultChecklist.length > 0
+        ? `\n【章節單元大綱清單】\n` +
+          target.defaultChecklist
+            .map((c: any) =>
+              typeof c === 'string'
+                ? `- ${c}`
+                : `- ${c.title}${Array.isArray(c.subUnits) && c.subUnits.length > 0 ? ` (${c.subUnits.join(', ')})` : ''}`
+            )
+            .join('\n')
+        : '';
+
+    // 彙整項目核心背景與已萃取之 AI 導讀成果作為智庫記憶庫
     const backgroundContext = [
-      `【文章基本資訊】`,
+      `【研讀項目基本資訊】`,
       `標題：${target.title}`,
+      `型態：${typeLabel}`,
       `領域：${target.category}`,
       `出刊/來源：${target.source || target.instructorOrPlatform || '專案知識庫'}${target.subSource ? ` (${target.subSource})` : ''}`,
-      target.issueDate ? `出刊期別：${target.issueDate}` : '',
+      target.issueDate ? `出刊/發布日期：${target.issueDate}` : '',
+      chaptersContext,
       target.aiAnalysis?.summary ? `\n【AI 核心摘要】\n${target.aiAnalysis.summary}` : '',
       target.aiAnalysis?.keyTakeaways?.length ? `\n【核心啟發 (Key Takeaways)】\n${target.aiAnalysis.keyTakeaways.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}` : '',
       target.aiAnalysis?.actionableInsights?.length ? `\n【實務落地建議】\n${target.aiAnalysis.actionableInsights.map((a) => `▸ ${a}`).join('\n')}` : '',
-      `\n【文章完整內文】\n${textToAnalyze.slice(0, 10000)}`
+      `\n【重點內容/完整內文】\n${textToAnalyze.slice(0, 10000)}`
     ].filter(Boolean).join('\n');
 
     const systemPrompt = `你是一位精通智慧製造（如鋼鐵表面處理、熱浸鍍鋅、產線自動化、MES系統、產線OT連網）與企業級專案管理 (PMP / Agile / 卡關跟催) 的資深顧問兼智庫教練。
-使用者正在研讀文章《${target.title}》，並向你深入提問或請教專案落地做法。
+使用者正在研讀${typeLabel}《${target.title}》，並向你深入提問或請教專案落地做法。
 
-【研讀文章脈絡與背景】
+【研讀脈絡與背景資訊】
 ${backgroundContext}
 
 【回答指導原則】
 1. 請以親切、專業、條理分明的「繁體中文（台灣）」回答。
-2. 緊扣文章內文的主軸與論述，切中問題要害。
+2. 緊扣本內容的核心主軸與論述，切中問題要害。
 3. 結合智慧製造現場（如燁輝、億威等製造與專案實務）提供「具體且可落地的實務建議或解讀」。
 4. 格式請善用清晰的 Markdown（標題、清單列表、重點粗體），使研讀者容易理解消化。
-5. 若問題超出文章範圍，請誠實說明文章未提及，並以資深專案顧問的專業經驗給予補充視角。`;
+5. 若問題超出本內容範圍，請誠實說明內容未提及，並以資深專案顧問的專業經驗給予補充視角。`;
 
     if (apiKey) {
       try {
@@ -1038,6 +1101,19 @@ export async function updatePMLearningCourse(
     console.error('更新 PM 學習紀錄失敗:', err);
     return { success: false, message: err?.message || '更新失敗' };
   }
+}
+
+/**
+ * 切換課程全域置頂狀態 (Pinned)
+ */
+export async function togglePMLearningCoursePin(courseId: string) {
+  const currentList = await getPMLearningCourses();
+  const target = currentList.find((c) => c.id === courseId);
+  if (!target) {
+    return { success: false, message: '找不到欲置頂的紀錄' };
+  }
+  const nextPinned = !target.isPinned;
+  return updatePMLearningCourse(courseId, { isPinned: nextPinned });
 }
 
 /**

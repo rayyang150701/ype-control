@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Plus,
   Trash2,
@@ -34,6 +35,7 @@ import {
   ClipboardPaste,
   ChevronDown,
   ChevronUp,
+  Pin,
 } from 'lucide-react';
 import {
   PMLearningCourse,
@@ -100,6 +102,7 @@ export function CourseFormDialog({
   const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
+  const [isPinned, setIsPinned] = useState(false);
 
   // 知識文章 (Article) 專屬欄位
   const [articleContent, setArticleContent] = useState('');
@@ -160,17 +163,23 @@ export function CourseFormDialog({
       setEndDate(courseToEdit.endDate || '');
       setDescription(courseToEdit.description || '');
       setAssignedUserIds(courseToEdit.assignedUserIds || []);
+      setIsPinned(Boolean(courseToEdit.isPinned));
 
-      // 文章擴充
-      setArticleContent(courseToEdit.content || '');
+      // 統一重點內容 (支援所有載體)
+      const unifiedContent =
+        courseToEdit.content ||
+        courseToEdit.bookQuotesAndReflections ||
+        courseToEdit.videoTimestampNotes ||
+        '';
+      setArticleContent(unifiedContent);
       setArticleSource(courseToEdit.source || courseToEdit.instructorOrPlatform || '');
       setArticleSubSource(courseToEdit.subSource || '');
       setArticleIssueDate(courseToEdit.issueDate || '');
       setTimelinessType(courseToEdit.timelinessType || 'evergreen');
 
-      // 影音與閱讀
-      setVideoTimestampNotes(courseToEdit.videoTimestampNotes || '');
-      setBookQuotesAndReflections(courseToEdit.bookQuotesAndReflections || '');
+      // 影音與閱讀相容
+      setVideoTimestampNotes(courseToEdit.videoTimestampNotes || unifiedContent);
+      setBookQuotesAndReflections(courseToEdit.bookQuotesAndReflections || unifiedContent);
 
       const existingList = Array.isArray(courseToEdit.defaultChecklist)
         ? courseToEdit.defaultChecklist
@@ -221,6 +230,7 @@ export function CourseFormDialog({
 
       // 使用者需求 1：新增課程時候，不需要預設這些單元，由使用者自行新增更新
       setChapters([]);
+      setIsPinned(false);
     }
   }, [courseToEdit?.id, isOpen]);
 
@@ -367,16 +377,23 @@ export function CourseFormDialog({
         description: description.trim(),
         assignedUserIds,
         assignedUserNames: assignedNames,
-        defaultChecklist: contentType === 'course' ? chapters : [],
+        defaultChecklist: chapters.length > 0 ? chapters : [],
+        isPinned,
 
-        // 知識文章與其他型態欄位
+        // 四大載體統一重點內容與向前相容
         content: articleContent.trim(),
-        source: articleSource.trim() || effectiveInstructorOrPlatform,
+        source: (contentType === 'article' ? articleSource.trim() : '') || effectiveInstructorOrPlatform,
         subSource: articleSubSource.trim(),
         issueDate: articleIssueDate.trim(),
         timelinessType,
-        videoTimestampNotes: videoTimestampNotes.trim(),
-        bookQuotesAndReflections: bookQuotesAndReflections.trim(),
+        videoTimestampNotes:
+          contentType === 'video'
+            ? articleContent.trim() || videoTimestampNotes.trim()
+            : videoTimestampNotes.trim(),
+        bookQuotesAndReflections:
+          contentType === 'book'
+            ? articleContent.trim() || bookQuotesAndReflections.trim()
+            : bookQuotesAndReflections.trim(),
       };
 
       if (courseToEdit) {
@@ -392,7 +409,7 @@ export function CourseFormDialog({
       } else {
         const res = await createPMLearningCourse({
           ...payload,
-          initialChecklist: contentType === 'course' ? chapters : [],
+          initialChecklist: chapters.length > 0 ? chapters : [],
           createdBy: currentUserId || defaultAssignedUserId || 'user',
         });
 
@@ -526,47 +543,63 @@ export function CourseFormDialog({
                 required
               />
 
-              {/* 文章專屬：專欄子主題 / 單元標籤 (例如：曼報Pro -> 科技曼讀) */}
-              {contentType === 'article' && (
-                <div className="pt-2 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold flex items-center gap-1 text-slate-700">
-                      <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                      專欄子主題 / 單元標籤 (選填，便於主題分類)
-                    </Label>
-                    <span className="text-[10px] text-slate-400">如：科技曼讀、巨人之聲</span>
-                  </div>
-                  <Input
-                    value={articleSubSource}
-                    onChange={(e) => setArticleSubSource(e.target.value)}
-                    placeholder="例如：科技曼讀、巨人之聲、商業解碼..."
-                    className="h-9 text-xs"
-                  />
-                  {/* 曼報 Pro 智慧快捷推薦按鈕 */}
-                  {(articleSource.includes('曼報') || !articleSource) && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      <span className="text-[10px] text-slate-400">曼報快捷:</span>
-                      {['科技曼讀', '巨人之聲', '商業解碼'].map((sub) => (
-                        <button
-                          key={sub}
-                          type="button"
-                          onClick={() => {
-                            setArticleSubSource(sub);
-                            if (!articleSource) setArticleSource('曼報Pro');
-                          }}
-                          className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
-                            articleSubSource === sub
-                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold'
-                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                          }`}
-                        >
-                          {sub}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+              {/* 專欄子主題 / 單元標籤 (適用所有型態) */}
+              <div className="pt-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold flex items-center gap-1 text-slate-700">
+                    <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                    {contentType === 'article'
+                      ? '專欄子主題 / 單元標籤 (選填，便於主題分類)'
+                      : contentType === 'book'
+                      ? '書籍系列 / 專題標籤 (選填)'
+                      : contentType === 'video'
+                      ? '頻道專題 / 單元系列 (選填)'
+                      : '模組系列 / 專案課程標籤 (選填)'}
+                  </Label>
+                  <span className="text-[10px] text-slate-400">
+                    {contentType === 'article'
+                      ? '如：科技曼讀、巨人之聲'
+                      : contentType === 'book'
+                      ? '如：大師經典、商業投資'
+                      : '如：案例解析、技術實戰'}
+                  </span>
                 </div>
-              )}
+                <Input
+                  value={articleSubSource}
+                  onChange={(e) => setArticleSubSource(e.target.value)}
+                  placeholder={
+                    contentType === 'article'
+                      ? '例如：科技曼讀、巨人之聲、商業解碼...'
+                      : contentType === 'book'
+                      ? '例如：經典導讀、操盤實戰、管理思維...'
+                      : '例如：工控實戰、案例解析...'
+                  }
+                  className="h-9 text-xs"
+                />
+                {/* 曼報 Pro 智慧快捷推薦按鈕 */}
+                {contentType === 'article' && (articleSource.includes('曼報') || !articleSource) && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-slate-400">曼報快捷:</span>
+                    {['科技曼讀', '巨人之聲', '商業解碼'].map((sub) => (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => {
+                          setArticleSubSource(sub);
+                          if (!articleSource) setArticleSource('曼報Pro');
+                        }}
+                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                          articleSubSource === sub
+                            ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold'
+                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                        }`}
+                      >
+                        {sub}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 學習領域類別 (支援選單、自訂與管理) */}
@@ -634,38 +667,42 @@ export function CourseFormDialog({
             </div>
           </div>
 
-          {/* 文章專屬：出刊年月 (YYYY-MM) 與時效性質 */}
-          {contentType === 'article' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-100">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold flex items-center gap-1 text-emerald-950">
-                  <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                  發布日期 (年月日)
-                </Label>
-                <Input
-                  type="date"
-                  value={articleIssueDate}
-                  onChange={(e) => setArticleIssueDate(e.target.value)}
-                  className="bg-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold flex items-center gap-1 text-emerald-950">
-                  <Zap className="h-3.5 w-3.5 text-amber-600" />
-                  時效性質判定
-                </Label>
-                <select
-                  value={timelinessType}
-                  onChange={(e) => setTimelinessType(e.target.value as PMLearningTimelinessType)}
-                  className="w-full h-10 px-3 rounded-md border border-input bg-white text-sm font-medium"
-                >
-                  <option value="evergreen">🌱 常青知識 (長期適用、通用心法)</option>
-                  <option value="time_sensitive">⚡ 時效趨勢 (付費月刊、近期關鍵評估)</option>
-                </select>
-              </div>
+          {/* 發布日期 (出刊/出版/發布) 與時效性質 (四大載體統一支援) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50/80 rounded-xl border border-slate-200">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+                {contentType === 'article'
+                  ? '出刊/發布日期 (年月日)'
+                  : contentType === 'book'
+                  ? '出版/發行日期 (年月日)'
+                  : contentType === 'video'
+                  ? '影音發布日期 (年月日)'
+                  : '開課/發布日期 (年月日)'}
+              </Label>
+              <Input
+                type="date"
+                value={articleIssueDate}
+                onChange={(e) => setArticleIssueDate(e.target.value)}
+                className="bg-white"
+              />
             </div>
-          )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center gap-1 text-slate-800">
+                <Zap className="h-3.5 w-3.5 text-amber-600" />
+                時效性質判定
+              </Label>
+              <select
+                value={timelinessType}
+                onChange={(e) => setTimelinessType(e.target.value as PMLearningTimelinessType)}
+                className="w-full h-10 px-3 rounded-md border border-input bg-white text-sm font-medium"
+              >
+                <option value="evergreen">🌱 常青知識 (長期適用、通用心法)</option>
+                <option value="time_sensitive">⚡ 時效趨勢 (付費月刊、近期關鍵評估)</option>
+              </select>
+            </div>
+          </div>
 
           {/* 外部連結 (文章原文網址 / 影音播放連結 / 官方課程教室 / Google 雲端硬碟) */}
           <div className="space-y-1.5">
@@ -675,6 +712,8 @@ export function CourseFormDialog({
                 ? '原文網頁出處 (選填，保留可連結回付費專欄)'
                 : contentType === 'video'
                 ? '影音觀看外部連結 (YouTube / Webinar / Podcast)'
+                : contentType === 'book'
+                ? '書籍介紹或電子書傳送門 (選填)'
                 : '外部傳送門連結 (線上教室 / 官方教材 / Google 雲端硬碟)'}
             </Label>
             <Input
@@ -691,61 +730,57 @@ export function CourseFormDialog({
             )}
           </div>
 
-          {/* 文章專屬：完整內文編輯器 (Markdown) */}
-          {contentType === 'article' && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold flex items-center gap-1">
-                  <FileText className="h-3.5 w-3.5 text-emerald-600" />
-                  文章完整內容 (直接貼入內文，支援 Markdown、程式碼與圖片語法)
-                </Label>
-                <span className="text-[11px] text-slate-400">
-                  可使用 `![說明](圖片網址)` 嵌入圖片
-                </span>
-              </div>
-              <Textarea
-                value={articleContent}
-                onChange={(e) => setArticleContent(e.target.value)}
-                placeholder="直接將付費專欄文章貼於此處...&#10;&#10;支援 Markdown 標題 (#, ##)、項目清單 (- )、引用區塊 (> ) 與圖片語法。"
-                rows={8}
-                className="font-mono text-xs leading-relaxed"
-              />
-            </div>
-          )}
-
-          {/* 影音專屬：重點時戳與筆記 */}
-          {contentType === 'video' && (
-            <div className="space-y-1.5">
+          {/* 四大載體統一：重點內容 / 內文 / 講義大綱 / 讀書筆記編輯區塊 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <Label className="text-xs font-semibold flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-rose-600" />
-                重點時間標籤與筆記 (Markdown)
+                {contentType === 'article' ? (
+                  <>
+                    <FileText className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>文章完整內容與核心重點 (Markdown)</span>
+                  </>
+                ) : contentType === 'book' ? (
+                  <>
+                    <Bookmark className="h-3.5 w-3.5 text-amber-600" />
+                    <span>書籍核心重點、精華摘錄與行動清單 (Markdown)</span>
+                  </>
+                ) : contentType === 'video' ? (
+                  <>
+                    <Video className="h-3.5 w-3.5 text-rose-600" />
+                    <span>影音重點精華、時間標籤與筆記 (Markdown)</span>
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>課程核心講義、大綱與研習重點 (Markdown)</span>
+                  </>
+                )}
               </Label>
-              <Textarea
-                value={videoTimestampNotes}
-                onChange={(e) => setVideoTimestampNotes(e.target.value)}
-                placeholder="例如：&#10;- **02:15** Modbus TCP 通訊輪詢重點&#10;- **08:30** OPC UA 端點配置&#10;- **15:00** 現場除錯常見問題"
-                rows={4}
-                className="font-mono text-xs"
-              />
+              <span className="text-[11px] text-slate-400">
+                支援 Markdown 語法，系統將依此內容提供 AI 導讀與即時問答
+              </span>
             </div>
-          )}
-
-          {/* 個人閱讀專屬：核心金句與落地行動清單 */}
-          {contentType === 'book' && (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1">
-                <Bookmark className="h-3.5 w-3.5 text-amber-600" />
-                核心金句、反思與實務落地行動清單 (Action Plan)
-              </Label>
-              <Textarea
-                value={bookQuotesAndReflections}
-                onChange={(e) => setBookQuotesAndReflections(e.target.value)}
-                placeholder="例如：&#10;### 核心金句&#10;> 「最有害的領導不是殘酷無情，而是表面和諧。」&#10;&#10;### 專案落地行動&#10;1. 建立開誠布公的卡關複盤機制&#10;2. 每週事前溝通關鍵風險"
-                rows={5}
-                className="font-mono text-xs"
-              />
-            </div>
-          )}
+            <Textarea
+              value={articleContent}
+              onChange={(e) => {
+                const val = e.target.value;
+                setArticleContent(val);
+                if (contentType === 'video') setVideoTimestampNotes(val);
+                if (contentType === 'book') setBookQuotesAndReflections(val);
+              }}
+              placeholder={
+                contentType === 'article'
+                  ? '直接將付費專欄或文章內文貼於此處...&#10;&#10;支援 Markdown 標題 (#, ##)、項目清單 (- )、引用區塊 (> ) 與圖片語法。'
+                  : contentType === 'book'
+                  ? '貼入書籍核心觀點、各章重點摘錄或實務落地反思...&#10;&#10;例如：&#10;### 核心觀點&#10;> 「投資關鍵在於因子的長期超額報酬與風險控管。」&#10;&#10;### 落地行動清單&#10;1. 建立量化指標篩選機制&#10;2. 每季檢視因子有效性'
+                  : contentType === 'video'
+                  ? '貼入影音重點精華、逐字稿筆記或時間戳記...&#10;&#10;例如：&#10;- **02:15** Modbus TCP 通訊輪詢重點&#10;- **08:30** OPC UA 端點配置&#10;- **15:00** 現場除錯常見問題'
+                  : '將線上課程的核心講義、重點單元大綱或研習筆記貼於此處...&#10;&#10;支援 Markdown 標題 (#, ##)、項目清單 (- )、引用區塊 (> )。系統可針對此內容執行 AI 導讀與深入問答。'
+              }
+              rows={8}
+              className="font-mono text-xs leading-relaxed"
+            />
+          </div>
 
           {/* 研習時數與預計起訖日 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -803,14 +838,16 @@ export function CourseFormDialog({
             />
           </div>
 
-          {/* 線上課程專屬：兩階章節單元檢核清單 (大單元 / 子單元) */}
-          {contentType === 'course' && (
+          {/* 兩階章節單元檢核清單 (大單元 / 子單元，課程、書籍或已有單元之項目皆支援) */}
+          {(contentType === 'course' || contentType === 'book' || chapters.length > 0) && (
             <div className="space-y-3 p-3.5 bg-slate-50/80 rounded-xl border border-slate-200">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <Layers className="h-4 w-4 text-indigo-600" />
                   <Label className="text-xs font-bold text-slate-800">
-                    課程章節單元清單 (兩階架構：大單元 / 子單元)
+                    {contentType === 'book'
+                      ? '書籍章節單元清單 (兩階架構：大章節 / 子節)'
+                      : '課程章節單元清單 (兩階架構：大單元 / 子單元)'}
                   </Label>
                   {chapters.length > 0 && (
                     <Badge
@@ -1034,6 +1071,23 @@ export function CourseFormDialog({
               </div>
             </div>
           )}
+
+          {/* 置頂設定 (Pin to top) */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl border border-amber-200 bg-amber-50/70 shadow-2xs">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900">
+                <Pin className="h-3.5 w-3.5 text-amber-600 fill-amber-500" />
+                <span>設為置頂項目 (Pin to top)</span>
+              </div>
+              <p className="text-[11px] text-amber-700/90">
+                開啟後，本項目將優先釘選於 PM 學習地圖最頂端，利於重點研讀或首要跟催項目
+              </p>
+            </div>
+            <Switch
+              checked={isPinned}
+              onCheckedChange={setIsPinned}
+            />
+          </div>
 
           {/* 指派受訓 / 研讀成員 */}
           <div className="space-y-2 pt-1">

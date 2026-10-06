@@ -530,7 +530,7 @@ export function ArticleReaderDialog({
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    針對製造業排程、專案管理基線與跨部門協同提煉核心洞察
+                    針對製造業現場、專案管理基線與{typeConfig.label}提煉核心洞察
                   </p>
                 </div>
               </div>
@@ -659,7 +659,7 @@ export function ArticleReaderDialog({
                         </span>
                       </h4>
                       <p className="text-[10px] text-purple-600">
-                        針對本文論述、製造業落地或未盡事宜隨時提出疑問，由 GPT-6 Luna 即時解答
+                        針對此{typeConfig.label}論述、製造業落地或未盡事宜隨時提出疑問，由 GPT-6 Luna 即時解答
                       </p>
                     </div>
                   </div>
@@ -698,10 +698,10 @@ export function ArticleReaderDialog({
                       {/* 預設建議問題按鈕 */}
                       <div className="flex flex-wrap gap-1.5 justify-center max-w-lg mx-auto pt-2">
                         {[
-                          '💡 這篇文章對智慧製造與產線排程有何核心啟發？',
-                          '💡 導入此概念時，常見風險與阻礙是什麼？',
-                          '💡 作為專案經理 (PM)，下週可落地的 3 項具體行動方案？',
-                          '💡 請針對本文第 2 點核心觀點為我進一步深入解讀',
+                          `💡 這份${typeConfig.label}對智慧製造與專案實務有何核心啟發？`,
+                          '💡 導入或落實此概念時，常見風險與阻礙是什麼？',
+                          '💡 作為專案經理 (PM)，研習後可落地的 3 項具體行動方案？',
+                          '💡 請針對本內容的核心重點為我進一步深入解讀',
                         ].map((prompt, idx) => (
                           <button
                             key={idx}
@@ -852,7 +852,7 @@ export function ArticleReaderDialog({
                         handleSendQuestion();
                       }
                     }}
-                    placeholder="針對這篇文章提出疑問（例如：這篇概念如何應用到鋼鐵產線排程？）... (Enter 送出)"
+                    placeholder={`針對這份${typeConfig.label}提出疑問（例如：這個概念如何應用到專案現場？）... (Enter 送出)`}
                     rows={1}
                     className="min-h-[38px] max-h-[120px] text-xs resize-none bg-slate-50/70 border-purple-200 focus-visible:ring-purple-400 py-2"
                   />
@@ -875,12 +875,20 @@ export function ArticleReaderDialog({
             )}
           </div>
 
-          {/* 文章內文主體 (沉浸式 Markdown 閱讀) */}
+          {/* 研讀內容主體 (沉浸式 Markdown 閱讀) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5" />
-                <span>文章完整內文 (Markdown)</span>
+                <span>
+                  {course.type === 'book'
+                    ? '書籍核心重點、摘錄與反思 (Markdown)'
+                    : course.type === 'video'
+                    ? '影音重點精華與時間戳記筆記 (Markdown)'
+                    : course.type === 'course'
+                    ? '課程核心講義、大綱與研習重點 (Markdown)'
+                    : '文章完整內文 (Markdown)'}
+                </span>
               </h4>
               <button
                 type="button"
@@ -912,18 +920,45 @@ export function ArticleReaderDialog({
                 <Textarea
                   value={personalNotes}
                   onChange={(e) => setPersonalNotes(e.target.value)}
-                  placeholder="紀錄本文對目前燁輝/億威專案的啟發，或您讀完後想嘗試採取的行動清單..."
+                  placeholder="紀錄本內容對目前燁輝/億威專案的啟發，或您研讀後想嘗試採取的行動清單..."
                   rows={4}
                   className="text-xs bg-white border-amber-200 focus-visible:ring-amber-400"
                 />
               </div>
             )}
 
-            <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
-              <div className="max-w-4xl mx-auto leading-relaxed">
-                <MarkdownPreview content={mainMarkdown} readingMode={true} />
+            {mainMarkdown === '（尚未填寫內文）' ? (
+              <div className="bg-slate-50/60 rounded-2xl p-8 border border-slate-200/80 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-2xs">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-slate-800">尚未填寫重點內容或講義</p>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    您可以在編輯項目中填入{typeConfig.label}的核心大綱、摘要重點或筆記，填寫後即可直接在此進行 AI 導讀與針對內文的深入問答！
+                  </p>
+                </div>
+                {onEdit && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onClose();
+                      onEdit(course);
+                    }}
+                    className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>立即編輯補充重點</span>
+                  </Button>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
+                <div className="max-w-4xl mx-auto leading-relaxed">
+                  <MarkdownPreview content={mainMarkdown} readingMode={true} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

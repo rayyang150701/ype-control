@@ -61,6 +61,7 @@ import {
   Download,
   MessageSquare,
   MessageSquareQuote,
+  Pin,
 } from 'lucide-react';
 import {
   updatePMMemberProgress,
@@ -156,12 +157,19 @@ export function MyLearningView({
     };
   }, [myCourses, activeMember]);
 
-  // 依該成員個人自訂順序 (sortOrder) 排序課程
+  // 依該成員個人自訂順序 (sortOrder) 排序課程 (置頂項目優先於最頂端)
   const sortedMyCourses = useMemo(() => {
     const uid = activeMember?.uid || '';
     return [...myCourses].sort((a, b) => {
-      const orderA = (a.memberProgress || {})[uid]?.sortOrder;
-      const orderB = (b.memberProgress || {})[uid]?.sortOrder;
+      const progA = (a.memberProgress || {})[uid];
+      const progB = (b.memberProgress || {})[uid];
+      const pinA = progA?.isPinned !== undefined ? Boolean(progA.isPinned) : Boolean(a.isPinned);
+      const pinB = progB?.isPinned !== undefined ? Boolean(progB.isPinned) : Boolean(b.isPinned);
+      if (pinA && !pinB) return -1;
+      if (!pinA && pinB) return 1;
+
+      const orderA = progA?.sortOrder;
+      const orderB = progB?.sortOrder;
       if (orderA !== undefined && orderB !== undefined) {
         return orderA - orderB;
       }
@@ -191,13 +199,14 @@ export function MyLearningView({
   };
 
   // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態、排序標準)
+  // 正常預設：完成度最高放最下面 (進度: 低 → 高，0% ~ 100%，置頂項目優先排於最頂端)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
   const [selectedStatus, setSelectedStatus] = useState<string>('全部');
   const [sortCriterion, setSortCriterion] = useState<
-    'custom' | 'progress-desc' | 'progress-asc' | 'date-desc' | 'date-asc'
-  >('custom');
+    'progress-asc' | 'custom' | 'progress-desc' | 'date-desc' | 'date-asc'
+  >('progress-asc');
 
   // 各載體數量統計
   const contentTypeCounts = useMemo(() => {
@@ -262,6 +271,7 @@ export function MyLearningView({
     setSelectedTimeliness('全部');
     setSelectedPlatform('全部');
     setSelectedStatus('全部');
+    setSortCriterion('progress-asc');
   };
 
   // 篩選後課程清單 (同時保留自訂排序)
@@ -361,73 +371,101 @@ export function MyLearningView({
     activeMember?.uid,
   ]);
 
-  // 依排序條件 (自訂 / 進度 / 發布日期) 對篩選後的清單進行排序
+  // 依排序條件 (置頂優先 + 正常預設完成度最高放最下面 / 自訂 / 發布日期) 對清單進行排序
   const displayCourses = useMemo(() => {
     const uid = activeMember?.uid || '';
     const list = [...filteredCourses];
 
-    if (sortCriterion === 'custom') {
-      return list;
-    }
+    const isPinned = (c: PMLearningCourse) => {
+      const prog = (c.memberProgress || {})[uid];
+      if (prog?.isPinned !== undefined) return Boolean(prog.isPinned);
+      return Boolean(c.isPinned);
+    };
 
-    if (sortCriterion === 'progress-desc') {
-      return list.sort((a, b) => {
-        const progA = (a.memberProgress || {})[uid];
-        const progB = (b.memberProgress || {})[uid];
-        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
-        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
-        if (valB !== valA) return valB - valA;
-        const dateA = a.issueDate || a.startDate || a.createdAt || '';
-        const dateB = b.issueDate || b.startDate || b.createdAt || '';
-        return dateB.localeCompare(dateA);
-      });
-    }
+    const getPercent = (c: PMLearningCourse) => {
+      const prog = (c.memberProgress || {})[uid];
+      return prog?.isCompleted ? 100 : (prog?.progressPercent ?? 0);
+    };
 
-    if (sortCriterion === 'progress-asc') {
-      return list.sort((a, b) => {
-        const progA = (a.memberProgress || {})[uid];
-        const progB = (b.memberProgress || {})[uid];
-        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
-        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
+    const getDate = (c: PMLearningCourse) => {
+      return c.issueDate || c.startDate || c.createdAt || '';
+    };
+
+    return list.sort((a, b) => {
+      // 1. 置頂優先 (Pin to top)：置頂項目永遠優先排於最頂端
+      const pinA = isPinned(a);
+      const pinB = isPinned(b);
+      if (pinA && !pinB) return -1;
+      if (!pinA && pinB) return 1;
+
+      // 2. 自訂排序 (可依個人自訂順序上下移動)
+      if (sortCriterion === 'custom') {
+        const orderA = (a.memberProgress || {})[uid]?.sortOrder;
+        const orderB = (b.memberProgress || {})[uid]?.sortOrder;
+        if (orderA !== undefined && orderB !== undefined) {
+          return orderA - orderB;
+        }
+        if (orderA !== undefined) return -1;
+        if (orderB !== undefined) return 1;
+        return 0;
+      }
+
+      // 3. 正常預設：完成度最高放最下面 (進度低 → 高，0% ~ 100%)
+      if (sortCriterion === 'progress-asc') {
+        const valA = getPercent(a);
+        const valB = getPercent(b);
         if (valA !== valB) return valA - valB;
-        const dateA = a.issueDate || a.startDate || a.createdAt || '';
-        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+        const dateA = getDate(a);
+        const dateB = getDate(b);
         return dateB.localeCompare(dateA);
-      });
-    }
+      }
 
-    if (sortCriterion === 'date-desc') {
-      return list.sort((a, b) => {
-        const dateA = a.issueDate || a.startDate || a.createdAt || '';
-        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+      // 4. 進度高 → 低 (100% ~ 0%)
+      if (sortCriterion === 'progress-desc') {
+        const valA = getPercent(a);
+        const valB = getPercent(b);
+        if (valB !== valA) return valB - valA;
+        const dateA = getDate(a);
+        const dateB = getDate(b);
+        return dateB.localeCompare(dateA);
+      }
+
+      // 5. 發布日期：新 → 舊
+      if (sortCriterion === 'date-desc') {
+        const dateA = getDate(a);
+        const dateB = getDate(b);
         if (dateA && !dateB) return -1;
         if (!dateA && dateB) return 1;
         if (dateB !== dateA) return dateB.localeCompare(dateA);
-        const progA = (a.memberProgress || {})[uid];
-        const progB = (b.memberProgress || {})[uid];
-        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
-        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
-        return valB - valA;
-      });
-    }
+        const valA = getPercent(a);
+        const valB = getPercent(b);
+        return valA - valB;
+      }
 
-    if (sortCriterion === 'date-asc') {
-      return list.sort((a, b) => {
-        const dateA = a.issueDate || a.startDate || a.createdAt || '';
-        const dateB = b.issueDate || b.startDate || b.createdAt || '';
+      // 6. 發布日期：舊 → 新
+      if (sortCriterion === 'date-asc') {
+        const dateA = getDate(a);
+        const dateB = getDate(b);
         if (dateA && !dateB) return -1;
         if (!dateA && dateB) return 1;
         if (dateA !== dateB) return dateA.localeCompare(dateB);
-        const progA = (a.memberProgress || {})[uid];
-        const progB = (b.memberProgress || {})[uid];
-        const valA = progA?.isCompleted ? 100 : (progA?.progressPercent ?? 0);
-        const valB = progB?.isCompleted ? 100 : (progB?.progressPercent ?? 0);
-        return valB - valA;
-      });
-    }
+        const valA = getPercent(a);
+        const valB = getPercent(b);
+        return valA - valB;
+      }
 
-    return list;
+      return 0;
+    });
   }, [filteredCourses, sortCriterion, activeMember?.uid]);
+
+  // 統計當前清單中的置頂項目筆數
+  const pinnedCount = useMemo(() => {
+    const uid = activeMember?.uid || '';
+    return displayCourses.filter((c) => {
+      const prog = (c.memberProgress || {})[uid];
+      return prog?.isPinned !== undefined ? Boolean(prog.isPinned) : Boolean(c.isPinned);
+    }).length;
+  }, [displayCourses, activeMember?.uid]);
 
   // 個人視角：上下移動調整課程順序並儲存
   const handleMoveCourse = async (courseId: string, direction: 'up' | 'down') => {
@@ -846,11 +884,11 @@ export function MyLearningView({
                     )
                   }
                   className="h-7 px-2 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
-                  title="選擇課程與學習項目的排序方式"
+                  title="選擇課程與學習項目的排序方式（預設完成度最高放最下，置頂項目優先排於最頂端）"
                 >
+                  <option value="progress-asc">📉 預設：進度 低 → 高 (完成放最下)</option>
                   <option value="custom">↕ 自訂排序 (可手動調整)</option>
                   <option value="progress-desc">📈 進度：高 → 低 (100% ~ 0%)</option>
-                  <option value="progress-asc">📉 進度：低 → 高 (0% ~ 100%)</option>
                   <option value="date-desc">📅 發布日期：新 → 舊</option>
                   <option value="date-asc">📅 發布日期：舊 → 新</option>
                 </select>
@@ -883,7 +921,7 @@ export function MyLearningView({
       {/* 項目列表計數與提示 */}
       {sortedMyCourses.length > 0 && (
         <div className="flex items-center justify-between px-1">
-          <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+          <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5 flex-wrap">
             <span>
               已排定 PM 成長地圖項目 (
               {isFiltered ? (
@@ -895,22 +933,27 @@ export function MyLearningView({
               )}
               )
             </span>
+            {pinnedCount > 0 && (
+              <Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[11px] font-bold gap-1 shrink-0">
+                <Pin className="h-3 w-3 fill-amber-500 text-amber-600" />
+                <span>{pinnedCount} 筆置頂</span>
+              </Badge>
+            )}
             <span className="text-slate-400 font-normal hidden sm:inline">
               · 可依領域標籤快速切換主題，文章支援點擊「閱讀全文」查看內文與 AI 分析
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            {sortCriterion !== 'custom' && (
-              <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] font-semibold">
-                排序: {
-                  sortCriterion === 'progress-desc' ? '📈 進度 (高 → 低)' :
-                  sortCriterion === 'progress-asc' ? '📉 進度 (低 → 高)' :
-                  sortCriterion === 'date-desc' ? '📅 發布日期 (新 → 舊)' :
-                  '📅 發布日期 (舊 → 新)'
-                }
-              </Badge>
-            )}
+            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[11px] font-semibold">
+              排序: {
+                sortCriterion === 'progress-desc' ? '📈 進度 (高 → 低)' :
+                sortCriterion === 'progress-asc' ? '📉 預設 (進度低 → 高，完成放最下)' :
+                sortCriterion === 'date-desc' ? '📅 發布日期 (新 → 舊)' :
+                sortCriterion === 'date-asc' ? '📅 發布日期 (舊 → 新)' :
+                '↕ 自訂排序'
+              }
+            </Badge>
             {isFiltered && (
               <div className="text-xs text-slate-400">
                 已套用篩選條件
@@ -1701,12 +1744,34 @@ function PersonalCourseCard({
     }
   };
 
+  // 判斷當前項目是否置頂 (優先採用個人自訂置頂，若無則採用課程全域置頂)
+  const isPinned = Boolean(
+    memberProgress.isPinned !== undefined
+      ? memberProgress.isPinned
+      : course.isPinned
+  );
+
+  // 切換置頂狀態
+  const handleTogglePin = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextPinned = !isPinned;
+    saveProgressPatch({ isPinned: nextPinned });
+    toast({
+      title: nextPinned ? '📌 已成功置頂' : '已取消置頂',
+      description: nextPinned
+        ? `「${course.title}」已置頂至清單最頂部！`
+        : `已取消「${course.title}」之置頂狀態`,
+    });
+  };
+
   const isFinished = progressVal >= 100 || memberProgress.isCompleted;
 
   return (
     <div
       className={`rounded-xl border shadow-2xs overflow-hidden transition-all ${
-        isFinished
+        isPinned
+          ? 'ring-2 ring-amber-400 border-amber-400/90 bg-amber-50/20 hover:border-amber-500 shadow-amber-100'
+          : isFinished
           ? 'bg-blue-50/75 border-blue-300 hover:border-blue-400'
           : progressVal > 0
           ? 'bg-amber-50/75 border-amber-300 hover:border-amber-400'
@@ -1716,7 +1781,9 @@ function PersonalCourseCard({
       {/* 卡片頂部條 (Header：包含上下排序、名稱、領域、狀態、進度%、日期、時數與符號操作按鈕) */}
       <div
         className={`p-3 sm:p-3.5 transition-colors ${
-          isFinished
+          isPinned
+            ? 'bg-linear-to-r from-amber-100/90 via-amber-50/70 to-yellow-50/40 border-b border-amber-200/60'
+            : isFinished
             ? 'bg-linear-to-r from-blue-100/70 via-blue-50/70 to-indigo-50/40'
             : progressVal > 0
             ? 'bg-linear-to-r from-amber-100/70 via-amber-50/70 to-yellow-50/40'
@@ -1755,7 +1822,7 @@ function PersonalCourseCard({
             </div>
 
             <div className="space-y-2 flex-1 min-w-0">
-              {/* 第一行：載體型態 + 標題 + 領域 + 出刊期別 + 時效性 + 狀態 + 進度% + 日期 + 時數 */}
+              {/* 第一行：載體型態 + 置頂標籤 + 標題 + 領域 + 出刊期別 + 時效性 + 狀態 + 進度% + 日期 + 時數 */}
               <div className="flex flex-wrap items-center gap-2">
                 {/* 載體型態 Badge */}
                 {(() => {
@@ -1767,6 +1834,14 @@ function PersonalCourseCard({
                     </Badge>
                   );
                 })()}
+
+                {/* 📌 置頂標籤 Badge */}
+                {isPinned && (
+                  <Badge className="text-xs shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-amber-600 font-bold shadow-2xs flex items-center gap-1">
+                    <Pin className="h-3 w-3 fill-white text-white" />
+                    <span>置頂</span>
+                  </Badge>
+                )}
 
                 <span className="font-bold text-slate-900 text-base sm:text-lg leading-snug">
                   {course.title}
@@ -1902,37 +1977,51 @@ function PersonalCourseCard({
 
           {/* 右側操作群：符號化按鈕 (閱讀全文、原文網址、編輯筆、刪除、展開符號) */}
           <div className="shrink-0 flex items-center gap-1.5 self-end lg:self-center pl-7 lg:pl-0">
-            {/* 知識文章「閱讀全文」與「向 AI 提問」符號按鈕 */}
-            {(course.type === 'article' || course.content) && (
-              <div className="inline-flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenReader(course, false);
-                  }}
-                  className="h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
-                  title="📄 閱讀全文（點擊開啟沉浸式閱讀視窗與 AI 導讀）"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300" />}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenReader(course, true);
-                  }}
-                  className="h-8 px-2 rounded-lg border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
-                  title="💬 向 GPT-6 Luna AI 提問（針對本文深入探討）"
-                >
-                  <MessageSquareQuote className="h-3.5 w-3.5 text-purple-600" />
-                </Button>
-              </div>
-            )}
+            {/* 統一「研讀重點 / 閱讀全文」與「向 AI 提問」符號按鈕 (所有載體型態皆一致支援) */}
+            <div className="inline-flex items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenReader(course, false);
+                }}
+                className={`h-8 px-2 rounded-lg text-white font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0 ${
+                  course.type === 'book'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : course.type === 'video'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : course.type === 'course'
+                    ? 'bg-indigo-600 hover:bg-indigo-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                title={
+                  course.type === 'book'
+                    ? '📖 研讀書籍重點（點擊開啟重點研讀視窗與 AI 導讀）'
+                    : course.type === 'video'
+                    ? '🎥 研讀影音重點（點擊開啟重點研讀視窗與 AI 導讀）'
+                    : course.type === 'course'
+                    ? '🎓 研讀課程重點（點擊開啟講義研讀視窗與 AI 導讀）'
+                    : '📄 閱讀全文（點擊開啟沉浸式閱讀視窗與 AI 導讀）'
+                }
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {course.aiAnalysis?.summary && <Sparkles className="h-3 w-3 text-amber-300" />}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenReader(course, true);
+                }}
+                className="h-8 px-2 rounded-lg border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0"
+                title="💬 向 GPT-6 Luna AI 提問（針對此內容深入探討）"
+              >
+                <MessageSquareQuote className="h-3.5 w-3.5 text-purple-600" />
+              </Button>
+            </div>
 
             {/* 外部傳送門 / 原文網址符號按鈕 */}
             {course.externalUrl && (
@@ -1954,6 +2043,23 @@ function PersonalCourseCard({
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
+
+            {/* 置頂切換按鈕 (Pin to top) */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleTogglePin}
+              className={`h-8 px-2 rounded-lg font-bold text-xs shadow-2xs transition-all active:scale-95 inline-flex items-center gap-1 shrink-0 ${
+                isPinned
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-amber-200'
+                  : 'border-slate-200 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-700 hover:border-amber-300'
+              }`}
+              title={isPinned ? '📌 目前已置頂，點擊取消置頂' : '📌 點擊置頂此項目至清單最頂部'}
+            >
+              <Pin className={`h-3.5 w-3.5 ${isPinned ? 'fill-white text-white' : 'text-slate-500'}`} />
+              <span>{isPinned ? '已置頂' : '置頂'}</span>
+            </Button>
 
             {/* 課程編輯與刪除權限 (符號筆與垃圾桶) */}
             {canEdit && (
@@ -2048,74 +2154,157 @@ function PersonalCourseCard({
             )}
           </div>
 
-          {/* 文章專屬：來源與期別導讀卡 */}
-          {course.type === 'article' && (
-            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="bg-emerald-600 text-white text-xs">
-                    📄 付費知識文章 (全文已收錄)
-                  </Badge>
-                  {course.issueDate && (
-                    <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 font-mono text-xs">
-                      📅 發布日期: {course.issueDate}
-                    </Badge>
-                  )}
-                  {course.timelinessType === 'time_sensitive' ? (
-                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
-                      ⚡ 時效趨勢 (近期關鍵)
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-xs">
-                      🌱 常青知識
-                    </Badge>
-                  )}
-                </div>
+          {/* 四大載體通用：重點導讀與 AI 提問卡片 (架構完全一致) */}
+          <div
+            className={`p-4 rounded-xl border space-y-3 transition-colors ${
+              course.type === 'book'
+                ? 'bg-amber-50/60 border-amber-200/80'
+                : course.type === 'video'
+                ? 'bg-rose-50/60 border-rose-200/80'
+                : course.type === 'course'
+                ? 'bg-indigo-50/60 border-indigo-200/80'
+                : 'bg-emerald-50/60 border-emerald-200/80'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  className={
+                    course.type === 'book'
+                      ? 'bg-amber-600 text-white text-xs'
+                      : course.type === 'video'
+                      ? 'bg-rose-600 text-white text-xs'
+                      : course.type === 'course'
+                      ? 'bg-indigo-600 text-white text-xs'
+                      : 'bg-emerald-600 text-white text-xs'
+                  }
+                >
+                  {course.type === 'book'
+                    ? '📖 個人閱讀 (重點摘錄與反思)'
+                    : course.type === 'video'
+                    ? '🎥 影音資源 (重點時戳筆記)'
+                    : course.type === 'course'
+                    ? '🎓 線上課程 (核心講義大綱)'
+                    : '📄 付費知識文章 (全文已收錄)'}
+                </Badge>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => onOpenReader(course, false)}
-                    className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-2xs"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>開啟沉浸式閱讀視窗</span>
-                    {course.aiAnalysis?.summary && <Sparkles className="w-3 h-3 text-amber-300" />}
-                  </Button>
-
-                  <Button
-                    size="sm"
+                {Boolean(course.content || course.bookQuotesAndReflections || course.videoTimestampNotes) && (
+                  <Badge
                     variant="outline"
-                    onClick={() => onOpenReader(course, true)}
-                    className="h-8 border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs gap-1.5 shadow-2xs"
-                    title="針對此文章向 GPT-6 Luna AI 提問與深度探討"
+                    className="bg-white text-slate-700 border-slate-300 font-medium text-xs"
                   >
-                    <MessageSquareQuote className="w-3.5 h-3.5 text-purple-600" />
-                    <span>向 AI 提問</span>
-                  </Button>
-                </div>
+                    ✍️ 已收錄重點內文
+                  </Badge>
+                )}
+
+                {course.issueDate && (
+                  <Badge
+                    variant="outline"
+                    className="bg-white text-slate-800 border-slate-300 font-mono text-xs"
+                  >
+                    📅 發布日期: {course.issueDate}
+                  </Badge>
+                )}
+
+                {course.timelinessType === 'time_sensitive' ? (
+                  <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
+                    ⚡ 時效趨勢 (近期關鍵)
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-xs">
+                    🌱 常青知識
+                  </Badge>
+                )}
               </div>
 
-              {course.aiAnalysis?.summary ? (
-                <div className="bg-white rounded-lg p-3 border border-emerald-100 text-xs text-slate-700 space-y-1.5">
-                  <div className="font-bold text-emerald-950 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>AI 導讀重點速覽：</span>
-                  </div>
-                  <p className="line-clamp-3 leading-relaxed text-slate-700">
-                    {course.aiAnalysis.summary}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-600">
-                  {course.description || '本文已完整收錄於系統中，點選上方「開啟沉浸式閱讀視窗」可全文閱讀與執行 AI 導讀。'}
-                </p>
-              )}
-            </div>
-          )}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => onOpenReader(course, false)}
+                  className={`h-8 font-bold text-xs gap-1.5 shadow-2xs text-white ${
+                    course.type === 'book'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : course.type === 'video'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : course.type === 'course'
+                      ? 'bg-indigo-600 hover:bg-indigo-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>
+                    {course.type === 'article'
+                      ? '開啟沉浸式閱讀視窗'
+                      : course.type === 'book'
+                      ? '開啟重點研讀視窗'
+                      : course.type === 'video'
+                      ? '開啟影音研讀視窗'
+                      : '開啟講義研讀視窗'}
+                  </span>
+                  {course.aiAnalysis?.summary && <Sparkles className="w-3 h-3 text-amber-300" />}
+                </Button>
 
-          {/* 影音專屬：重點時間標籤與筆記 */}
-          {course.type === 'video' && course.videoTimestampNotes && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenReader(course, true)}
+                  className="h-8 border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs gap-1.5 shadow-2xs"
+                  title="向 GPT-6 Luna AI 提問與深度探討"
+                >
+                  <MessageSquareQuote className="w-3.5 h-3.5 text-purple-600" />
+                  <span>向 AI 提問</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* AI 導讀重點速覽或預覽說明 */}
+            {course.aiAnalysis?.summary ? (
+              <div className="bg-white rounded-lg p-3 border border-slate-200/80 text-xs text-slate-700 space-y-1.5 shadow-2xs">
+                <div className="font-bold text-slate-900 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>AI 導讀重點速覽：</span>
+                </div>
+                <p className="line-clamp-3 leading-relaxed text-slate-700">
+                  {course.aiAnalysis.summary}
+                </p>
+              </div>
+            ) : (course.content || course.videoTimestampNotes || course.bookQuotesAndReflections) ? (
+              <div className="bg-white/90 rounded-lg p-3 border border-slate-200/70 text-xs space-y-1.5 shadow-2xs">
+                <div className="flex items-center justify-between text-slate-600 font-semibold">
+                  <span className="flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-slate-500" />
+                    <span>核心重點內容預覽：</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenReader(course, false)}
+                    className="text-[11px] text-indigo-600 hover:underline font-bold"
+                  >
+                    開啟完整視窗 ↗
+                  </button>
+                </div>
+                <p className="line-clamp-2 leading-relaxed text-slate-600 font-mono text-[11px]">
+                  {(course.content || course.bookQuotesAndReflections || course.videoTimestampNotes || '').slice(0, 160)}...
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600">
+                {course.description ||
+                  `本項目已建立於系統中。點選上方「${
+                    course.type === 'article'
+                      ? '開啟沉浸式閱讀視窗'
+                      : course.type === 'book'
+                      ? '開啟重點研讀視窗'
+                      : course.type === 'video'
+                      ? '開啟影音研讀視窗'
+                      : '開啟講義研讀視窗'
+                  }」可查閱重點、記錄心得並執行 AI 導讀，或點選「向 AI 提問」與 GPT-6 Luna 深入探討。`}
+              </p>
+            )}
+          </div>
+
+          {/* 影音額外筆記 (若有獨立填寫) */}
+          {course.type === 'video' && course.videoTimestampNotes && course.videoTimestampNotes !== course.content && (
             <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-200 space-y-2">
               <div className="font-bold text-rose-950 text-xs flex items-center gap-1.5">
                 <Video className="w-3.5 h-3.5 text-rose-600" />
@@ -2127,8 +2316,8 @@ function PersonalCourseCard({
             </div>
           )}
 
-          {/* 個人閱讀專屬：核心金句與落地行動清單 */}
-          {course.type === 'book' && course.bookQuotesAndReflections && (
+          {/* 個人閱讀額外行動清單 (若有獨立填寫) */}
+          {course.type === 'book' && course.bookQuotesAndReflections && course.bookQuotesAndReflections !== course.content && (
             <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-200 space-y-2">
               <div className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
                 <Bookmark className="w-3.5 h-3.5 text-amber-600" />

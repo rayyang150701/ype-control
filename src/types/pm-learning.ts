@@ -52,6 +52,7 @@ export interface PMLearningMemberProgress {
   attachments: PMLearningAttachment[];
   hoursSpent?: number; // 個人修習投入時數 (小時)
   sortOrder?: number; // 個人自訂呈現排序權重
+  isPinned?: boolean; // 個人自訂置頂狀態 (優先排於清單最頂端)
   updatedAt?: string;
 }
 
@@ -70,6 +71,7 @@ export interface PMLearningCourse {
   assignedUserNames: string[]; // 指派研讀成員姓名清單
   defaultChecklist?: (string | PMLearningChapterUnit)[]; // 預設章節檢核清單 (支援單元字串或兩階大單元/子單元架構)
   memberProgress: Record<string, PMLearningMemberProgress>; // 每位指派成員的個人研習進度
+  isPinned?: boolean; // 全域置頂狀態 (優先排於清單最頂端)
 
   // === 知識文章 (Article) 與全文儲存專屬欄位 ===
   content?: string; // 文章完整內容 (支援 Markdown，含表格、引言與圖片語法)

@@ -40,8 +40,9 @@ import {
   Bot,
   X,
   RotateCcw,
+  Pin,
 } from 'lucide-react';
-import { deletePMLearningCourse } from '@/lib/pm-learning-actions';
+import { deletePMLearningCourse, togglePMLearningCoursePin } from '@/lib/pm-learning-actions';
 import { isCourseManager, canUserEditCourse } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownPreview } from './markdown-preview';
@@ -266,6 +267,49 @@ export function TeamView({
     selectedTimeliness,
     selectedMemberFilter,
   ]);
+
+  // 排序清單：置頂優先 (Pin to top)，預設完成度最高放最下面 (按團隊平均進度低至高)
+  const displayCourses = useMemo(() => {
+    return [...filteredCourses].sort((a, b) => {
+      const pinA = Boolean(a.isPinned);
+      const pinB = Boolean(b.isPinned);
+      if (pinA && !pinB) return -1;
+      if (!pinA && pinB) return 1;
+
+      // 正常預設：完成度最高放最下面 (進度低至高)
+      const statsA = getCourseTeamStats(a);
+      const statsB = getCourseTeamStats(b);
+      if (statsA.avgPercent !== statsB.avgPercent) {
+        return statsA.avgPercent - statsB.avgPercent;
+      }
+      const dateA = a.issueDate || a.startDate || a.createdAt || '';
+      const dateB = b.issueDate || b.startDate || b.createdAt || '';
+      return dateB.localeCompare(dateA);
+    });
+  }, [filteredCourses]);
+
+  // 全域切換置頂狀態
+  const handleTogglePinCourse = async (course: PMLearningCourse) => {
+    const nextPinned = !course.isPinned;
+    try {
+      const res = await togglePMLearningCoursePin(course.id);
+      if (res.success && res.data) {
+        toast({
+          title: nextPinned ? '📌 已全域置頂' : '已取消置頂',
+          description: nextPinned
+            ? `「${course.title}」已設定為全域置頂項目（置頂於所有成員清單頂部）`
+            : `已取消「${course.title}」之置頂狀態`,
+        });
+        if (onCourseUpdated) {
+          onCourseUpdated(res.data);
+        }
+      } else {
+        toast({ title: '操作失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: '置頂出錯', description: e.message, variant: 'destructive' });
+    }
+  };
 
   // 刪除確認
   const handleDelete = async (courseId: string, title: string) => {
@@ -590,9 +634,9 @@ export function TeamView({
       )}
 
       {/* 視角一：列表呈現 (List / Table Mode) */}
-      {displayMode === 'list' && filteredCourses.length > 0 && (
+      {displayMode === 'list' && displayCourses.length > 0 && (
         <div className="space-y-3">
-          {filteredCourses.map((course) => {
+          {displayCourses.map((course) => {
             const stats = getCourseTeamStats(course);
             const isExpanded = expandedCourseIds.includes(course.id);
             const carrierType = course.type || 'course';
@@ -602,7 +646,11 @@ export function TeamView({
             return (
               <div
                 key={course.id}
-                className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all overflow-hidden"
+                className={`bg-white rounded-xl border ${
+                  course.isPinned
+                    ? 'border-amber-400 ring-2 ring-amber-300/80 shadow-amber-100/50'
+                    : 'border-slate-200/90'
+                } shadow-2xs hover:shadow-xs transition-all overflow-hidden`}
               >
                 {/* 列表主列 */}
                 <div className="p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
@@ -616,6 +664,14 @@ export function TeamView({
                         <span>{carrierCfg.icon}</span>
                         <span>{carrierCfg.label}</span>
                       </span>
+
+                      {/* 📌 置頂標籤 Badge */}
+                      {course.isPinned && (
+                        <Badge className="text-xs shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-amber-600 font-bold shadow-2xs flex items-center gap-1">
+                          <Pin className="h-3 w-3 fill-white text-white" />
+                          <span>置頂</span>
+                        </Badge>
+                      )}
 
                       {/* 發布日期 (文章) */}
                       {course.issueDate && (
@@ -671,22 +727,37 @@ export function TeamView({
                         </div>
                       )}
 
-                      {/* 閱讀全文按鈕 (文章型態) */}
-                      {isArticle && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReader(course)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
-                        >
-                          <FileText className="h-3.5 w-3.5 text-indigo-600" />
-                          <span>閱讀全文</span>
-                          {course.aiAnalysis && (
-                            <span className="text-[10px] px-1 py-0.2 rounded bg-purple-100 text-purple-700 font-bold ml-0.5">
-                              🤖 AI 摘要
-                            </span>
-                          )}
-                        </button>
-                      )}
+                      {/* 研讀重點 / 閱讀全文按鈕 (所有載體型態皆可開啟研讀與 AI 導讀) */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReader(course)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
+                        title={
+                          carrierType === 'book'
+                            ? '📖 研讀書籍重點與 AI 導讀'
+                            : carrierType === 'video'
+                            ? '🎥 研讀影音重點與 AI 導讀'
+                            : carrierType === 'course'
+                            ? '🎓 研讀課程重點與 AI 導讀'
+                            : '📄 閱讀全文與 AI 導讀'
+                        }
+                      >
+                        <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>
+                          {carrierType === 'book'
+                            ? '閱讀重點'
+                            : carrierType === 'video'
+                            ? '影音重點'
+                            : carrierType === 'course'
+                            ? '課程講義'
+                            : '閱讀全文'}
+                        </span>
+                        {course.aiAnalysis && (
+                          <span className="text-[10px] px-1 py-0.2 rounded bg-purple-100 text-purple-700 font-bold ml-0.5">
+                            🤖 AI 摘要
+                          </span>
+                        )}
+                      </button>
 
                       {/* 外部傳送門 */}
                       {course.externalUrl && (
@@ -778,6 +849,21 @@ export function TeamView({
                   <div className="flex items-center gap-1 self-end lg:self-center">
                     {canUserEditCourse(currentUser, course.createdBy) && (
                       <>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleTogglePinCourse(course)}
+                          className={`h-8 px-2 transition-colors ${
+                            course.isPinned
+                              ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 font-bold'
+                              : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                          }`}
+                          title={course.isPinned ? '取消全域置頂' : '📌 全域置頂此項目至最上方'}
+                        >
+                          <Pin className={`h-3.5 w-3.5 ${course.isPinned ? 'fill-amber-500 text-amber-600' : ''}`} />
+                          {course.isPinned && <span className="text-[11px] ml-0.5">已置頂</span>}
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1053,7 +1139,13 @@ function KanbanCourseCard({
   const isArticle = carrierType === 'article';
 
   return (
-    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs hover:shadow-xs transition-shadow space-y-2.5">
+    <div
+      className={`bg-white p-3.5 rounded-xl border ${
+        course.isPinned
+          ? 'border-amber-400 ring-2 ring-amber-300/80 shadow-amber-100/50'
+          : 'border-slate-200'
+      } shadow-2xs hover:shadow-xs transition-shadow space-y-2.5`}
+    >
       <div className="flex items-start justify-between gap-1.5">
         <div className="flex flex-wrap items-center gap-1">
           <span
@@ -1062,6 +1154,14 @@ function KanbanCourseCard({
             <span>{carrierCfg.icon}</span>
             <span>{carrierCfg.label}</span>
           </span>
+
+          {/* 📌 置頂標籤 */}
+          {course.isPinned && (
+            <Badge className="text-[10px] bg-amber-500 text-white font-bold gap-0.5 px-1.5 py-0.2">
+              <Pin className="h-2.5 w-2.5 fill-white text-white" />
+              <span>置頂</span>
+            </Badge>
+          )}
 
           {course.issueDate && (
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono">
@@ -1106,25 +1206,36 @@ function KanbanCourseCard({
           {course.subSource ? ` · ${course.subSource}` : ''}
         </span>
 
-        {isArticle ? (
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onOpenReader(course)}
             className="text-indigo-600 hover:underline font-bold flex items-center gap-0.5 text-[11px]"
+            title="開啟研讀視窗與 AI 導讀"
           >
             <FileText className="h-3 w-3 text-indigo-600" />
-            閱讀全文
+            <span>
+              {carrierType === 'book'
+                ? '閱讀重點'
+                : carrierType === 'video'
+                ? '影音重點'
+                : carrierType === 'course'
+                ? '課程講義'
+                : '閱讀全文'}
+            </span>
+            {course.aiAnalysis && <span className="text-[9px]">✨</span>}
           </button>
-        ) : course.externalUrl ? (
-          <a
-            href={course.externalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline flex items-center gap-0.5"
-          >
-            傳送門 <ExternalLink className="h-2.5 w-2.5" />
-          </a>
-        ) : null}
+          {course.externalUrl && (
+            <a
+              href={course.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline flex items-center gap-0.5 text-[11px]"
+            >
+              傳送門 <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          )}
+        </div>
       </div>
 
       <div className="space-y-1">
