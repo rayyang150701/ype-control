@@ -159,6 +159,87 @@ export interface DriveFolderContext {
 
 export interface UploadFileOptions {
   folderContext?: DriveFolderContext;
+  /**
+   * 上傳識別碼 (冪等鍵)：同一個檔案的所有重試必須沿用同一個 ID，
+   * GAS 會依此判斷「已經收過」而直接回傳既有檔案，不會重複建檔。
+   */
+  uploadId?: string;
+}
+
+export function generateUploadId(): string {
+  return `up_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * 向 GAS 以 uploadId 查詢檔案是否已成功寫入雲端硬碟 (GAS 以檔案擁有者身分執行，
+ * 不受服務帳號權限限制，比檔名搜尋可靠，且不會誤抓到其他同名檔案)。
+ */
+export async function lookupUploadedFile(
+  uploadId: string,
+  folderId?: string | null
+): Promise<ActionItemAttachment | null> {
+  const body = { action: 'lookup', uploadId, ...(folderId ? { folderId } : {}) };
+  const toAttachment = (f: any): ActionItemAttachment => ({
+    id: f.id,
+    fileId: f.id,
+    name: f.name,
+    size: f.size || 0,
+    mimeType: f.mimeType || 'application/octet-stream',
+    webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+    webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
+    uploadedAt: f.uploadedAt || new Date().toISOString(),
+  });
+
+  try {
+    const res = await fetch('/api/drive/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.success && data.found && data.file?.id) return toAttachment(data.file);
+      if (data?.success && data.found === false) return null;
+    }
+  } catch {
+    // 回退至直接端點
+  }
+
+  try {
+    const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
+    const res = await fetch(gasUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.success && data.found && data.file?.id) return toAttachment(data.file);
+    }
+  } catch (err) {
+    console.warn('查詢上傳結果失敗:', err);
+  }
+  return null;
+}
+
+/** 輪詢 uploadId，直到 GAS 完成寫入或逾時 */
+async function pollLookupUploadedFile(
+  uploadId: string,
+  folderId: string | null,
+  maxMs: number,
+  intervalMs: number,
+  onTick?: (elapsedSec: number) => void
+): Promise<ActionItemAttachment | null> {
+  const start = Date.now();
+  while (true) {
+    const found = await lookupUploadedFile(uploadId, folderId);
+    if (found) return found;
+    const elapsed = Date.now() - start;
+    if (elapsed >= maxMs) return null;
+    onTick?.(Math.round(elapsed / 1000));
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
 }
 
 // 同一個資料夾只解析一次：並行上傳多個檔案時共用同一個進行中的請求，避免重複建立
@@ -280,11 +361,13 @@ export async function uploadFileToDrive(
     });
   });
 
+  const uploadId = options?.uploadId || generateUploadId();
   const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
   const payloadStr = JSON.stringify({
     fileName: file.name,
     mimeType: file.type || 'application/octet-stream',
     base64: base64,
+    uploadId,
     ...(targetFolderId ? { folderId: targetFolderId } : {}),
   });
 
@@ -348,34 +431,46 @@ export async function uploadFileToDrive(
             uploadedAt: new Date().toISOString(),
           };
         }
+        if (data && data.success === false) {
+          // GAS 明確回報失敗：不需輪詢，直接回報錯誤
+          throw new Error(data.error || data.message || 'Google 雲端硬碟回報上傳失敗');
+        }
       }
     } catch (err: any) {
       clearInterval(simInterval);
       directError = err;
       console.warn('直接上傳 GAS 傳輸中斷或逾時，啟動雲端自動校驗修復機制...', err);
+      if (String(err?.message || '').startsWith('Google 雲端硬碟回報')) {
+        throw err;
+      }
     }
 
-    // ─── 關鍵韌性備援：自動校驗機制 (Auto-Reconciliation) ───
-    // 當直傳 GAS 因為網路中斷、企業防火牆 30s 閒置逾時或跨域 302 重導向造成 fetch 拋錯時，
-    // Google Drive 端實際上通常「已經」成功收件並寫入 5TB 雲端資料夾！
-    // 此處主動向後端 /api/drive/check-recent-file 查詢近期檔案，連續輪詢以弭平時間差。
+    // ─── 關鍵韌性備援：以 uploadId 向 GAS 查詢 (冪等) ───
+    // 大檔案 (20MB+) GAS 需 1~2 分鐘寫入，瀏覽器連線可能先逾時；
+    // 但 GAS 仍會完成寫入並記錄 uploadId，這裡持續輪詢直到取得該檔案 (最多 3 分鐘)。
     onProgress?.(94, 'publishing', {
       percent: 94,
       status: 'publishing',
-      stageMessage: '直傳連線處理中，正在自動校驗 Google 雲端硬碟收件狀態...',
+      stageMessage: '檔案已送達，等待 Google 雲端硬碟完成寫入...',
     });
 
-    const reconciled = await pollReconcileRecentFile(file.name, file.size, 4, 3000);
+    const reconciled = await pollLookupUploadedFile(uploadId, targetFolderId, 180000, 4000, (sec) => {
+      onProgress?.(95, 'publishing', {
+        percent: 95,
+        status: 'publishing',
+        stageMessage: `雲端硬碟寫入中，請勿重複上傳 (已等待 ${sec} 秒)...`,
+      });
+    });
     if (reconciled) {
       onProgress?.(100, 'done', {
         percent: 100,
         status: 'done',
-        stageMessage: '檔案已由雲端硬碟自動校驗確認收件成功！',
+        stageMessage: '檔案已由雲端硬碟確認收件成功！',
       });
       return reconciled;
     }
 
-    throw directError || new Error('Google 雲端硬碟連線失敗且尚未偵測到已儲存檔案，請點擊「重新嘗試」或手動上傳。');
+    throw directError || new Error('Google 雲端硬碟連線失敗且尚未偵測到已儲存檔案，請點擊「重新嘗試」(不會重複建檔)。');
   };
 
   // 2. 若檔案 <= 4MB，優先走同源內部代理 API (/api/drive/upload)
@@ -438,11 +533,10 @@ export async function uploadFileToDrive(
       console.warn('內部代理端點連線異常，檢查雲端硬碟收件狀態或切換備援:', proxyErr);
     }
 
-    // ★ 重複檔案防護：切換備援直傳前，先檢查 Google 雲端硬碟是否其實「已經」成功收件！
-    // (因伺服器端如 Vercel 10s 逾時限制中斷了 HTTP 連線，但 GAS 實際上已成功寫入 5TB 雲端硬碟)
-    // 若已成功寫入，直接沿用該檔案物件，絕不重複發起第二次上傳，避免雙重建檔！
+    // ★ 重複檔案防護：切換備援直傳前，先以 uploadId 查詢 GAS 是否「已經」收件。
+    // 即使查詢沒找到而重送，GAS 也會依 uploadId 冪等處理，不會重複建檔。
     try {
-      const reconciled = await pollReconcileRecentFile(file.name, file.size, 2, 1200);
+      const reconciled = await pollLookupUploadedFile(uploadId, targetFolderId, 4000, 2000);
       if (reconciled) {
         onProgress?.(100, 'done', {
           percent: 100,

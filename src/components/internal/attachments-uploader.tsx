@@ -24,7 +24,7 @@ import {
   RotateCw,
   Search,
 } from 'lucide-react';
-import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive, checkRecentFileInDrive, type DriveFolderContext } from '@/lib/drive-upload';
+import { formatFileSize, getFileCategory, uploadFileToDrive, deleteFileFromDrive, checkRecentFileInDrive, generateUploadId, lookupUploadedFile, type DriveFolderContext } from '@/lib/drive-upload';
 import { copyToClipboard } from '@/lib/utils';
 import type { ActionItemAttachment } from '@/types';
 
@@ -40,6 +40,7 @@ interface AttachmentsUploaderProps {
 
 interface UploadTask {
   tempId: string;
+  uploadId: string;
   file: File;
   percent: number;
   status: 'requesting_session' | 'uploading' | 'publishing' | 'done' | 'error';
@@ -104,6 +105,7 @@ export function AttachmentsUploader({
     const fileList = Array.from(files);
     const newTasks: UploadTask[] = fileList.map((f) => ({
       tempId: `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      uploadId: generateUploadId(),
       file: f,
       percent: 0,
       status: 'requesting_session',
@@ -137,7 +139,7 @@ export function AttachmentsUploader({
             )
           );
         },
-        { folderContext }
+        { folderContext, uploadId: task.uploadId }
       );
 
       // 成功完成：使用最新 ref 疊加新附件，排除重複
@@ -218,7 +220,7 @@ export function AttachmentsUploader({
       )
     );
     try {
-      const recovered = await checkRecentFileInDrive(task.file.name, task.file.size);
+      const recovered = await lookupUploadedFile(task.uploadId);
       if (recovered) {
         const currentList = attachmentsRef.current || [];
         const updatedList = [

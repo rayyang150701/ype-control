@@ -73,8 +73,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data);
     }
 
+    // 以 uploadId 查詢檔案是否已寫入雲端硬碟 (冪等上傳用)
+    if (body.action === 'lookup') {
+      if (!body.uploadId) {
+        return NextResponse.json({ success: false, message: '缺少 uploadId' }, { status: 400 });
+      }
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'lookup', uploadId: body.uploadId, folderId: body.folderId }),
+        redirect: 'follow',
+      });
+      if (!res.ok) {
+        return NextResponse.json(
+          { success: false, message: `雲端硬碟查詢回應 HTTP ${res.status}` },
+          { status: res.status }
+        );
+      }
+      return NextResponse.json(await res.json());
+    }
+
     // 處理檔案上傳
-    const { fileName, mimeType, base64, folderId } = body;
+    const { fileName, mimeType, base64, folderId, uploadId } = body;
     if (!fileName || !base64) {
       return NextResponse.json(
         { success: false, message: '缺少檔案名稱或 Base64 內容' },
@@ -91,6 +111,7 @@ export async function POST(req: NextRequest) {
         mimeType: mimeType || 'application/octet-stream',
         base64,
         ...(folderId ? { folderId } : {}),
+        ...(uploadId ? { uploadId } : {}),
       }),
       redirect: 'follow',
     });
