@@ -40,10 +40,24 @@ import {
   HelpCircle,
   Loader2,
   Bookmark,
+  Layers,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-import { PMLearningCourse, PMLearningReflectionItem, CONTENT_TYPE_CONFIG } from '@/types/pm-learning';
+import {
+  PMLearningCourse,
+  PMLearningReflectionItem,
+  CONTENT_TYPE_CONFIG,
+  PMLearningChapterUnit,
+  PMLearningChecklistItem,
+} from '@/types/pm-learning';
 import { MarkdownPreview } from './markdown-preview';
-import { analyzeArticleContentAction, askArticleQuestionAction, updatePMMemberProgress } from '@/lib/pm-learning-actions';
+import {
+  analyzeArticleContentAction,
+  askArticleQuestionAction,
+  updatePMMemberProgress,
+} from '@/lib/pm-learning-actions';
+import { normalizeChecklistToChapters } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { copyToClipboard } from '@/lib/utils';
 
@@ -134,6 +148,134 @@ export function ArticleReaderDialog({
   const typeConfig = CONTENT_TYPE_CONFIG[course.type || 'course'] || CONTENT_TYPE_CONFIG['course'];
   const hasAiAnalysis = Boolean(course.aiAnalysis?.summary);
 
+  // 系列篇目 / 章節結構支援
+  const chapters: PMLearningChapterUnit[] = React.useMemo(() => {
+    if (!course?.defaultChecklist || !Array.isArray(course.defaultChecklist)) return [];
+    return normalizeChecklistToChapters(course.defaultChecklist);
+  }, [course?.defaultChecklist]);
+
+  // 目前登入使用者的檢核紀錄
+  const currentMemberProg = (course?.memberProgress || {})[currentUserId || ''];
+  const userChecklist: PMLearningChecklistItem[] = Array.isArray(currentMemberProg?.checklist)
+    ? currentMemberProg.checklist
+    : [];
+
+  const isChapterCompleted = (chap: PMLearningChapterUnit) => {
+    if (userChecklist.length === 0) return false;
+    const matching = userChecklist.filter(
+      (item) =>
+        (item.chapterTitle && item.chapterTitle.trim() === chap.title.trim()) ||
+        item.title.trim() === chap.title.trim()
+    );
+    if (matching.length > 0) {
+      return matching.every((m) => m.completed);
+    }
+    return false;
+  };
+
+  const completedChaptersCount = chapters.filter(isChapterCompleted).length;
+
+  // activeChapterIndex: -1 表示全文總覽，0..chapters.length-1 表示特定篇目
+  const [activeChapterIndex, setActiveChapterIndex] = useState<number>(-1);
+  const [isUpdatingProgress, setIsUpdatingProgress] = useState(false);
+
+  // 當開啟或切換文章時，智慧定位到第一個未讀篇目 (若全部已讀或無篇目則依序停於第一篇或全文總覽)
+  React.useEffect(() => {
+    if (course && chapters.length > 0) {
+      const firstUncompleted = chapters.findIndex((c) => !isChapterCompleted(c));
+      setActiveChapterIndex(firstUncompleted >= 0 ? firstUncompleted : 0);
+    } else {
+      setActiveChapterIndex(-1);
+    }
+  }, [course?.id, chapters.length]);
+
+  // 標記/切換單篇篇目已讀
+  const handleToggleChapterComplete = async (chap: PMLearningChapterUnit) => {
+    if (!currentUserId || !course) {
+      toast({ title: '請先登入後更新進度', variant: 'destructive' });
+      return;
+    }
+    setIsUpdatingProgress(true);
+    try {
+      const willBeCompleted = !isChapterCompleted(chap);
+
+      let updatedChecklist = [...userChecklist];
+      let hasMatching = false;
+      updatedChecklist = updatedChecklist.map((item) => {
+        if (
+          (item.chapterTitle && item.chapterTitle.trim() === chap.title.trim()) ||
+          item.title.trim() === chap.title.trim()
+        ) {
+          hasMatching = true;
+          return {
+            ...item,
+            completed: willBeCompleted,
+            completedAt: willBeCompleted ? new Date().toISOString() : undefined,
+          };
+        }
+        return item;
+      });
+
+      if (!hasMatching) {
+        updatedChecklist.push({
+          id: `chk-${Date.now()}`,
+          title: chap.title,
+          chapterTitle: chap.title,
+          completed: willBeCompleted,
+          completedAt: willBeCompleted ? new Date().toISOString() : undefined,
+        });
+      }
+
+      const totalItems = updatedChecklist.length;
+      const completedItems = updatedChecklist.filter((c) => c.completed).length;
+      const newPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+      const isCompleted = newPercent >= 100;
+
+      const res = await updatePMMemberProgress(course.id, currentUserId, {
+        checklist: updatedChecklist,
+        progressPercent: newPercent,
+        isCompleted,
+      });
+
+      if (res.success && res.data) {
+        const updatedCourse: PMLearningCourse = {
+          ...course,
+          memberProgress: {
+            ...(course.memberProgress || {}),
+            [currentUserId]: res.data,
+          },
+        };
+        if (onCourseUpdated) {
+          onCourseUpdated(updatedCourse);
+        }
+        toast({
+          title: willBeCompleted ? '✅ 本篇已標記為已讀！' : '已標記為未完成',
+          description: `「${chap.title}」已更新，整體進度目前為 ${newPercent}% (${completedItems}/${totalItems})`,
+        });
+      } else {
+        toast({ title: '進度儲存失敗', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: '更新進度出錯', description: err?.message, variant: 'destructive' });
+    } finally {
+      setIsUpdatingProgress(false);
+    }
+  };
+
+  const handleGoNextChapter = () => {
+    if (activeChapterIndex < chapters.length - 1) {
+      setActiveChapterIndex((prev) => prev + 1);
+    }
+  };
+
+  const handleGoPrevChapter = () => {
+    if (activeChapterIndex > 0) {
+      setActiveChapterIndex((prev) => prev - 1);
+    } else if (activeChapterIndex === 0) {
+      setActiveChapterIndex(-1);
+    }
+  };
+
   // 觸發 AI 重點導讀與摘要分析
   const handleTriggerAI = async () => {
     setIsAnalyzing(true);
@@ -196,7 +338,9 @@ export function ArticleReaderDialog({
         content: m.content,
       }));
 
-      const res = await askArticleQuestionAction(course.id, q, historyPayload);
+      const activeChapterTitle =
+        activeChapterIndex >= 0 ? chapters[activeChapterIndex]?.title : undefined;
+      const res = await askArticleQuestionAction(course.id, q, historyPayload, activeChapterTitle);
       if (res.success && res.answer) {
         const assistantMsg = {
           role: 'assistant' as const,
@@ -511,6 +655,81 @@ export function ArticleReaderDialog({
             )}
           </div>
         </div>
+
+        {/* 系列篇目 / 章節結構快速切換導覽列 (Sticky 置頂導覽) */}
+        {chapters.length > 0 && (
+          <div className="bg-slate-50/95 border-b border-slate-200 px-5 md:px-6 py-2.5 space-y-2 shrink-0 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>{course.type === 'article' ? '📚 系列文章篇目導航' : '🎓 章節單元導航'}</span>
+                </span>
+                <Badge
+                  className={`text-[10px] font-bold ${
+                    completedChaptersCount === chapters.length && chapters.length > 0
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                  }`}
+                >
+                  已讀 {completedChaptersCount} / {chapters.length} 篇 ({chapters.length > 0 ? Math.round((completedChaptersCount / chapters.length) * 100) : 0}%)
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                <span>點擊篇目依序研讀，研讀完畢可打勾標記進度</span>
+              </div>
+            </div>
+
+            {/* 篇目切換按鈕橫向滾動列 */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setActiveChapterIndex(-1)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  activeChapterIndex === -1
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>📑 全文總覽</span>
+              </button>
+
+              {chapters.map((chap, cIdx) => {
+                const isDone = isChapterCompleted(chap);
+                const isActive = activeChapterIndex === cIdx;
+                return (
+                  <button
+                    key={chap.id || cIdx}
+                    type="button"
+                    onClick={() => setActiveChapterIndex(cIdx)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-2xs ring-2 ring-indigo-300'
+                        : isDone
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {isDone ? (
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-white' : 'text-emerald-600'}`} />
+                    ) : (
+                      <span
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          isActive ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {cIdx + 1}
+                      </span>
+                    )}
+                    <span className="max-w-[220px] truncate">{chap.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 捲動內文區 */}
         <div className="flex-1 overflow-y-auto p-5 md:p-8 space-y-6">
@@ -927,7 +1146,205 @@ export function ArticleReaderDialog({
               </div>
             )}
 
-            {mainMarkdown === '（尚未填寫內文）' ? (
+            {/* 系列篇目總覽卡片 (當處於全文總覽模式且有多篇篇目時呈現) */}
+            {activeChapterIndex === -1 && chapters.length > 0 && (
+              <div className="p-4 rounded-xl bg-linear-to-r from-indigo-50/70 via-blue-50/40 to-slate-50 border border-indigo-200/80 space-y-3 mb-2 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-indigo-600" />
+                    <span>
+                      {course.type === 'article' ? '📚 系列完整篇目架構' : '🎓 課程章節架構'} (共 {chapters.length} 篇 · 已讀 {completedChaptersCount} 篇)
+                    </span>
+                  </div>
+                  <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-xs font-bold">
+                    {Math.round((completedChaptersCount / chapters.length) * 100)}% 完成
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {chapters.map((chap, cIdx) => {
+                    const isDone = isChapterCompleted(chap);
+                    return (
+                      <div
+                        key={chap.id || cIdx}
+                        onClick={() => setActiveChapterIndex(cIdx)}
+                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                          isDone
+                            ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
+                            : 'bg-white border-slate-200 text-slate-800 hover:bg-indigo-50/70 hover:border-indigo-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isDone ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              {cIdx + 1}
+                            </span>
+                          )}
+                          <span className="font-semibold truncate">{chap.title}</span>
+                        </div>
+                        <span className="text-[11px] text-indigo-600 font-bold shrink-0 pl-1">
+                          進入閱讀 ➔
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 單篇篇目專屬閱讀區塊 (若選擇特定篇目) */}
+            {activeChapterIndex >= 0 && chapters[activeChapterIndex] && (
+              <div className="space-y-4">
+                {/* 篇目獨立資訊 Bar */}
+                <div className="p-4 rounded-xl bg-linear-to-r from-indigo-50/80 via-blue-50/50 to-white border border-indigo-200 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className="bg-indigo-100 text-indigo-800 border-indigo-300 text-xs font-bold">
+                        第 {activeChapterIndex + 1} 篇 / 共 {chapters.length} 篇
+                      </Badge>
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                        {chapters[activeChapterIndex].title}
+                      </h3>
+                    </div>
+                    {chapters[activeChapterIndex].url && (
+                      <a
+                        href={chapters[activeChapterIndex].url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 pt-0.5"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        <span>開啟本篇專屬原文連結</span>
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isUpdatingProgress}
+                      onClick={() => handleToggleChapterComplete(chapters[activeChapterIndex])}
+                      className={`h-8 text-xs font-bold gap-1.5 shadow-2xs cursor-pointer ${
+                        isChapterCompleted(chapters[activeChapterIndex])
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>
+                        {isChapterCompleted(chapters[activeChapterIndex])
+                          ? '✅ 本篇已標記已讀'
+                          : '標記此篇為已讀'}
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* 篇目專屬內文或共享主內文 */}
+                {chapters[activeChapterIndex].content?.trim() ? (
+                  <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
+                    <div className="max-w-4xl mx-auto leading-relaxed">
+                      <MarkdownPreview
+                        content={chapters[activeChapterIndex].content!.trim()}
+                        readingMode={true}
+                      />
+                    </div>
+                  </div>
+                ) : mainMarkdown !== '（尚未填寫內文）' ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                      <span>
+                        💡 <b>提示</b>：本篇共享全系列主內文。研讀完畢可點擊上方「標記此篇為已讀」或下方「閱讀下一篇」。
+                      </span>
+                    </div>
+                    <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
+                      <div className="max-w-4xl mx-auto leading-relaxed">
+                        <MarkdownPreview content={mainMarkdown} readingMode={true} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50/60 rounded-2xl p-8 border border-slate-200/80 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-2xs">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-slate-800">本篇尚未填寫專屬內文</p>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        您可以在編輯此項目時，為第 {activeChapterIndex + 1} 篇填入專屬 Markdown 內文或貼入整體文章全文！
+                      </p>
+                    </div>
+                    {onEdit && (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          onClose();
+                          onEdit(course);
+                        }}
+                        className="h-8 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>立即編輯填寫內文</span>
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* 篇目底部快速翻頁切換控制列 */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={activeChapterIndex <= 0}
+                    onClick={handleGoPrevChapter}
+                    className="h-8 text-xs gap-1 text-slate-700"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>上一篇</span>
+                  </Button>
+
+                  <span className="text-xs text-slate-500 font-medium">
+                    第 {activeChapterIndex + 1} 篇 / 共 {chapters.length} 篇
+                  </span>
+
+                  {activeChapterIndex < chapters.length - 1 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleGoNextChapter}
+                      className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white gap-1 font-bold"
+                    >
+                      <span>閱讀下一篇</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (!isChapterCompleted(chapters[activeChapterIndex])) {
+                          handleToggleChapterComplete(chapters[activeChapterIndex]);
+                        }
+                        toast({
+                          title: '🎉 太棒了！全系列篇目皆已研讀完畢！',
+                          description: '已成功掌握本系列完整脈絡。',
+                        });
+                      }}
+                      className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1 font-bold"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>全系列已完讀</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 若處於全文總覽模式且尚未填寫主內文 */}
+            {activeChapterIndex === -1 && mainMarkdown === '（尚未填寫內文）' && (
               <div className="bg-slate-50/60 rounded-2xl p-8 border border-slate-200/80 text-center space-y-3">
                 <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-2xs">
                   <FileText className="w-6 h-6" />
@@ -935,7 +1352,7 @@ export function ArticleReaderDialog({
                 <div className="space-y-1">
                   <p className="text-sm font-bold text-slate-800">尚未填寫重點內容或講義</p>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    您可以在編輯項目中填入{typeConfig.label}的核心大綱、摘要重點或筆記，填寫後即可直接在此進行 AI 導讀與針對內文的深入問答！
+                    您可以在編輯項目中填入{typeConfig.label}的核心大綱、摘要重點或筆記，填寫後即可直接在此進行 AI 導讀與深入問答！
                   </p>
                 </div>
                 {onEdit && (
@@ -952,7 +1369,10 @@ export function ArticleReaderDialog({
                   </Button>
                 )}
               </div>
-            ) : (
+            )}
+
+            {/* 若處於全文總覽模式且有主內文 */}
+            {activeChapterIndex === -1 && mainMarkdown !== '（尚未填寫內文）' && (
               <div className="bg-slate-50/40 rounded-2xl p-6 md:p-10 border border-slate-200/80 shadow-2xs">
                 <div className="max-w-4xl mx-auto leading-relaxed">
                   <MarkdownPreview content={mainMarkdown} readingMode={true} />

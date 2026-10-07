@@ -1866,6 +1866,13 @@ function PersonalCourseCard({
                   </Badge>
                 )}
 
+                {/* 系列篇目標籤 (若為文章且包含篇目) */}
+                {course.type === 'article' && checklist.length > 0 && (
+                  <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 font-bold shrink-0">
+                    📚 系列專題 ({checklist.filter((c) => c.completed).length}/{checklist.length} 篇已讀)
+                  </Badge>
+                )}
+
                 {/* 文章時效性標籤 */}
                 {course.type === 'article' && (
                   course.timelinessType === 'time_sensitive' ? (
@@ -2418,7 +2425,13 @@ function PersonalCourseCard({
                   <Layers className="h-4 w-4" />
                 </div>
                 <span className="text-xs sm:text-sm font-bold text-slate-800">
-                  課程章節單元
+                  {course.type === 'article'
+                    ? '系列文章篇目清單'
+                    : course.type === 'book'
+                    ? '書籍章節單元清單'
+                    : course.type === 'video'
+                    ? '影音重點段落清單'
+                    : '課程章節單元'}
                 </span>
                 <Badge
                   variant="outline"
@@ -2428,7 +2441,8 @@ function PersonalCourseCard({
                       : 'bg-white text-slate-600 border-slate-200'
                   }`}
                 >
-                  {checklist.filter((c) => c.completed).length} / {checklist.length} 單元已達成
+                  {checklist.filter((c) => c.completed).length} / {checklist.length}{' '}
+                  {course.type === 'article' ? '篇已研讀' : '單元已達成'}
                 </Badge>
                 {checklist.length > 0 && (
                   <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">

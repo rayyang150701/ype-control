@@ -11,8 +11,11 @@ export interface PMLearningAIAnalysis {
 
 export interface PMLearningChapterUnit {
   id?: string;
-  title: string; // 大單元標題，例如 "單元 1" 或 "第一單元：核心概念"
+  title: string; // 大單元標題，例如 "單元 1" 或 "第一篇：核心概念"
   subUnits: string[]; // 子單元名稱清單，例如 ["1.1 需求訪談", "1.2 範疇設定"]
+  content?: string; // 該篇目/單元專屬完整內容 (支援 Markdown，供多篇系列文章細部切分各篇內文)
+  url?: string; // 該篇目專屬外部連結或原文傳送門 (選填)
+  description?: string; // 該篇目簡介或前言摘要 (選填)
 }
 
 export interface PMLearningChecklistItem {

@@ -702,6 +702,16 @@ export function TeamView({
                         </Badge>
                       )}
 
+                      {/* 系列文章篇目標籤 */}
+                      {course.type === 'article' && Array.isArray(course.defaultChecklist) && course.defaultChecklist.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-purple-50 text-purple-700 border-purple-200 font-bold shrink-0"
+                        >
+                          📚 系列專題 (共 {course.defaultChecklist.length} 篇)
+                        </Badge>
+                      )}
+
                       <span className="font-bold text-slate-900 text-base hover:text-indigo-600 transition-colors">
                         {course.title}
                       </span>
@@ -1172,6 +1182,16 @@ function KanbanCourseCard({
           <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
             {course.category || '專案管理'}
           </Badge>
+
+          {/* 系列文章篇目標籤 */}
+          {course.type === 'article' && Array.isArray(course.defaultChecklist) && course.defaultChecklist.length > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-bold"
+            >
+              📚 系列 ({course.defaultChecklist.length} 篇)
+            </Badge>
+          )}
         </div>
 
         {canEdit && (

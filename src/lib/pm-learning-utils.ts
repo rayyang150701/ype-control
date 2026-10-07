@@ -33,6 +33,9 @@ export function normalizeChecklistToChapters(raw: any[]): PMLearningChapterUnit[
         id: item.id || `chap-${Date.now()}-${idx}`,
         title,
         subUnits,
+        content: typeof item.content === 'string' ? item.content : undefined,
+        url: typeof item.url === 'string' ? item.url : undefined,
+        description: typeof item.description === 'string' ? item.description : undefined,
       };
     });
   }
@@ -44,14 +47,14 @@ export function normalizeChecklistToChapters(raw: any[]): PMLearningChapterUnit[
 }
 
 /**
- * 智慧解析多行文字為兩階大單元與子單元
+ * 智慧解析多行文字為兩階大單元/篇目與子單元
  * 支援格式：
+ * 第一篇：別人出錢出力的高利潤生意
+ * 第二篇：學術出版業為何越來越集中化？
+ * 或
  * 單元1.
  * 1.1 需求訪談
  * 1.2 範疇設定
- * 單元2
- * 2.1 現場測試
- * 2.2 結案驗收
  */
 export function parseTextToChecklistChapters(text: string): PMLearningChapterUnit[] {
   if (!text || !text.trim()) return [];
@@ -72,14 +75,16 @@ export function parseTextToChecklistChapters(text: string): PMLearningChapterUni
   const isChapterLine = (line: string): boolean => {
     // 不能為小數點子單元 (如 1.1)
     if (/^\d+\.\d+/.test(line)) return false;
-    // 單元1, 單元 1, 單元1., 單元一
-    if (/^單元\s*[0-9一二三四五六七八九十]+/i.test(line)) return true;
-    // 第1章, 第一章, 第一單元, 第1單元, 第一節
-    if (/^第\s*[0-9一二三四五六七八九十]+\s*[章單元節]/i.test(line)) return true;
-    // Chapter 1, Section 1, Module 1, Unit 1
-    if (/^(Chapter|Module|Section|Unit)\s*\d+/i.test(line)) return true;
-    // 1. 或 1、後面接非數字 (例如 1. 專案啟動，但排除 1.1)
-    if (/^\d+[\.、]\s*([^\d]|$)/.test(line)) return true;
+    // 第1篇, 第一篇, 第1章, 第一章, 第一單元, 第1單元, 第一節, 第一部, 第一集, 第一講, 第一期
+    if (/^第\s*[0-9一二三四五六七八九十百]+\s*[篇章單元節部集回講期]/i.test(line)) return true;
+    // 單元1, 單元 1, 單元1., 單元一, 篇目1, 篇目一
+    if (/^(單元|篇目|章節|主題)\s*[0-9一二三四五六七八九十]+/i.test(line)) return true;
+    // Chapter 1, Section 1, Module 1, Unit 1, Part 1, Part I, Part A, Episode 1
+    if (/^(Chapter|Module|Section|Unit|Part|Episode)\s*([0-9一二三四五六七八九十]+|[ivxlcdm]+|[a-z])/i.test(line)) return true;
+    // 前言, 導讀, 序章, 總結, 結語, 附錄
+    if (/^(前言|序言|序章|導讀|引言|總結|結語|附錄|後記)[\s：:]/i.test(line)) return true;
+    // 1. 或 1、 或 (一) 或 一、後面接非數字且不是小數點 (例如 "1. 別人出錢出力的高利潤生意", "一、商業模式地圖")
+    if (/^([0-9]+|[一二三四五六七八九十]+)[\.、：:]\s*([^\d]|$)/.test(line)) return true;
     return false;
   };
 

@@ -840,7 +840,8 @@ export async function analyzeArticleContentAction(
 export async function askArticleQuestionAction(
   courseId: string,
   question: string,
-  history: { role: 'user' | 'assistant'; content: string }[] = []
+  history: { role: 'user' | 'assistant'; content: string }[] = [],
+  activeChapterTitle?: string
 ): Promise<{
   success: boolean;
   answer?: string;
@@ -872,13 +873,29 @@ export async function askArticleQuestionAction(
         ? '線上課程'
         : '知識文章';
 
-    const textToAnalyze = (
+    let textToAnalyze = (
       target.content ||
       target.bookQuotesAndReflections ||
       target.videoTimestampNotes ||
       target.description ||
       target.title
     ).trim();
+
+    // 若 defaultChecklist 篇目有各自的 content，亦彙整入全文脈絡
+    if (Array.isArray(target.defaultChecklist)) {
+      const extraChapterTexts = target.defaultChecklist
+        .map((c: any, idx: number) => {
+          if (c && typeof c === 'object' && c.content?.trim()) {
+            return `### 【第 ${idx + 1} 篇：${c.title || ''}】\n${c.content.trim()}`;
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+      if (extraChapterTexts) {
+        textToAnalyze = textToAnalyze ? `${textToAnalyze}\n\n${extraChapterTexts}` : extraChapterTexts;
+      }
+    }
 
     const chaptersContext =
       Array.isArray(target.defaultChecklist) && target.defaultChecklist.length > 0
@@ -900,6 +917,7 @@ export async function askArticleQuestionAction(
       `領域：${target.category}`,
       `出刊/來源：${target.source || target.instructorOrPlatform || '專案知識庫'}${target.subSource ? ` (${target.subSource})` : ''}`,
       target.issueDate ? `出刊/發布日期：${target.issueDate}` : '',
+      activeChapterTitle ? `【目前研讀焦點篇目】：${activeChapterTitle}` : '',
       chaptersContext,
       target.aiAnalysis?.summary ? `\n【AI 核心摘要】\n${target.aiAnalysis.summary}` : '',
       target.aiAnalysis?.keyTakeaways?.length ? `\n【核心啟發 (Key Takeaways)】\n${target.aiAnalysis.keyTakeaways.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}` : '',
