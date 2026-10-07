@@ -54,7 +54,8 @@ import { EditInternalProjectDialog } from './edit-internal-project-dialog';
 import { AIAnalysisDialog } from './ai-analysis-dialog';
 import { TaskCentricView } from './task-centric-view';
 import { useAdmin } from '@/components/admin-context';
-import { getItemLastUpdateDate } from '@/lib/task-helper';
+import { getItemLastUpdateDate, getItemPendingCompanyAndDepartment } from '@/lib/task-helper';
+import { MultiSelectFilterPopover, MultiSelectOption } from './multi-select-filter';
 import { updateActionItem, deleteActionItem, updateInternalProjectStatus } from '@/lib/actions';
 import {
   DropdownMenu,
@@ -151,13 +152,15 @@ export function InternalTasksClient({
 
     // 2. 清除可能導致該目標專案被過濾隱藏的條件
     setSelectedCategory('all');
-    setSelectedInternalStatus('all');
-    setSelectedSourceType('all');
-    setSelectedClient('all');
-    setSelectedPm('all');
-    setSelectedPhase('all');
-    setSelectedStatus('all');
-    setSelectedWaitingOn('all');
+    setSelectedInternalStatuses([]);
+    setSelectedSourceTypes([]);
+    setSelectedClients([]);
+    setSelectedPms([]);
+    setSelectedTpms([]);
+    setSelectedDepartments([]);
+    setSelectedCompanies([]);
+    setSelectedStatuses([]);
+    setSelectedWaitingOns([]);
     setSearchQuery('');
     setHideEmptyProjects(false);
 
@@ -179,16 +182,17 @@ export function InternalTasksClient({
   // 篩選與排序狀態
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | '評估案' | '已開案' | '暫緩' | '已結案' | '專案終止'>('all');
-  const [selectedInternalStatus, setSelectedInternalStatus] = useState<'all' | 'in_progress' | 'on_hold' | 'completed' | 'terminated'>('all');
-  const [selectedSourceType, setSelectedSourceType] = useState<'all' | ProjectSourceType>('all');
-  const [selectedClient, setSelectedClient] = useState<string>('all');
-  const [selectedPm, setSelectedPm] = useState<string>('all');
-  const [selectedTpm, setSelectedTpm] = useState<string>('all');
-  const [selectedPhase, setSelectedPhase] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
+  const [selectedInternalStatuses, setSelectedInternalStatuses] = useState<string[]>([]);
+  const [selectedSourceTypes, setSelectedSourceTypes] = useState<string[]>([]);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [selectedPms, setSelectedPms] = useState<string[]>([]);
+  const [selectedTpms, setSelectedTpms] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedWaitingOns, setSelectedWaitingOns] = useState<string[]>([]);
   const [filterDimension, setFilterDimension] = useState<
-    'pm' | 'tpm' | 'client' | 'sourceType' | 'internalStatus' | 'phase' | 'status' | 'waitingOn'
+    'pm' | 'tpm' | 'department' | 'company' | 'client' | 'sourceType' | 'internalStatus' | 'status' | 'waitingOn'
   >('pm');
   const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
@@ -397,6 +401,40 @@ export function InternalTasksClient({
       });
   }, [projects]);
 
+  // 整理待辦部門選項與未結案待辦計數
+  const departmentFilterOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    actionItems.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      const { department } = getItemPendingCompanyAndDepartment(item, users, clients);
+      if (department) {
+        map.set(department, (map.get(department) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
+  }, [actionItems, projectMap, users, clients]);
+
+  // 整理待辦公司選項與未結案待辦計數
+  const companyFilterOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    actionItems.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      const { company } = getItemPendingCompanyAndDepartment(item, users, clients);
+      if (company) {
+        map.set(company, (map.get(company) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
+  }, [actionItems, projectMap, users, clients]);
+
   // 過濾後的待辦清單
   const filteredItems = useMemo(() => {
     return actionItems.filter((item) => {
@@ -408,33 +446,32 @@ export function InternalTasksClient({
         (item.projectName && item.projectName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (item.projectCaseNumber && item.projectCaseNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchesPhase = selectedPhase === 'all' ||
-        item.phase === selectedPhase ||
-        (selectedPhase === '1.1 設計階段' && (item.phase.startsWith('1.1') || item.phase.includes('設計') || item.phase.includes('評估') || item.phase.includes('報價') || item.phase.includes('簽呈'))) ||
-        (selectedPhase === '1.2 施工階段' && (item.phase.startsWith('1.2') || item.phase.includes('施工') || item.phase.includes('開發'))) ||
-        (selectedPhase === '1.3 驗證階段' && (item.phase.startsWith('1.3') || item.phase.includes('驗證') || item.phase.includes('測試'))) ||
-        (selectedPhase === '1.4 驗收階段' && (item.phase.startsWith('1.4') || item.phase.includes('驗收') || item.phase.includes('教育訓練') || item.phase.includes('結案')));
-      const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
+      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(item.status);
       
-      // 需求1: 等候處理篩選時，過濾已完成的待辦與已結案專案
-      const matchesWaiting = selectedWaitingOn === 'all' || (
-        item.waitingOn === selectedWaitingOn &&
+      // 等候處理篩選時，過濾已完成的待辦與已結案專案
+      const matchesWaiting = selectedWaitingOns.length === 0 || (
+        selectedWaitingOns.includes(item.waitingOn || '') &&
         item.status !== 'completed' &&
         !(projectMap.get(item.projectId)?.internalStatus === 'completed' || projectMap.get(item.projectId)?.status === 'completed')
       );
 
+      // 待辦部門與待辦公司篩選
+      const itemPending = getItemPendingCompanyAndDepartment(item, users, clients);
+      const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(itemPending.department);
+      const matchesCompany = selectedCompanies.length === 0 || selectedCompanies.includes(itemPending.company);
+
       // 負責 PM 篩選
       const proj = projectMap.get(item.projectId) || (item.projectCaseNumber ? projects.find(p => p.caseNumber === item.projectCaseNumber) : undefined);
       const itemPm = getProjectPm(proj) || '未指定';
-      const matchesPm = selectedPm === 'all' || itemPm === selectedPm;
+      const matchesPm = selectedPms.length === 0 || selectedPms.includes(itemPm);
 
       // TPM 窗口篩選
       const itemTpm = getProjectTpm(proj) || '未指定';
-      const matchesTpm = selectedTpm === 'all' || itemTpm === selectedTpm;
+      const matchesTpm = selectedTpms.length === 0 || selectedTpms.includes(itemTpm);
 
-      return matchesSearch && matchesPhase && matchesStatus && matchesWaiting && matchesPm && matchesTpm;
+      return matchesSearch && matchesStatus && matchesWaiting && matchesDepartment && matchesCompany && matchesPm && matchesTpm;
     });
-  }, [actionItems, searchQuery, selectedPhase, selectedStatus, selectedWaitingOn, selectedPm, selectedTpm, projectMap, projects]);
+  }, [actionItems, searchQuery, selectedStatuses, selectedWaitingOns, selectedDepartments, selectedCompanies, selectedPms, selectedTpms, projectMap, projects, users, clients]);
 
   // 統計評估案 vs 已開案 vs 暫緩 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
@@ -485,6 +522,173 @@ export function InternalTasksClient({
     });
     return { all: projects.length, inProgress, onHold, completed, terminated };
   }, [projects]);
+
+  // 整理專案來源型態選項
+  const sourceTypeFilterOptions = useMemo<MultiSelectOption[]>(() => {
+    const counts: Record<string, number> = {
+      '燁輝列管專案': 0,
+      '燁輝請購案': 0,
+      '億威內部自建專案': 0,
+      '其他專案': 0,
+    };
+    projects.forEach((p) => {
+      const isPur = (p.caseNumber || '').toUpperCase().startsWith('PUR');
+      const src = p.sourceType || (isPur ? '燁輝請購案' : (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案'));
+      if (src === '其他專案' || src === '其他智慧製造專案') {
+        counts['其他專案'] = (counts['其他專案'] || 0) + 1;
+      } else if (counts[src] !== undefined) {
+        counts[src] = (counts[src] || 0) + 1;
+      }
+    });
+    return [
+      { id: '燁輝列管專案', label: '🏢 燁輝列管專案', count: counts['燁輝列管專案'] },
+      { id: '燁輝請購案', label: '📑 燁輝請購案', count: counts['燁輝請購案'] },
+      { id: '億威內部自建專案', label: '🏭 億威自建專案', count: counts['億威內部自建專案'] },
+      { id: '其他專案', label: '⚙️ 其他專案', count: counts['其他專案'] },
+    ];
+  }, [projects]);
+
+  // 整理專案狀態選項
+  const internalStatusFilterOptions = useMemo<MultiSelectOption[]>(() => [
+    { id: 'in_progress', label: '⏳ 進行/評估中', count: internalStatusCounts.inProgress },
+    { id: 'on_hold', label: '⏸️ 暫緩', count: internalStatusCounts.onHold },
+    { id: 'completed', label: '✅ 已結案', count: internalStatusCounts.completed },
+    { id: 'terminated', label: '⛔ 專案終止', count: internalStatusCounts.terminated },
+  ], [internalStatusCounts]);
+
+  // 整理待辦狀態選項
+  const statusFilterOptions = useMemo<MultiSelectOption[]>(() => {
+    const counts: Record<string, number> = { pending: 0, in_progress: 0, blocked: 0, completed: 0 };
+    actionItems.forEach((item) => {
+      if (counts[item.status] !== undefined) {
+        counts[item.status] = (counts[item.status] || 0) + 1;
+      }
+    });
+    return [
+      { id: 'pending', label: '待處理', count: counts.pending },
+      { id: 'in_progress', label: '🔄 處理中', count: counts.in_progress },
+      { id: 'blocked', label: '🚨 卡關等候中', count: counts.blocked },
+      { id: 'completed', label: '✅ 已完成', count: counts.completed },
+    ];
+  }, [actionItems]);
+
+  // 整理等候對象選項
+  const waitingOnFilterOptions = useMemo<MultiSelectOption[]>(() => {
+    const map = new Map<string, number>();
+    actionItems.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      if (item.waitingOn && item.waitingOn.trim()) {
+        const w = item.waitingOn.trim();
+        map.set(w, (map.get(w) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([party, count]) => ({
+        id: party,
+        label: party,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'zh-TW'));
+  }, [actionItems, projectMap]);
+
+  // 複合篩選維度對應表
+  const dimensionConfig = useMemo(() => {
+    return {
+      pm: {
+        title: '負責 PM',
+        placeholder: '全部負責 PM',
+        options: pmFilterOptions.map((p) => ({ id: p.name, label: p.name, count: p.count })),
+        selectedValues: selectedPms,
+        onChange: setSelectedPms,
+        colorClass: 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold',
+      },
+      tpm: {
+        title: 'TPM 窗口',
+        placeholder: '全部 TPM 窗口',
+        options: tpmFilterOptions.map((t) => ({ id: t.name, label: t.name, count: t.count })),
+        selectedValues: selectedTpms,
+        onChange: setSelectedTpms,
+        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold',
+      },
+      department: {
+        title: '待辦部門',
+        placeholder: '全部待辦部門',
+        options: departmentFilterOptions.map((d) => ({ id: d.name, label: d.name, count: d.count })),
+        selectedValues: selectedDepartments,
+        onChange: setSelectedDepartments,
+        colorClass: 'border-indigo-500 bg-indigo-50/70 text-indigo-900 font-bold',
+      },
+      company: {
+        title: '待辦公司',
+        placeholder: '全部待辦公司',
+        options: companyFilterOptions.map((c) => ({ id: c.name, label: c.name, count: c.count })),
+        selectedValues: selectedCompanies,
+        onChange: setSelectedCompanies,
+        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold',
+      },
+      client: {
+        title: '客戶名稱',
+        placeholder: '全部客戶',
+        options: clientFilterOptions.map((c) => ({ id: c.name, label: c.name, count: c.count })),
+        selectedValues: selectedClients,
+        onChange: setSelectedClients,
+        colorClass: 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold',
+      },
+      sourceType: {
+        title: '專案來源',
+        placeholder: '全部專案來源',
+        options: sourceTypeFilterOptions,
+        selectedValues: selectedSourceTypes,
+        onChange: setSelectedSourceTypes,
+        colorClass: 'border-purple-500 bg-purple-50/70 text-purple-900 font-bold',
+      },
+      internalStatus: {
+        title: '專案狀態',
+        placeholder: '全部專案狀態',
+        options: internalStatusFilterOptions,
+        selectedValues: selectedInternalStatuses,
+        onChange: setSelectedInternalStatuses,
+        colorClass: 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold',
+      },
+      status: {
+        title: '待辦狀態',
+        placeholder: '全部待辦狀態',
+        options: statusFilterOptions,
+        selectedValues: selectedStatuses,
+        onChange: setSelectedStatuses,
+        colorClass: 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold',
+      },
+      waitingOn: {
+        title: '等候對象',
+        placeholder: '全部等候對象',
+        options: waitingOnFilterOptions,
+        selectedValues: selectedWaitingOns,
+        onChange: setSelectedWaitingOns,
+        colorClass: 'border-rose-400 bg-rose-50/60 text-rose-950 font-bold',
+      },
+    };
+  }, [
+    pmFilterOptions,
+    selectedPms,
+    tpmFilterOptions,
+    selectedTpms,
+    departmentFilterOptions,
+    selectedDepartments,
+    companyFilterOptions,
+    selectedCompanies,
+    clientFilterOptions,
+    selectedClients,
+    sourceTypeFilterOptions,
+    selectedSourceTypes,
+    internalStatusFilterOptions,
+    selectedInternalStatuses,
+    statusFilterOptions,
+    selectedStatuses,
+    waitingOnFilterOptions,
+    selectedWaitingOns,
+  ]);
 
   // 自然序號比較函數 (1, 2, ... 10, ... 55)
   const compareCaseNumbers = (a?: string, b?: string, asc: boolean = true) => {
@@ -549,38 +753,40 @@ export function InternalTasksClient({
     }
 
     // 2. 專案生命週期狀態篩選 (進行中/評估中、暫緩、已結案、專案終止)
-    if (selectedInternalStatus !== 'all') {
+    if (selectedInternalStatuses.length > 0) {
       projectList = projectList.filter((p) => {
         const status = getProjectInternalStatus(p);
-        return status === selectedInternalStatus;
+        return selectedInternalStatuses.includes(status);
       });
     }
 
     // 3. 專案來源型態篩選 (燁輝列管專案 vs 燁輝請購案 vs 億威內部自建專案 vs 其他專案)
-    if (selectedSourceType !== 'all') {
+    if (selectedSourceTypes.length > 0) {
       projectList = projectList.filter((p) => {
         const isPur = (p.caseNumber || '').toUpperCase().startsWith('PUR');
         const src = p.sourceType || (isPur ? '燁輝請購案' : (p.projectCategory === '評估案' || (p.status as any) === 'poc' ? '億威內部自建專案' : '燁輝列管專案'));
-        if (selectedSourceType === '其他專案' || selectedSourceType === '其他智慧製造專案') {
-          return src === '其他專案' || src === '其他智慧製造專案';
-        }
-        return src === selectedSourceType;
+        return selectedSourceTypes.some((selectedSrc) => {
+          if (selectedSrc === '其他專案' || selectedSrc === '其他智慧製造專案') {
+            return src === '其他專案' || src === '其他智慧製造專案';
+          }
+          return src === selectedSrc;
+        });
       });
     }
 
     // 4. 客戶篩選
-    if (selectedClient !== 'all') {
-      projectList = projectList.filter((p) => (p.clientName || '燁輝') === selectedClient);
+    if (selectedClients.length > 0) {
+      projectList = projectList.filter((p) => selectedClients.includes(p.clientName || '燁輝'));
     }
 
     // 5. 負責 PM 篩選
-    if (selectedPm !== 'all') {
-      projectList = projectList.filter((p) => (getProjectPm(p) || '未指定') === selectedPm);
+    if (selectedPms.length > 0) {
+      projectList = projectList.filter((p) => selectedPms.includes(getProjectPm(p) || '未指定'));
     }
 
     // 6. TPM 窗口篩選
-    if (selectedTpm !== 'all') {
-      projectList = projectList.filter((p) => (getProjectTpm(p) || '未指定') === selectedTpm);
+    if (selectedTpms.length > 0) {
+      projectList = projectList.filter((p) => selectedTpms.includes(getProjectTpm(p) || '未指定'));
     }
 
     const map = new Map<string, { project: FullProject; items: ProjectActionItem[] }>();
@@ -606,7 +812,7 @@ export function InternalTasksClient({
         const projectExists = projects.some(
           (p) => p.id === item.projectId || (p.caseNumber && item.projectCaseNumber && p.caseNumber.trim().toUpperCase() !== 'POC' && p.caseNumber.trim() === item.projectCaseNumber.trim())
         );
-        if (!projectExists && selectedCategory === 'all' && selectedInternalStatus === 'all' && selectedSourceType === 'all') {
+        if (!projectExists && selectedCategory === 'all' && selectedInternalStatuses.length === 0 && selectedSourceTypes.length === 0) {
           // 僅當為資料庫完全不存在的孤兒資料，且處於「全部無篩選」狀態時，才暫存為未分類專案
           const dummyProj: FullProject = {
             id: item.projectId,
@@ -649,9 +855,13 @@ export function InternalTasksClient({
           (group.project.tpmOfficeContact && group.project.tpmOfficeContact.toLowerCase().includes(queryLower))
         : false;
 
-      // 如果使用者有設定 phase/status/waitingOn，而專案沒有符合條件的待辦事項，則過濾掉
-      const hasPhaseOrStatusFilter = selectedPhase !== 'all' || selectedStatus !== 'all' || selectedWaitingOn !== 'all';
-      if (hasPhaseOrStatusFilter) {
+      // 如果使用者有設定待辦篩選條件，而專案沒有符合條件的待辦事項，則過濾掉
+      const hasItemFilter =
+        selectedStatuses.length > 0 ||
+        selectedWaitingOns.length > 0 ||
+        selectedDepartments.length > 0 ||
+        selectedCompanies.length > 0;
+      if (hasItemFilter) {
         return group.items.length > 0;
       }
 
@@ -690,14 +900,15 @@ export function InternalTasksClient({
     filteredItems,
     searchQuery,
     selectedCategory,
-    selectedInternalStatus,
-    selectedSourceType,
-    selectedClient,
-    selectedPm,
-    selectedTpm,
-    selectedPhase,
-    selectedStatus,
-    selectedWaitingOn,
+    selectedInternalStatuses,
+    selectedSourceTypes,
+    selectedClients,
+    selectedPms,
+    selectedTpms,
+    selectedDepartments,
+    selectedCompanies,
+    selectedStatuses,
+    selectedWaitingOns,
     sortBy,
     hideEmptyProjects,
   ]);
@@ -1421,25 +1632,27 @@ export function InternalTasksClient({
   };
 
   const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (selectedPm !== 'all') count++;
-    if (selectedTpm !== 'all') count++;
-    if (selectedClient !== 'all') count++;
-    if (selectedSourceType !== 'all') count++;
-    if (selectedInternalStatus !== 'all') count++;
-    if (selectedPhase !== 'all') count++;
-    if (selectedStatus !== 'all') count++;
-    if (selectedWaitingOn !== 'all') count++;
-    return count;
+    return (
+      selectedPms.length +
+      selectedTpms.length +
+      selectedDepartments.length +
+      selectedCompanies.length +
+      selectedClients.length +
+      selectedSourceTypes.length +
+      selectedInternalStatuses.length +
+      selectedStatuses.length +
+      selectedWaitingOns.length
+    );
   }, [
-    selectedPm,
-    selectedTpm,
-    selectedClient,
-    selectedSourceType,
-    selectedInternalStatus,
-    selectedPhase,
-    selectedStatus,
-    selectedWaitingOn,
+    selectedPms,
+    selectedTpms,
+    selectedDepartments,
+    selectedCompanies,
+    selectedClients,
+    selectedSourceTypes,
+    selectedInternalStatuses,
+    selectedStatuses,
+    selectedWaitingOns,
   ]);
 
   const hasActiveFilters =
@@ -1451,14 +1664,15 @@ export function InternalTasksClient({
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedCategory('all');
-    setSelectedInternalStatus('all');
-    setSelectedSourceType('all');
-    setSelectedClient('all');
-    setSelectedPhase('all');
-    setSelectedStatus('all');
-    setSelectedWaitingOn('all');
-    setSelectedPm('all');
-    setSelectedTpm('all');
+    setSelectedInternalStatuses([]);
+    setSelectedSourceTypes([]);
+    setSelectedClients([]);
+    setSelectedStatuses([]);
+    setSelectedWaitingOns([]);
+    setSelectedPms([]);
+    setSelectedTpms([]);
+    setSelectedDepartments([]);
+    setSelectedCompanies([]);
     setSortBy('caseNumberAsc');
     setHideEmptyProjects(false);
   };
@@ -2031,10 +2245,11 @@ export function InternalTasksClient({
                   <span className="truncate">
                     {filterDimension === 'pm' && '👤 負責 PM'}
                     {filterDimension === 'tpm' && '👥 TPM 窗口'}
+                    {filterDimension === 'department' && '👥 待辦部門'}
+                    {filterDimension === 'company' && '🏢 待辦公司'}
                     {filterDimension === 'client' && '🏢 客戶名稱'}
                     {filterDimension === 'sourceType' && '🏭 專案來源'}
                     {filterDimension === 'internalStatus' && '📌 專案狀態'}
-                    {filterDimension === 'phase' && '🪜 待辦階段'}
                     {filterDimension === 'status' && '⚡ 待辦狀態'}
                     {filterDimension === 'waitingOn' && '⏳ 等候對象'}
                   </span>
@@ -2042,161 +2257,44 @@ export function InternalTasksClient({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pm">
-                  👤 負責 PM {selectedPm !== 'all' ? `(● ${selectedPm})` : ''}
+                  👤 負責 PM {selectedPms.length > 0 ? `(● ${selectedPms.length})` : ''}
                 </SelectItem>
                 <SelectItem value="tpm">
-                  👥 TPM 窗口 {selectedTpm !== 'all' ? `(● ${selectedTpm})` : ''}
+                  👥 TPM 窗口 {selectedTpms.length > 0 ? `(● ${selectedTpms.length})` : ''}
+                </SelectItem>
+                <SelectItem value="department">
+                  👥 待辦部門 {selectedDepartments.length > 0 ? `(● ${selectedDepartments.length})` : ''}
+                </SelectItem>
+                <SelectItem value="company">
+                  🏢 待辦公司 {selectedCompanies.length > 0 ? `(● ${selectedCompanies.length})` : ''}
                 </SelectItem>
                 <SelectItem value="client">
-                  🏢 客戶名稱 {selectedClient !== 'all' ? `(● ${selectedClient})` : ''}
+                  🏢 客戶名稱 {selectedClients.length > 0 ? `(● ${selectedClients.length})` : ''}
                 </SelectItem>
                 <SelectItem value="sourceType">
-                  🏭 專案來源 {selectedSourceType !== 'all' ? `(● ${selectedSourceType})` : ''}
+                  🏭 專案來源 {selectedSourceTypes.length > 0 ? `(● ${selectedSourceTypes.length})` : ''}
                 </SelectItem>
                 <SelectItem value="internalStatus">
-                  📌 專案狀態 {selectedInternalStatus !== 'all' ? `(● ${selectedInternalStatus})` : ''}
-                </SelectItem>
-                <SelectItem value="phase">
-                  🪜 待辦階段 {selectedPhase !== 'all' ? `(● ${selectedPhase})` : ''}
+                  📌 專案狀態 {selectedInternalStatuses.length > 0 ? `(● ${selectedInternalStatuses.length})` : ''}
                 </SelectItem>
                 <SelectItem value="status">
-                  ⚡ 待辦狀態 {selectedStatus !== 'all' ? `(● ${selectedStatus})` : ''}
+                  ⚡ 待辦狀態 {selectedStatuses.length > 0 ? `(● ${selectedStatuses.length})` : ''}
                 </SelectItem>
                 <SelectItem value="waitingOn">
-                  ⏳ 等候對象 {selectedWaitingOn !== 'all' ? `(● ${selectedWaitingOn})` : ''}
+                  ⏳ 等候對象 {selectedWaitingOns.length > 0 ? `(● ${selectedWaitingOns.length})` : ''}
                 </SelectItem>
               </SelectContent>
             </Select>
 
-            {/* 第 2 欄位：依第 1 欄位帶出對應篩選資料 */}
-            {filterDimension === 'pm' && (
-              <Select value={selectedPm} onValueChange={setSelectedPm}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedPm !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部負責 PM" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="all">全部負責 PM ({projects.length})</SelectItem>
-                  {pmFilterOptions.map((pm) => (
-                    <SelectItem key={pm.name} value={pm.name}>
-                      👤 {pm.name} ({pm.count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'tpm' && (
-              <Select value={selectedTpm} onValueChange={setSelectedTpm}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedTpm !== 'all' ? 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部 TPM 窗口" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="all">全部 TPM 窗口 ({projects.length})</SelectItem>
-                  {tpmFilterOptions.map((tpm) => (
-                    <SelectItem key={tpm.name} value={tpm.name}>
-                      👥 {tpm.name} ({tpm.count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'client' && (
-              <Select value={selectedClient} onValueChange={(val: any) => setSelectedClient(val)}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedClient !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部客戶" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="all">全部客戶 ({projects.length})</SelectItem>
-                  {clientFilterOptions.map((c) => (
-                    <SelectItem key={c.name} value={c.name}>
-                      🏢 {c.name} ({c.count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'sourceType' && (
-              <Select value={selectedSourceType} onValueChange={(val: any) => setSelectedSourceType(val)}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedSourceType !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部來源型態" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部來源型態 ({projects.length})</SelectItem>
-                  <SelectItem value="燁輝列管專案">🏢 燁輝列管專案</SelectItem>
-                  <SelectItem value="燁輝請購案">📑 燁輝請購案</SelectItem>
-                  <SelectItem value="億威內部自建專案">🏭 億威自建專案</SelectItem>
-                  <SelectItem value="其他專案">⚙️ 其他專案</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'internalStatus' && (
-              <Select value={selectedInternalStatus} onValueChange={(val: any) => setSelectedInternalStatus(val)}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedInternalStatus !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部專案狀態" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部專案狀態 ({projects.length})</SelectItem>
-                  <SelectItem value="in_progress">⏳ 進行/評估中 ({internalStatusCounts.inProgress})</SelectItem>
-                  <SelectItem value="on_hold">⏸️ 暫緩 ({internalStatusCounts.onHold})</SelectItem>
-                  <SelectItem value="completed">✅ 已結案 ({internalStatusCounts.completed})</SelectItem>
-                  <SelectItem value="terminated">⛔ 專案終止 ({internalStatusCounts.terminated})</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'phase' && (
-              <Select value={selectedPhase} onValueChange={setSelectedPhase}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedPhase !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部階段" />
-                </SelectTrigger>
-                <SelectContent className="max-h-80">
-                  <SelectItem value="all">全部階段</SelectItem>
-                  <SelectItem value="1.1 設計階段">1.1 設計階段 (全部設計)</SelectItem>
-                  <SelectItem value="1.1.1 評估">　↳ 1.1.1 評估</SelectItem>
-                  <SelectItem value="1.1.2 報價">　↳ 1.1.2 報價</SelectItem>
-                  <SelectItem value="1.1.3 簽呈">　↳ 1.1.3 簽呈</SelectItem>
-                  <SelectItem value="1.2 施工階段">1.2 施工階段</SelectItem>
-                  <SelectItem value="1.3 驗證階段">1.3 驗證階段</SelectItem>
-                  <SelectItem value="1.4 驗收階段">1.4 驗收階段 (全部驗收)</SelectItem>
-                  <SelectItem value="1.4.1 教育訓練">　↳ 1.4.1 教育訓練</SelectItem>
-                  <SelectItem value="1.4.2 驗收結案">　↳ 1.4.2 驗收結案</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'status' && (
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedStatus !== 'all' ? 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部待辦狀態" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部待辦狀態</SelectItem>
-                  <SelectItem value="pending">待處理</SelectItem>
-                  <SelectItem value="in_progress">處理中</SelectItem>
-                  <SelectItem value="blocked">🚨 卡關等候中</SelectItem>
-                  <SelectItem value="completed">✅ 已完成</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-
-            {filterDimension === 'waitingOn' && (
-              <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
-                <SelectTrigger className={`w-[170px] sm:w-[185px] h-9 text-xs font-medium bg-background shrink-0 ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/60 text-rose-950 font-bold' : ''}`}>
-                  <SelectValue placeholder="全部待處理者" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="all">全部待處理者</SelectItem>
-                  {uniqueWaitingOns.map((party) => (
-                    <SelectItem key={party} value={party} className="text-xs">
-                      等候: {party}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            {/* 第 2 欄位：多重勾選篩選器 */}
+            <MultiSelectFilterPopover
+              title={dimensionConfig[filterDimension].title}
+              placeholder={dimensionConfig[filterDimension].placeholder}
+              options={dimensionConfig[filterDimension].options}
+              selectedValues={dimensionConfig[filterDimension].selectedValues}
+              onSelectionChange={dimensionConfig[filterDimension].onChange}
+              activeColorClass={dimensionConfig[filterDimension].colorClass}
+            />
 
             {hasActiveFilters && (
               <Button
@@ -2220,110 +2318,123 @@ export function InternalTasksClient({
               <Filter className="w-3 h-3 text-blue-600" />
               已套用條件 ({activeFiltersCount}):
             </span>
-            {selectedPm !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                <span>👤 PM: {selectedPm}</span>
+            {selectedPms.map((pm) => (
+              <span key={`pm-${pm}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                <span>👤 PM: {pm}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedPm('all')}
+                  onClick={() => setSelectedPms((prev) => prev.filter((p) => p !== pm))}
                   className="hover:bg-blue-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            )}
-            {selectedTpm !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                <span>👥 TPM: {selectedTpm}</span>
+            ))}
+            {selectedTpms.map((tpm) => (
+              <span key={`tpm-${tpm}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                <span>👥 TPM: {tpm}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedTpm('all')}
+                  onClick={() => setSelectedTpms((prev) => prev.filter((t) => t !== tpm))}
                   className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            )}
-            {selectedClient !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <span>🏢 客戶: {selectedClient}</span>
+            ))}
+            {selectedDepartments.map((dept) => (
+              <span key={`dept-${dept}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                <span>👥 部門: {dept}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedClient('all')}
-                  className="hover:bg-emerald-200 rounded-full p-0.5 cursor-pointer"
-                  title="移除此條件"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {selectedSourceType !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                <span>🏭 來源: {selectedSourceType}</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSourceType('all')}
-                  className="hover:bg-purple-200 rounded-full p-0.5 cursor-pointer"
-                  title="移除此條件"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {selectedInternalStatus !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                <span>📌 專案: {selectedInternalStatus === 'in_progress' ? '進行中' : selectedInternalStatus === 'on_hold' ? '暫緩' : selectedInternalStatus === 'completed' ? '已結案' : '專案終止'}</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedInternalStatus('all')}
-                  className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
-                  title="移除此條件"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {selectedPhase !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                <span>🪜 階段: {selectedPhase}</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPhase('all')}
+                  onClick={() => setSelectedDepartments((prev) => prev.filter((d) => d !== dept))}
                   className="hover:bg-indigo-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            )}
-            {selectedStatus !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
-                <span>⚡ 待辦: {selectedStatus === 'pending' ? '待處理' : selectedStatus === 'in_progress' ? '處理中' : selectedStatus === 'blocked' ? '卡關' : '已完成'}</span>
+            ))}
+            {selectedCompanies.map((comp) => (
+              <span key={`comp-${comp}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                <span>🏢 公司: {comp}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedStatus('all')}
+                  onClick={() => setSelectedCompanies((prev) => prev.filter((c) => c !== comp))}
+                  className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {selectedClients.map((client) => (
+              <span key={`client-${client}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span>🏢 客戶: {client}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedClients((prev) => prev.filter((c) => c !== client))}
+                  className="hover:bg-emerald-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {selectedSourceTypes.map((st) => (
+              <span key={`st-${st}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                <span>🏭 來源: {st}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSourceTypes((prev) => prev.filter((s) => s !== st))}
+                  className="hover:bg-purple-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {selectedInternalStatuses.map((is) => (
+              <span key={`is-${is}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                <span>📌 專案: {is === 'in_progress' ? '進行中' : is === 'on_hold' ? '暫緩' : is === 'completed' ? '已結案' : '專案終止'}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedInternalStatuses((prev) => prev.filter((s) => s !== is))}
+                  className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            {selectedStatuses.map((status) => (
+              <span key={`status-${status}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                <span>⚡ 待辦: {status === 'pending' ? '待處理' : status === 'in_progress' ? '處理中' : status === 'blocked' ? '卡關' : '已完成'}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatuses((prev) => prev.filter((s) => s !== status))}
                   className="hover:bg-orange-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            )}
-            {selectedWaitingOn !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200">
-                <span>⏳ 等候: {selectedWaitingOn}</span>
+            ))}
+            {selectedWaitingOns.map((party) => (
+              <span key={`waiting-${party}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200">
+                <span>⏳ 等候: {party}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedWaitingOn('all')}
+                  onClick={() => setSelectedWaitingOns((prev) => prev.filter((w) => w !== party))}
                   className="hover:bg-rose-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            )}
+            ))}
             <button
               type="button"
               onClick={handleResetFilters}
@@ -2340,34 +2451,38 @@ export function InternalTasksClient({
         <div className="flex items-center gap-1.5 flex-wrap text-xs">
           <span className="text-muted-foreground font-medium mr-1">🔍 快速過濾等候對象:</span>
           <button
-            onClick={() => setSelectedWaitingOn('all')}
+            onClick={() => setSelectedWaitingOns([])}
             className={`px-2.5 py-1 rounded-full border text-xs transition-colors ${
-              selectedWaitingOn === 'all'
+              selectedWaitingOns.length === 0
                 ? 'bg-slate-900 text-white border-slate-900'
                 : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
             }`}
           >
             全部
           </button>
-          {uniqueWaitingOns.map((party) => (
-            <button
-              key={party}
-              onClick={() => {
-                const nextVal = selectedWaitingOn === party ? 'all' : party;
-                setSelectedWaitingOn(nextVal);
-                if (nextVal !== 'all') {
-                  setFilterDimension('waitingOn');
-                }
-              }}
-              className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 ${
-                selectedWaitingOn === party
-                  ? 'bg-rose-600 text-white border-rose-600 font-medium'
-                  : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
-              }`}
-            >
-              <span>等候：{party}</span>
-            </button>
-          ))}
+          {uniqueWaitingOns.map((party) => {
+            const isSelected = selectedWaitingOns.includes(party);
+            return (
+              <button
+                key={party}
+                onClick={() => {
+                  if (isSelected) {
+                    setSelectedWaitingOns((prev) => prev.filter((p) => p !== party));
+                  } else {
+                    setSelectedWaitingOns((prev) => [...prev, party]);
+                    setFilterDimension('waitingOn');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 ${
+                  isSelected
+                    ? 'bg-rose-600 text-white border-rose-600 font-medium'
+                    : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
+                }`}
+              >
+                <span>等候：{party}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 

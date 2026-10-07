@@ -29,11 +29,14 @@ import {
   Pin,
   CalendarPlus,
   Video,
+  Filter,
+  X,
 } from 'lucide-react';
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { copyToClipboard } from '@/lib/utils';
 import { getItemLastUpdateDate, getItemPendingCompanyAndDepartment } from '@/lib/task-helper';
+import { MultiSelectFilterPopover, MultiSelectOption } from './multi-select-filter';
 import { isTpmPerson } from '@/lib/tpm-helper';
 import type { FullProject, ProjectActionItem, User, Client } from '@/types';
 
@@ -112,39 +115,17 @@ export function TaskCentricView({
     }
   };
 
-  // 細部篩選條件
+  // 細部篩選條件 (維度切換 + 多重勾選)
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
-  const [selectedPm, setSelectedPm] = useState<string>('all');
-  const [selectedPhase, setSelectedPhase] = useState<string>('all');
-  const [selectedCompany, setSelectedCompany] = useState<string>('all');
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
-  const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
+  const [filterDimension, setFilterDimension] = useState<'pm' | 'project' | 'department' | 'company' | 'waitingOn'>('pm');
+  const [selectedPms, setSelectedPms] = useState<string[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [selectedWaitingOns, setSelectedWaitingOns] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<
     'newest' | 'dueDate' | 'projectCase' | 'statusPriority' | 'oldestUpdated' | 'recentlyUpdated'
   >('newest');
-
-  // 整理所有階段清單
-  const phaseList = useMemo(() => {
-    const defaultPhases = [
-      '1.1 設計階段',
-      '1.1.1 評估',
-      '1.1.2 報價',
-      '1.1.3 簽呈',
-      '1.2 施工階段',
-      '1.3 驗證階段',
-      '1.4 驗收階段',
-      '1.4.1 教育訓練',
-      '1.4.2 驗收結案',
-    ];
-    const set = new Set<string>(defaultPhases);
-    items.forEach((item) => {
-      if (item.phase && item.phase.trim()) {
-        set.add(item.phase.trim());
-      }
-    });
-    return Array.from(set);
-  }, [items]);
 
   // 階段徽章配色與標籤渲染
   const getPhaseBadge = (phase?: string) => {
@@ -259,6 +240,41 @@ export function TaskCentricView({
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-TW'));
   }, [projects]);
 
+  const pmMultiOptions = useMemo<MultiSelectOption[]>(() => {
+    const map = new Map<string, number>();
+    items.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      const pm = (proj?.responsiblePm && !isTpmPerson(proj.responsiblePm)) ? proj.responsiblePm.trim() : '未指定';
+      map.set(pm, (map.get(pm) || 0) + 1);
+    });
+    return pmList.map((pm) => ({
+      id: pm,
+      label: pm,
+      count: map.get(pm) || 0,
+      icon: <span className="text-slate-400">👤</span>,
+    }));
+  }, [items, projectMap, pmList]);
+
+  // 整理所屬專案多選選項
+  const projectMultiOptions = useMemo<MultiSelectOption[]>(() => {
+    const countMap = new Map<string, number>();
+    items.forEach((item) => {
+      if (item.status === 'completed') return;
+      countMap.set(item.projectId, (countMap.get(item.projectId) || 0) + 1);
+    });
+    return projects.map((p) => {
+      const caseNum = p.caseNumber ? `[${p.caseNumber}] ` : '';
+      return {
+        id: p.id,
+        label: `${caseNum}${p.name}`,
+        count: countMap.get(p.id) || 0,
+        icon: <span className="text-slate-400">📁</span>,
+      };
+    });
+  }, [projects, items]);
+
   // 整理所有「待處理公司」選項與未結案項目計數
   const companyOptions = useMemo(() => {
     const map = new Map<string, number>();
@@ -274,6 +290,15 @@ export function TaskCentricView({
       .sort((a, b) => b.count - a.count || a.company.localeCompare(b.company, 'zh-TW'));
   }, [items, projectMap, users, clients]);
 
+  const companyMultiOptions = useMemo<MultiSelectOption[]>(() => {
+    return companyOptions.map((c) => ({
+      id: c.company,
+      label: c.company,
+      count: c.count,
+      icon: <span className="text-slate-400">🏢</span>,
+    }));
+  }, [companyOptions]);
+
   // 整理所有「待處理部門」選項與未結案項目計數 (若已選定公司，則自動篩選該公司之部門)
   const departmentOptions = useMemo(() => {
     const map = new Map<string, number>();
@@ -282,32 +307,24 @@ export function TaskCentricView({
       const proj = projectMap.get(item.projectId);
       if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
       const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
-      if (selectedCompany !== 'all' && company !== selectedCompany) return;
+      if (selectedCompanies.length > 0 && !selectedCompanies.includes(company)) return;
       map.set(department, (map.get(department) || 0) + 1);
     });
     return Array.from(map.entries())
       .map(([department, count]) => ({ department, count }))
       .sort((a, b) => b.count - a.count || a.department.localeCompare(b.department, 'zh-TW'));
-  }, [items, projectMap, users, clients, selectedCompany]);
+  }, [items, projectMap, users, clients, selectedCompanies]);
 
-  // 當變更公司時，若原選擇的部門不在新公司名下則自動重置為 all
-  const handleCompanyChange = (comp: string) => {
-    setSelectedCompany(comp);
-    if (comp === 'all') {
-      setSelectedDepartment('all');
-    } else {
-      const deptsOfCompany = new Set<string>();
-      items.forEach((item) => {
-        const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
-        if (company === comp) deptsOfCompany.add(department);
-      });
-      if (selectedDepartment !== 'all' && !deptsOfCompany.has(selectedDepartment)) {
-        setSelectedDepartment('all');
-      }
-    }
-  };
+  const departmentMultiOptions = useMemo<MultiSelectOption[]>(() => {
+    return departmentOptions.map((d) => ({
+      id: d.department,
+      label: d.department,
+      count: d.count,
+      icon: <span className="text-slate-400">👥</span>,
+    }));
+  }, [departmentOptions]);
 
-  // 需求1 & 2: 整理所有未結案、未完成的「等候對象」清單 (包含公司與部門資訊，並支援動態篩選)
+  // 整理所有未結案、未完成的「等候對象」清單 (包含公司與部門資訊，並支援動態篩選)
   const activeWaitingOnList = useMemo(() => {
     const map = new Map<string, { party: string; company: string; department: string; count: number }>();
     items.forEach((item) => {
@@ -320,8 +337,8 @@ export function TaskCentricView({
       const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
 
       // 若有選公司或部門，檢查是否符合
-      if (selectedCompany !== 'all' && company !== selectedCompany) return;
-      if (selectedDepartment !== 'all' && department !== selectedDepartment) return;
+      if (selectedCompanies.length > 0 && !selectedCompanies.includes(company)) return;
+      if (selectedDepartments.length > 0 && !selectedDepartments.includes(department)) return;
 
       const existing = map.get(party);
       if (existing) {
@@ -331,7 +348,74 @@ export function TaskCentricView({
       }
     });
     return Array.from(map.values()).sort((a, b) => b.count - a.count || a.party.localeCompare(b.party, 'zh-TW'));
-  }, [items, projectMap, users, clients, selectedCompany, selectedDepartment]);
+  }, [items, projectMap, users, clients, selectedCompanies, selectedDepartments]);
+
+  const waitingOnMultiOptions = useMemo<MultiSelectOption[]>(() => {
+    return activeWaitingOnList.map((entry) => ({
+      id: entry.party,
+      label: entry.party,
+      count: entry.count,
+      subText: entry.company && entry.company !== '未指定' ? `(${entry.company}${entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''})` : undefined,
+      icon: <span className="text-rose-500">⏳</span>,
+    }));
+  }, [activeWaitingOnList]);
+
+  // 複合篩選維度對應表
+  const dimensionConfig = useMemo(() => {
+    return {
+      pm: {
+        title: '負責 PM',
+        placeholder: '全部負責 PM',
+        options: pmMultiOptions,
+        selectedValues: selectedPms,
+        onChange: setSelectedPms,
+        colorClass: 'border-blue-500 bg-blue-50/70 text-blue-900 font-bold',
+      },
+      project: {
+        title: '所屬專案',
+        placeholder: '全部所屬專案',
+        options: projectMultiOptions,
+        selectedValues: selectedProjectIds,
+        onChange: setSelectedProjectIds,
+        colorClass: 'border-indigo-500 bg-indigo-50/70 text-indigo-900 font-bold',
+      },
+      department: {
+        title: '待處理部門',
+        placeholder: '全部待處理部門',
+        options: departmentMultiOptions,
+        selectedValues: selectedDepartments,
+        onChange: setSelectedDepartments,
+        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-950 font-bold',
+      },
+      company: {
+        title: '待處理公司',
+        placeholder: '全部待處理公司',
+        options: companyMultiOptions,
+        selectedValues: selectedCompanies,
+        onChange: setSelectedCompanies,
+        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-950 font-bold',
+      },
+      waitingOn: {
+        title: '等候對象',
+        placeholder: '全部等候對象',
+        options: waitingOnMultiOptions,
+        selectedValues: selectedWaitingOns,
+        onChange: setSelectedWaitingOns,
+        colorClass: 'border-rose-400 bg-rose-50/60 text-rose-950 font-bold',
+      },
+    };
+  }, [
+    pmMultiOptions,
+    selectedPms,
+    projectMultiOptions,
+    selectedProjectIds,
+    departmentMultiOptions,
+    selectedDepartments,
+    companyMultiOptions,
+    selectedCompanies,
+    waitingOnMultiOptions,
+    selectedWaitingOns,
+  ]);
 
   // 計算各狀態分頁項目數量
   const tabCounts = useMemo(() => {
@@ -417,30 +501,31 @@ export function TaskCentricView({
         if (!matchesQuery) return false;
       }
 
-      // 3. 下拉欄位篩選
-      if (selectedProjectId !== 'all' && item.projectId !== selectedProjectId) return false;
-      if (selectedPm !== 'all') {
+      // 3. 多選條件過濾
+      // 所屬專案
+      if (selectedProjectIds.length > 0 && !selectedProjectIds.includes(item.projectId)) {
+        return false;
+      }
+      // 負責 PM
+      if (selectedPms.length > 0) {
         const proj = projectMap.get(item.projectId);
         const pm = (proj?.responsiblePm && !isTpmPerson(proj.responsiblePm)) ? proj.responsiblePm.trim() : '未指定';
-        if (pm !== selectedPm) return false;
+        if (!selectedPms.includes(pm)) return false;
       }
-      if (selectedPhase !== 'all' && item.phase !== selectedPhase) return false;
-
-      // 待處理公司篩選
-      if (selectedCompany !== 'all') {
+      // 待處理公司
+      if (selectedCompanies.length > 0) {
         const { company } = getItemPendingCompanyAndDepartment(item, users, clients);
-        if (company !== selectedCompany) return false;
+        if (!selectedCompanies.includes(company)) return false;
       }
-
-      // 待處理部門篩選
-      if (selectedDepartment !== 'all') {
+      // 待處理部門
+      if (selectedDepartments.length > 0) {
         const { department } = getItemPendingCompanyAndDepartment(item, users, clients);
-        if (department !== selectedDepartment) return false;
+        if (!selectedDepartments.includes(department)) return false;
       }
-
-      if (selectedWaitingOn !== 'all') {
-        if (item.waitingOn !== selectedWaitingOn) return false;
-        // 需求1: 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
+      // 待處理者 (等候中)
+      if (selectedWaitingOns.length > 0) {
+        if (!item.waitingOn || !selectedWaitingOns.includes(item.waitingOn)) return false;
+        // 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
         if (item.status === 'completed') return false;
         const proj = projectMap.get(item.projectId);
         if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
@@ -517,43 +602,50 @@ export function TaskCentricView({
     items,
     activeTab,
     searchQuery,
-    selectedProjectId,
-    selectedPm,
-    selectedPhase,
-    selectedCompany,
-    selectedDepartment,
-    selectedWaitingOn,
+    selectedProjectIds,
+    selectedPms,
+    selectedCompanies,
+    selectedDepartments,
+    selectedWaitingOns,
     sortBy,
     projectMap,
     users,
     clients,
   ]);
 
+  const activeFiltersCount = useMemo(() => {
+    return (
+      selectedPms.length +
+      selectedProjectIds.length +
+      selectedDepartments.length +
+      selectedCompanies.length +
+      selectedWaitingOns.length
+    );
+  }, [
+    selectedPms,
+    selectedProjectIds,
+    selectedDepartments,
+    selectedCompanies,
+    selectedWaitingOns,
+  ]);
+
   const hasActiveFilters =
     Boolean(searchQuery.trim()) ||
-    selectedProjectId !== 'all' ||
-    selectedPm !== 'all' ||
-    selectedPhase !== 'all' ||
-    selectedCompany !== 'all' ||
-    selectedDepartment !== 'all' ||
-    selectedWaitingOn !== 'all' ||
-    activeTab !== 'all';
+    activeFiltersCount > 0;
 
   const handleResetFilters = () => {
-    setActiveTab('all');
     setSearchQuery('');
-    setSelectedProjectId('all');
-    setSelectedPm('all');
-    setSelectedPhase('all');
-    setSelectedCompany('all');
-    setSelectedDepartment('all');
-    setSelectedWaitingOn('all');
+    setSelectedProjectIds([]);
+    setSelectedPms([]);
+    setSelectedCompanies([]);
+    setSelectedDepartments([]);
+    setSelectedWaitingOns([]);
     setSortBy('newest');
   };
 
   return (
     <div className="space-y-3">
-      {/* 搜尋與複合篩選列 (整合待辦狀態下拉 - 需求2 方法2) */}
+      {/* 搜尋與複合篩選列 (精簡省空間：維度選擇 + 多重勾選清單) */}
       <div className="bg-slate-50/90 p-2.5 rounded-lg border border-slate-200/90 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           {/* 搜尋框 */}
@@ -567,127 +659,52 @@ export function TaskCentricView({
             />
           </div>
 
-          {/* 需求2 方法2: 待辦狀態下拉篩選 */}
-          <Select value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
-            <SelectTrigger className={`w-[155px] h-9 text-xs bg-white ${activeTab !== 'all' ? 'border-blue-400 font-semibold text-blue-900 bg-blue-50/50' : ''}`}>
-              <SelectValue placeholder="待辦狀態" />
+          {/* 第 1 欄位：維度選擇器 */}
+          <Select value={filterDimension} onValueChange={(val: any) => setFilterDimension(val)}>
+            <SelectTrigger className="w-[140px] sm:w-[150px] h-9 text-xs font-semibold bg-white shrink-0">
+              <div className="flex items-center gap-1.5 truncate">
+                <Filter className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="truncate">
+                  {filterDimension === 'pm' && '👤 負責 PM'}
+                  {filterDimension === 'project' && '📁 所屬專案'}
+                  {filterDimension === 'department' && '👥 待處理部門'}
+                  {filterDimension === 'company' && '🏢 待處理公司'}
+                  {filterDimension === 'waitingOn' && '⏳ 等候對象'}
+                </span>
+              </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">📋 全部待辦 ({tabCounts.all})</SelectItem>
-              <SelectItem value="blocked" className="text-rose-700 font-medium">🚨 卡關等候中 ({tabCounts.blocked})</SelectItem>
-              <SelectItem value="overdue" className="text-amber-700 font-medium">⚠️ 逾期/到期 ({tabCounts.overdue})</SelectItem>
-              <SelectItem value="active" className="text-blue-700 font-medium">🔄 處理中/待辦 ({tabCounts.active})</SelectItem>
-              <SelectItem value="completed" className="text-emerald-700 font-medium">✅ 已完成 ({tabCounts.completed})</SelectItem>
+              <SelectItem value="pm">
+                👤 負責 PM {selectedPms.length > 0 ? `(● ${selectedPms.length})` : ''}
+              </SelectItem>
+              <SelectItem value="project">
+                📁 所屬專案 {selectedProjectIds.length > 0 ? `(● ${selectedProjectIds.length})` : ''}
+              </SelectItem>
+              <SelectItem value="department">
+                👥 待處理部門 {selectedDepartments.length > 0 ? `(● ${selectedDepartments.length})` : ''}
+              </SelectItem>
+              <SelectItem value="company">
+                🏢 待處理公司 {selectedCompanies.length > 0 ? `(● ${selectedCompanies.length})` : ''}
+              </SelectItem>
+              <SelectItem value="waitingOn">
+                ⏳ 等候對象 {selectedWaitingOns.length > 0 ? `(● ${selectedWaitingOns.length})` : ''}
+              </SelectItem>
             </SelectContent>
           </Select>
 
-          {/* 負責 PM 下拉 */}
-          <Select value={selectedPm} onValueChange={setSelectedPm}>
-            <SelectTrigger className={`w-[140px] h-9 text-xs bg-white ${selectedPm !== 'all' ? 'border-blue-400 font-semibold text-blue-900 bg-blue-50/50' : ''}`}>
-              <SelectValue placeholder="全部負責 PM" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">全部負責 PM</SelectItem>
-              {pmList.map((pm) => (
-                <SelectItem key={pm} value={pm}>
-                  👤 {pm}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 所屬專案下拉 */}
-          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="w-[170px] h-9 text-xs bg-white">
-              <SelectValue placeholder="所屬專案" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">全部所屬專案</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.caseNumber ? `[${p.caseNumber}] ` : ''}
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 目前階段下拉 */}
-          <Select value={selectedPhase} onValueChange={setSelectedPhase}>
-            <SelectTrigger className={`w-[135px] h-9 text-xs bg-white ${selectedPhase !== 'all' ? 'border-indigo-400 font-semibold text-indigo-900 bg-indigo-50/50' : ''}`}>
-              <SelectValue placeholder="目前階段" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">全部專案階段</SelectItem>
-              {phaseList.map((phase) => (
-                <SelectItem key={phase} value={phase}>
-                  {phase}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 待處理公司下拉 */}
-          <Select value={selectedCompany} onValueChange={handleCompanyChange}>
-            <SelectTrigger className={`w-[150px] h-9 text-xs bg-white transition-colors ${selectedCompany !== 'all' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
-              <Building2 className="h-3.5 w-3.5 mr-1 text-slate-500 shrink-0" />
-              <SelectValue placeholder="待處理公司" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">🏢 全部待處理公司</SelectItem>
-              {companyOptions.map(({ company, count }) => (
-                <SelectItem key={company} value={company} className="text-xs">
-                  <span>{company}</span>
-                  <span className="ml-1 text-[11px] text-muted-foreground">({count} 項未結)</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 待處理部門下拉 */}
-          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-            <SelectTrigger className={`w-[145px] h-9 text-xs bg-white transition-colors ${selectedDepartment !== 'all' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
-              <Users className="h-3.5 w-3.5 mr-1 text-slate-500 shrink-0" />
-              <SelectValue placeholder="待處理部門" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">👥 全部待處理部門</SelectItem>
-              {departmentOptions.map(({ department, count }) => (
-                <SelectItem key={department} value={department} className="text-xs">
-                  <span>{department}</span>
-                  <span className="ml-1 text-[11px] text-muted-foreground">({count} 項未結)</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* 篩選待處理者 (等候對象) 下拉 (需求1 & 2: 排除已結案/已完成，標示公司部門) */}
-          <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
-            <SelectTrigger className={`w-[175px] h-9 text-xs bg-white transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
-              <Clock className="h-3 w-3 mr-1 text-rose-500 shrink-0" />
-              <SelectValue placeholder="篩選待處理者" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="all">全部待處理者 (等候中)</SelectItem>
-              {activeWaitingOnList.map((entry) => (
-                <SelectItem key={entry.party} value={entry.party} className="text-xs">
-                  <div className="flex items-center gap-1">
-                    <span className="font-semibold text-rose-700">等候: {entry.party}</span>
-                    {entry.company && entry.company !== '未指定' && (
-                      <span className="text-[10px] text-slate-500 font-normal">
-                        ({entry.company}{entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''})
-                      </span>
-                    )}
-                    <span className="ml-1 text-[11px] text-muted-foreground">({entry.count} 項未結)</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* 第 2 欄位：多重勾選篩選器 */}
+          <MultiSelectFilterPopover
+            title={dimensionConfig[filterDimension].title}
+            placeholder={dimensionConfig[filterDimension].placeholder}
+            options={dimensionConfig[filterDimension].options}
+            selectedValues={dimensionConfig[filterDimension].selectedValues}
+            onSelectionChange={dimensionConfig[filterDimension].onChange}
+            activeColorClass={dimensionConfig[filterDimension].colorClass}
+          />
 
           {/* 排序下拉 */}
           <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-            <SelectTrigger className={`w-[175px] h-9 text-xs bg-white ${sortBy === 'oldestUpdated' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
+            <SelectTrigger className={`w-[165px] h-9 text-xs bg-white ${sortBy === 'oldestUpdated' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
               <ArrowUpDown className="h-3 w-3 mr-1 text-slate-500" />
               <SelectValue placeholder="排序方式" />
             </SelectTrigger>
@@ -710,7 +727,7 @@ export function TaskCentricView({
               variant="ghost"
               size="sm"
               onClick={handleResetFilters}
-              className="text-xs h-9 px-2 text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+              className="text-xs h-9 px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50 flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="h-3 w-3" />
               <span>重置</span>
@@ -723,48 +740,144 @@ export function TaskCentricView({
         </div>
       </div>
 
-      {/* 快捷等候對象標籤列 (需求1 & 2: 僅顯示未結案且未完成之等候者) */}
+      {/* 已套用之篩選條件標籤列 (支援一鍵刪除個別條件) */}
+      {activeFiltersCount > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap px-1 text-xs">
+          <span className="text-muted-foreground font-medium text-[11px] flex items-center gap-1 mr-0.5">
+            <Filter className="w-3 h-3 text-blue-600" />
+            已套用條件 ({activeFiltersCount}):
+          </span>
+          {selectedPms.map((pm) => (
+            <span key={`pm-${pm}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+              <span>👤 PM: {pm}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedPms((prev) => prev.filter((p) => p !== pm))}
+                className="hover:bg-blue-200 rounded-full p-0.5 cursor-pointer"
+                title="移除此條件"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {selectedProjectIds.map((pid) => {
+            const p = projectMap.get(pid);
+            const pLabel = p ? `${p.caseNumber ? `[${p.caseNumber}] ` : ''}${p.name}` : pid;
+            return (
+              <span key={`proj-${pid}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                <span>📁 {pLabel}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProjectIds((prev) => prev.filter((id) => id !== pid))}
+                  className="hover:bg-indigo-200 rounded-full p-0.5 cursor-pointer"
+                  title="移除此條件"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
+          {selectedDepartments.map((dept) => (
+            <span key={`dept-${dept}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-900 border border-amber-200">
+              <span>👥 部門: {dept}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedDepartments((prev) => prev.filter((d) => d !== dept))}
+                className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
+                title="移除此條件"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {selectedCompanies.map((comp) => (
+            <span key={`comp-${comp}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-900 border border-amber-200">
+              <span>🏢 公司: {comp}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedCompanies((prev) => prev.filter((c) => c !== comp))}
+                className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
+                title="移除此條件"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {selectedWaitingOns.map((party) => (
+            <span key={`waiting-${party}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200">
+              <span>⏳ 等候: {party}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedWaitingOns((prev) => prev.filter((w) => w !== party))}
+                className="hover:bg-rose-200 rounded-full p-0.5 cursor-pointer"
+                title="移除此條件"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="text-[11px] text-muted-foreground hover:text-red-600 underline ml-auto cursor-pointer"
+          >
+            清除全部條件
+          </button>
+        </div>
+      )}
+
+      {/* 快捷等候對象標籤列 */}
       {activeWaitingOnList.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap text-xs px-1">
           <span className="text-muted-foreground font-medium mr-1">🔍 快速過濾等候:</span>
           <button
             type="button"
-            onClick={() => setSelectedWaitingOn('all')}
+            onClick={() => setSelectedWaitingOns([])}
             className={`px-2.5 py-1 rounded-full border text-xs transition-colors cursor-pointer ${
-              selectedWaitingOn === 'all'
+              selectedWaitingOns.length === 0
                 ? 'bg-slate-900 text-white border-slate-900'
                 : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200'
             }`}
           >
             全部
           </button>
-          {activeWaitingOnList.map((entry) => (
-            <button
-              key={entry.party}
-              type="button"
-              onClick={() => setSelectedWaitingOn(selectedWaitingOn === entry.party ? 'all' : entry.party)}
-              title={`${entry.party} (${entry.company}${entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''}) - ${entry.count} 項未結`}
-              className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
-                selectedWaitingOn === entry.party
-                  ? 'bg-rose-600 text-white border-rose-600 font-medium'
-                  : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
-              }`}
-            >
-              <span>等候：{entry.party}</span>
-              {entry.company && entry.company !== '未指定' && (
-                <span className={`text-[10px] ${selectedWaitingOn === entry.party ? 'text-rose-100' : 'text-slate-500'}`}>
-                  ({entry.company}{entry.department && entry.department !== '未指定' ? `·${entry.department}` : ''})
-                </span>
-              )}
-              <span
-                className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${
-                  selectedWaitingOn === entry.party ? 'bg-rose-700 text-white' : 'bg-rose-200/80 text-rose-800'
+          {activeWaitingOnList.map((entry) => {
+            const isSelected = selectedWaitingOns.includes(entry.party);
+            return (
+              <button
+                key={entry.party}
+                type="button"
+                onClick={() => {
+                  if (isSelected) {
+                    setSelectedWaitingOns((prev) => prev.filter((p) => p !== entry.party));
+                  } else {
+                    setSelectedWaitingOns((prev) => [...prev, entry.party]);
+                    setFilterDimension('waitingOn');
+                  }
+                }}
+                title={`${entry.party} (${entry.company}${entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''}) - ${entry.count} 項未結`}
+                className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                  isSelected
+                    ? 'bg-rose-600 text-white border-rose-600 font-medium'
+                    : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
                 }`}
               >
-                {entry.count}
-              </span>
-            </button>
-          ))}
+                <span>等候：{entry.party}</span>
+                {entry.company && entry.company !== '未指定' && (
+                  <span className={`text-[10px] ${isSelected ? 'text-rose-100' : 'text-slate-500'}`}>
+                    ({entry.company}{entry.department && entry.department !== '未指定' ? `·${entry.department}` : ''})
+                  </span>
+                )}
+                <span
+                  className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${
+                    isSelected ? 'bg-rose-700 text-white' : 'bg-rose-200/80 text-rose-800'
+                  }`}
+                >
+                  {entry.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
