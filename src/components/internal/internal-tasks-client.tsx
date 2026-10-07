@@ -343,7 +343,7 @@ export function InternalTasksClient({
   const isTpmPerson = (name?: string | null): boolean => {
     if (!name) return false;
     const n = name.trim();
-    const tpmKeywords = ['陳家姷', '陳家炳', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
+    const tpmKeywords = ['陳家姷', '陳家炳', '陳家炘', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
     return tpmKeywords.some((t) => n.includes(t)) || n.toUpperCase().includes('TPM');
   };
 

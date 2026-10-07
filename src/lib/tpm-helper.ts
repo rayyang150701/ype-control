@@ -6,6 +6,7 @@
 export const TPM_PERSONNEL_NAMES: readonly string[] = [
     '陳家姷',
     '陳家炳',
+    '陳家炘',
     '徐智宏',
     '賴冠廷',
     '胡春如',

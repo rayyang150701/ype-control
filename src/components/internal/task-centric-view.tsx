@@ -21,6 +21,7 @@ import {
   ArrowUpDown,
   Clock,
   Building2,
+  Users,
   RotateCcw,
   Layers,
   Paperclip,
@@ -32,7 +33,8 @@ import {
 import { differenceInCalendarDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { copyToClipboard } from '@/lib/utils';
-import { getItemLastUpdateDate } from '@/lib/task-helper';
+import { getItemLastUpdateDate, getItemPendingCompanyAndDepartment } from '@/lib/task-helper';
+import { isTpmPerson } from '@/lib/tpm-helper';
 import type { FullProject, ProjectActionItem, User, Client } from '@/types';
 
 interface TaskCentricViewProps {
@@ -115,6 +117,8 @@ export function TaskCentricView({
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedPm, setSelectedPm] = useState<string>('all');
   const [selectedPhase, setSelectedPhase] = useState<string>('all');
+  const [selectedCompany, setSelectedCompany] = useState<string>('all');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
   const [selectedWaitingOn, setSelectedWaitingOn] = useState<string>('all');
   const [sortBy, setSortBy] = useState<
     'newest' | 'dueDate' | 'projectCase' | 'statusPriority' | 'oldestUpdated' | 'recentlyUpdated'
@@ -245,29 +249,89 @@ export function TaskCentricView({
     }
   };
 
-  // 整理所有負責 PM 清單
+  // 整理所有負責 PM 清單（僅限億威 PM，嚴格排除燁輝 TPM 窗口）
   const pmList = useMemo(() => {
     const set = new Set<string>();
     projects.forEach((p) => {
-      const pm = p.responsiblePm?.trim() || (p as any).tpmOfficeContact?.trim();
-      if (pm) set.add(pm);
+      const pm = p.responsiblePm?.trim();
+      if (pm && !isTpmPerson(pm)) set.add(pm);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-TW'));
   }, [projects]);
 
-  // 需求1: 整理所有未結案、未完成的「等候對象」清單
-  const activeWaitingOns = useMemo(() => {
-    const set = new Set<string>();
+  // 整理所有「待處理公司」選項與未結案項目計數
+  const companyOptions = useMemo(() => {
+    const map = new Map<string, number>();
     items.forEach((item) => {
       if (item.status === 'completed') return;
       const proj = projectMap.get(item.projectId);
       if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
-      if (item.waitingOn && item.waitingOn.trim()) {
-        set.add(item.waitingOn.trim());
+      const { company } = getItemPendingCompanyAndDepartment(item, users, clients);
+      map.set(company, (map.get(company) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([company, count]) => ({ company, count }))
+      .sort((a, b) => b.count - a.count || a.company.localeCompare(b.company, 'zh-TW'));
+  }, [items, projectMap, users, clients]);
+
+  // 整理所有「待處理部門」選項與未結案項目計數 (若已選定公司，則自動篩選該公司之部門)
+  const departmentOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    items.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
+      if (selectedCompany !== 'all' && company !== selectedCompany) return;
+      map.set(department, (map.get(department) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => b.count - a.count || a.department.localeCompare(b.department, 'zh-TW'));
+  }, [items, projectMap, users, clients, selectedCompany]);
+
+  // 當變更公司時，若原選擇的部門不在新公司名下則自動重置為 all
+  const handleCompanyChange = (comp: string) => {
+    setSelectedCompany(comp);
+    if (comp === 'all') {
+      setSelectedDepartment('all');
+    } else {
+      const deptsOfCompany = new Set<string>();
+      items.forEach((item) => {
+        const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
+        if (company === comp) deptsOfCompany.add(department);
+      });
+      if (selectedDepartment !== 'all' && !deptsOfCompany.has(selectedDepartment)) {
+        setSelectedDepartment('all');
+      }
+    }
+  };
+
+  // 需求1 & 2: 整理所有未結案、未完成的「等候對象」清單 (包含公司與部門資訊，並支援動態篩選)
+  const activeWaitingOnList = useMemo(() => {
+    const map = new Map<string, { party: string; company: string; department: string; count: number }>();
+    items.forEach((item) => {
+      if (item.status === 'completed') return;
+      const proj = projectMap.get(item.projectId);
+      if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
+      if (!item.waitingOn || !item.waitingOn.trim()) return;
+
+      const party = item.waitingOn.trim();
+      const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
+
+      // 若有選公司或部門，檢查是否符合
+      if (selectedCompany !== 'all' && company !== selectedCompany) return;
+      if (selectedDepartment !== 'all' && department !== selectedDepartment) return;
+
+      const existing = map.get(party);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(party, { party, company, department, count: 1 });
       }
     });
-    return Array.from(set);
-  }, [items, projectMap]);
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || a.party.localeCompare(b.party, 'zh-TW'));
+  }, [items, projectMap, users, clients, selectedCompany, selectedDepartment]);
 
   // 計算各狀態分頁項目數量
   const tabCounts = useMemo(() => {
@@ -357,10 +421,23 @@ export function TaskCentricView({
       if (selectedProjectId !== 'all' && item.projectId !== selectedProjectId) return false;
       if (selectedPm !== 'all') {
         const proj = projectMap.get(item.projectId);
-        const pm = proj?.responsiblePm?.trim() || (proj as any)?.tpmOfficeContact?.trim() || '未指定';
+        const pm = (proj?.responsiblePm && !isTpmPerson(proj.responsiblePm)) ? proj.responsiblePm.trim() : '未指定';
         if (pm !== selectedPm) return false;
       }
       if (selectedPhase !== 'all' && item.phase !== selectedPhase) return false;
+
+      // 待處理公司篩選
+      if (selectedCompany !== 'all') {
+        const { company } = getItemPendingCompanyAndDepartment(item, users, clients);
+        if (company !== selectedCompany) return false;
+      }
+
+      // 待處理部門篩選
+      if (selectedDepartment !== 'all') {
+        const { department } = getItemPendingCompanyAndDepartment(item, users, clients);
+        if (department !== selectedDepartment) return false;
+      }
+
       if (selectedWaitingOn !== 'all') {
         if (item.waitingOn !== selectedWaitingOn) return false;
         // 需求1: 篩選等候對象時，過濾已完成及所屬專案已結案的待辦
@@ -443,16 +520,22 @@ export function TaskCentricView({
     selectedProjectId,
     selectedPm,
     selectedPhase,
+    selectedCompany,
+    selectedDepartment,
     selectedWaitingOn,
     sortBy,
     projectMap,
+    users,
+    clients,
   ]);
 
   const hasActiveFilters =
-    searchQuery ||
+    Boolean(searchQuery.trim()) ||
     selectedProjectId !== 'all' ||
     selectedPm !== 'all' ||
     selectedPhase !== 'all' ||
+    selectedCompany !== 'all' ||
+    selectedDepartment !== 'all' ||
     selectedWaitingOn !== 'all' ||
     activeTab !== 'all';
 
@@ -462,6 +545,8 @@ export function TaskCentricView({
     setSelectedProjectId('all');
     setSelectedPm('all');
     setSelectedPhase('all');
+    setSelectedCompany('all');
+    setSelectedDepartment('all');
     setSelectedWaitingOn('all');
     setSortBy('newest');
   };
@@ -542,29 +627,61 @@ export function TaskCentricView({
             </SelectContent>
           </Select>
 
-          {/* 篩選待處理者 (等候對象) 下拉 (需求1: 排除已結案/已完成) */}
+          {/* 待處理公司下拉 */}
+          <Select value={selectedCompany} onValueChange={handleCompanyChange}>
+            <SelectTrigger className={`w-[150px] h-9 text-xs bg-white transition-colors ${selectedCompany !== 'all' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
+              <Building2 className="h-3.5 w-3.5 mr-1 text-slate-500 shrink-0" />
+              <SelectValue placeholder="待處理公司" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">🏢 全部待處理公司</SelectItem>
+              {companyOptions.map(({ company, count }) => (
+                <SelectItem key={company} value={company} className="text-xs">
+                  <span>{company}</span>
+                  <span className="ml-1 text-[11px] text-muted-foreground">({count} 項未結)</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* 待處理部門下拉 */}
+          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+            <SelectTrigger className={`w-[145px] h-9 text-xs bg-white transition-colors ${selectedDepartment !== 'all' ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold' : ''}`}>
+              <Users className="h-3.5 w-3.5 mr-1 text-slate-500 shrink-0" />
+              <SelectValue placeholder="待處理部門" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">👥 全部待處理部門</SelectItem>
+              {departmentOptions.map(({ department, count }) => (
+                <SelectItem key={department} value={department} className="text-xs">
+                  <span>{department}</span>
+                  <span className="ml-1 text-[11px] text-muted-foreground">({count} 項未結)</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* 篩選待處理者 (等候對象) 下拉 (需求1 & 2: 排除已結案/已完成，標示公司部門) */}
           <Select value={selectedWaitingOn} onValueChange={setSelectedWaitingOn}>
-            <SelectTrigger className={`w-[165px] h-9 text-xs bg-white transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
+            <SelectTrigger className={`w-[175px] h-9 text-xs bg-white transition-colors ${selectedWaitingOn !== 'all' ? 'border-rose-400 bg-rose-50/50 text-rose-950 font-bold' : ''}`}>
               <Clock className="h-3 w-3 mr-1 text-rose-500 shrink-0" />
               <SelectValue placeholder="篩選待處理者" />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
               <SelectItem value="all">全部待處理者 (等候中)</SelectItem>
-              {activeWaitingOns.map((party) => {
-                const count = items.filter((i) => {
-                  if (i.waitingOn !== party) return false;
-                  if (i.status === 'completed') return false;
-                  const proj = projectMap.get(i.projectId);
-                  if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
-                  return true;
-                }).length;
-                return (
-                  <SelectItem key={party} value={party} className="text-xs">
-                    <span className="font-semibold text-rose-700">等候: {party}</span>
-                    <span className="ml-1.5 text-[11px] text-muted-foreground">({count} 項未結)</span>
-                  </SelectItem>
-                );
-              })}
+              {activeWaitingOnList.map((entry) => (
+                <SelectItem key={entry.party} value={entry.party} className="text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-rose-700">等候: {entry.party}</span>
+                    {entry.company && entry.company !== '未指定' && (
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        ({entry.company}{entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''})
+                      </span>
+                    )}
+                    <span className="ml-1 text-[11px] text-muted-foreground">({entry.count} 項未結)</span>
+                  </div>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -606,8 +723,8 @@ export function TaskCentricView({
         </div>
       </div>
 
-      {/* 快捷等候對象標籤列 (需求1: 僅顯示未結案且未完成之等候者) */}
-      {activeWaitingOns.length > 0 && (
+      {/* 快捷等候對象標籤列 (需求1 & 2: 僅顯示未結案且未完成之等候者) */}
+      {activeWaitingOnList.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap text-xs px-1">
           <span className="text-muted-foreground font-medium mr-1">🔍 快速過濾等候:</span>
           <button
@@ -621,36 +738,33 @@ export function TaskCentricView({
           >
             全部
           </button>
-          {activeWaitingOns.map((party) => {
-            const count = items.filter((i) => {
-              if (i.waitingOn !== party) return false;
-              if (i.status === 'completed') return false;
-              const proj = projectMap.get(i.projectId);
-              if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return false;
-              return true;
-            }).length;
-            return (
-              <button
-                key={party}
-                type="button"
-                onClick={() => setSelectedWaitingOn(selectedWaitingOn === party ? 'all' : party)}
-                className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
-                  selectedWaitingOn === party
-                    ? 'bg-rose-600 text-white border-rose-600 font-medium'
-                    : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
+          {activeWaitingOnList.map((entry) => (
+            <button
+              key={entry.party}
+              type="button"
+              onClick={() => setSelectedWaitingOn(selectedWaitingOn === entry.party ? 'all' : entry.party)}
+              title={`${entry.party} (${entry.company}${entry.department && entry.department !== '未指定' ? ` · ${entry.department}` : ''}) - ${entry.count} 項未結`}
+              className={`px-2.5 py-1 rounded-full border text-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                selectedWaitingOn === entry.party
+                  ? 'bg-rose-600 text-white border-rose-600 font-medium'
+                  : 'bg-rose-50/70 text-rose-700 hover:bg-rose-100 border-rose-200'
+              }`}
+            >
+              <span>等候：{entry.party}</span>
+              {entry.company && entry.company !== '未指定' && (
+                <span className={`text-[10px] ${selectedWaitingOn === entry.party ? 'text-rose-100' : 'text-slate-500'}`}>
+                  ({entry.company}{entry.department && entry.department !== '未指定' ? `·${entry.department}` : ''})
+                </span>
+              )}
+              <span
+                className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${
+                  selectedWaitingOn === entry.party ? 'bg-rose-700 text-white' : 'bg-rose-200/80 text-rose-800'
                 }`}
               >
-                <span>等候：{party}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0 rounded-full font-semibold ${
-                    selectedWaitingOn === party ? 'bg-rose-700 text-white' : 'bg-rose-200/80 text-rose-800'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                {entry.count}
+              </span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -687,6 +801,7 @@ export function TaskCentricView({
             const diffDays = dueDateObj ? differenceInCalendarDays(today, dueDateObj) : 0;
             const isOverdue = !isDone && dueDateObj && diffDays > 0;
             const updateInfo = getItemLastUpdateDate(item);
+            const pendingInfo = getItemPendingCompanyAndDepartment(item, users, clients);
 
             return (
               <div
@@ -797,17 +912,34 @@ export function TaskCentricView({
 
                       {/* 等候誰 */}
                       {item.waitingOn ? (
-                        <Badge
-                          variant={isDone ? 'outline' : 'destructive'}
-                          className={
-                            isDone
-                              ? 'font-normal text-xs px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200 shadow-none shrink-0'
-                              : 'font-semibold text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs gap-1 shrink-0'
-                          }
-                        >
-                          {!isDone && <AlertCircle className="h-3 w-3" />}
-                          等候：{item.waitingOn}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                          <Badge
+                            variant={isDone ? 'outline' : 'destructive'}
+                            className={
+                              isDone
+                                ? 'font-normal text-xs px-2 py-0.5 bg-slate-100 text-slate-500 border-slate-200 shadow-none shrink-0'
+                                : 'font-semibold text-xs px-2 py-0.5 bg-rose-600 text-white shadow-xs gap-1 shrink-0'
+                            }
+                          >
+                            {!isDone && <AlertCircle className="h-3 w-3" />}
+                            等候：{item.waitingOn}
+                          </Badge>
+                          {pendingInfo.company && pendingInfo.company !== '未指定' && (
+                            <span
+                              className={`text-[11px] px-1.5 py-0.5 rounded border font-medium shrink-0 flex items-center gap-0.5 ${
+                                isDone
+                                  ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                  : 'bg-rose-50/80 text-rose-800 border-rose-200'
+                              }`}
+                              title={`待處理單位：${pendingInfo.company}${pendingInfo.department && pendingInfo.department !== '未指定' ? ` · ${pendingInfo.department}` : ''}`}
+                            >
+                              <span>{pendingInfo.company}</span>
+                              {pendingInfo.department && pendingInfo.department !== '未指定' && (
+                                <span className="opacity-80">· {pendingInfo.department}</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       ) : null}
 
                       {/* 客戶 */}

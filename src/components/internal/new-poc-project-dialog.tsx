@@ -192,7 +192,7 @@ export function NewPocProjectDialog({
   };
 
   // 預設常見 TPM 人員名單
-  const defaultTpmNames = ['陳家姷', '陳家炳', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
+  const defaultTpmNames = ['陳家姷', '陳家炳', '陳家炘', '徐智宏', '賴冠廷', '胡春如', '許家豪', '蔣永政', '蘇煥鈞', '鄭文芳'];
 
   // 整理 PM 下拉選項清單 (嚴格排除 TPM 成員，只選內部 PM 或非 TPM 成員)
   const pmUsers = users.filter((u) => {
