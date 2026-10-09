@@ -45,6 +45,8 @@ import {
   Clock,
   Quote,
   X,
+  Columns,
+  GripVertical,
 } from 'lucide-react';
 import {
   PMLearningCourse,
@@ -128,6 +130,86 @@ export function ArticleReaderDialog({
 
   // 7. 本機對話快取 Key
   const chatStorageKey = course?.id ? `pm_learning_chat_${course.id}_${currentUserId || 'default'}` : '';
+
+  // 8. 側欄寬度、自由拖曳與全面閱讀狀態
+  const [sidebarWidth, setSidebarWidth] = useState<number>(440);
+  const [isSidebarMaximized, setIsSidebarMaximized] = useState<boolean>(false);
+  const [isDraggingSidebar, setIsDraggingSidebar] = useState<boolean>(false);
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+
+  // 載入使用者習慣的側欄寬度
+  useEffect(() => {
+    try {
+      const savedWidth = localStorage.getItem('pm_learning_sidebar_width');
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (!isNaN(parsed) && parsed >= 340 && parsed <= 1400) {
+          setSidebarWidth(parsed);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // 側欄拖曳把手按下事件
+  const handleMouseDownResizer = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingSidebar(true);
+  };
+
+  // 全局監聽滑鼠移動以流暢調整欄寬
+  useEffect(() => {
+    if (!isDraggingSidebar) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = mainContainerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        // 右側側欄寬度 = 容器右邊界 - 滑鼠當前 X 座標
+        const newWidth = rect.right - e.clientX;
+        const minWidth = 340;
+        // 左側文章區至少保留 260px
+        const maxWidth = Math.max(minWidth, rect.width - 260);
+        const clamped = Math.max(minWidth, Math.min(newWidth, maxWidth));
+        setSidebarWidth(clamped);
+      } else {
+        const newWidth = window.innerWidth - e.clientX;
+        setSidebarWidth(Math.max(340, Math.min(newWidth, 1200)));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingSidebar(false);
+      try {
+        localStorage.setItem('pm_learning_sidebar_width', String(sidebarWidth));
+      } catch {}
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDraggingSidebar, sidebarWidth]);
+
+  // 切換全面閱讀模式
+  const handleToggleMaximizeSidebar = () => {
+    setIsSidebarMaximized((prev) => !prev);
+  };
+
+  // 快速切換預設欄寬
+  const handleSetPresetWidth = (width: number) => {
+    setIsSidebarMaximized(false);
+    setSidebarWidth(width);
+    try {
+      localStorage.setItem('pm_learning_sidebar_width', String(width));
+    } catch {}
+  };
 
   // 監聽是否外部傳入預設開啟 AI 提問
   useEffect(() => {
@@ -893,10 +975,14 @@ export function ArticleReaderDialog({
           </div>
         </div>
 
-        {/* 主體區：左側閱讀正文 + 右側隨讀助手側欄 (可一鍵收起展開) */}
-        <div className="flex-1 flex min-h-0 overflow-hidden bg-slate-50/50">
-          {/* 左側：主閱讀空間 */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white">
+        {/* 主體區：左側閱讀正文 + 右側隨讀助手側欄 (可一鍵收起展開、自由拖曳欄寬、全面閱讀) */}
+        <div ref={mainContainerRef} className="flex-1 flex min-h-0 overflow-hidden bg-slate-50/50 relative">
+          {/* 左側：主閱讀空間 (全面閱讀模式時隱藏以釋出全螢幕空間) */}
+          <div
+            className={`flex-1 flex-col min-w-0 overflow-hidden bg-white ${
+              isSidebarOpen && isSidebarMaximized ? 'hidden' : 'flex'
+            }`}
+          >
             {/* 1. 系列篇章導航 (可展開 / 縮起) */}
             {chapters.length > 0 && (
               <div className="border-b border-slate-200/80 bg-slate-50/70 shrink-0">
@@ -1295,11 +1381,38 @@ export function ArticleReaderDialog({
             </div>
           </div>
 
+          {/* 可拖曳調整側欄欄寬分隔條 (Drag Resizer) */}
+          {isSidebarOpen && !isSidebarMaximized && (
+            <div
+              onMouseDown={handleMouseDownResizer}
+              onDoubleClick={handleToggleMaximizeSidebar}
+              title="按住往左拉大/往右調小欄寬，雙擊切換全面閱讀"
+              className={`w-2 hover:w-2.5 group relative cursor-col-resize select-none shrink-0 transition-colors flex items-center justify-center z-10 ${
+                isDraggingSidebar
+                  ? 'bg-purple-600 shadow-md'
+                  : 'bg-slate-200/90 hover:bg-purple-400'
+              }`}
+            >
+              <div className="h-10 w-1 rounded-full bg-slate-400 group-hover:bg-white transition-colors flex items-center justify-center">
+                <GripVertical className="w-2.5 h-2.5 text-slate-500 group-hover:text-white" />
+              </div>
+            </div>
+          )}
+
           {/* 右側：隨讀助手側欄 (問 AI / 記想法) */}
           {isSidebarOpen && (
-            <div className="w-[380px] lg:w-[420px] border-l border-slate-200 bg-white flex flex-col shrink-0 shadow-lg animate-in slide-in-from-right-4 duration-200">
-              {/* 側欄分頁切換 Tabs */}
-              <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between gap-2 shrink-0">
+            <div
+              style={
+                isSidebarMaximized
+                  ? { width: '100%', flex: '1 1 0%' }
+                  : { width: `${sidebarWidth}px`, flexShrink: 0 }
+              }
+              className={`border-l border-slate-200 bg-white flex flex-col shadow-lg animate-in slide-in-from-right-4 duration-200 transition-all ${
+                isDraggingSidebar ? 'transition-none select-none' : ''
+              } ${isSidebarMaximized ? 'w-full' : ''}`}
+            >
+              {/* 側欄分頁切換 Tabs 與 寬度/全面閱讀控制列 */}
+              <div className="px-3.5 py-2.5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between gap-2 shrink-0 flex-wrap">
                 <div className="flex items-center gap-1 bg-slate-200/70 p-0.5 rounded-lg">
                   <button
                     type="button"
@@ -1338,15 +1451,77 @@ export function ArticleReaderDialog({
                   </button>
                 </div>
 
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="h-7 w-7 p-0 text-slate-400 hover:text-slate-700"
-                  title="收起側欄"
-                >
-                  <PanelRightClose className="w-4 h-4" />
-                </Button>
+                {/* 側欄右側工具組：寬度檔位、全面閱讀、關閉 */}
+                <div className="flex items-center gap-1.5">
+                  {/* 快速檔位（非全面模式時顯示） */}
+                  {!isSidebarMaximized && (
+                    <div className="hidden sm:flex items-center gap-0.5 bg-slate-200/70 p-0.5 rounded-lg text-xs text-slate-600 mr-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetPresetWidth(420)}
+                        className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
+                          sidebarWidth <= 460
+                            ? 'bg-white text-purple-700 shadow-2xs'
+                            : 'hover:text-slate-900'
+                        }`}
+                        title="標準欄寬 (420px)"
+                      >
+                        標準
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetPresetWidth(680)}
+                        className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${
+                          sidebarWidth > 460 && sidebarWidth < 900
+                            ? 'bg-white text-purple-700 shadow-2xs'
+                            : 'hover:text-slate-900'
+                        }`}
+                        title="寬版欄寬 (680px，往左調大，方便長篇閱讀)"
+                      >
+                        寬版
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 全面閱讀 / 恢復雙欄 按鈕 */}
+                  <Button
+                    size="sm"
+                    variant={isSidebarMaximized ? 'default' : 'outline'}
+                    onClick={handleToggleMaximizeSidebar}
+                    className={`h-7 px-2.5 text-xs font-bold gap-1.5 cursor-pointer transition-all ${
+                      isSidebarMaximized
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs ring-2 ring-purple-200'
+                        : 'text-purple-700 border-purple-200 hover:bg-purple-50'
+                    }`}
+                    title={isSidebarMaximized ? '恢復雙欄對照閱讀' : '切換為全面閱讀模式 (滿版展開，沉浸式長篇研讀)'}
+                  >
+                    {isSidebarMaximized ? (
+                      <>
+                        <Columns className="w-3.5 h-3.5" />
+                        <span>恢復雙欄</span>
+                      </>
+                    ) : (
+                      <>
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>全面閱讀</span>
+                      </>
+                    )}
+                  </Button>
+
+                  {/* 收起側欄按鈕 */}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setIsSidebarOpen(false);
+                      setIsSidebarMaximized(false);
+                    }}
+                    className="h-7 w-7 p-0 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    title="收起隨讀側欄"
+                  >
+                    <PanelRightClose className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
 
               {/* 側欄分頁 1：詢問 AI (GPT-6 Luna + AI 重點導讀) */}
@@ -1384,7 +1559,9 @@ export function ArticleReaderDialog({
                     </div>
 
                     {isAiSummaryOpen && (
-                      <div className="mt-2 text-xs text-slate-700 max-h-48 overflow-y-auto space-y-2 pr-1">
+                      <div className={`mt-2 text-xs text-slate-700 overflow-y-auto space-y-2 pr-1 ${
+                        isSidebarMaximized ? 'max-h-72 max-w-4xl mx-auto' : 'max-h-48'
+                      }`}>
                         {hasAiAnalysis ? (
                           <div className="space-y-2">
                             <p className="leading-relaxed bg-white/90 p-2.5 rounded-lg border border-purple-100 text-slate-700">
@@ -1413,164 +1590,179 @@ export function ArticleReaderDialog({
                     )}
                   </div>
 
-                  {/* AI 對話歷程區 */}
+                  {/* AI 對話歷程區 (支援全面閱讀自適應寬度與字級) */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/40">
-                    {chatMessages.length === 0 ? (
-                      <div className="text-center py-6 px-3 space-y-3">
-                        <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mx-auto shadow-2xs">
-                          <MessageSquareQuote className="w-5 h-5" />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs font-bold text-slate-800">歡迎向 GPT-6 Luna 智庫顧問提問！</p>
-                          <p className="text-[11px] text-slate-500">
-                            您可以直接針對當前篇目提出疑問，解答後還可一鍵轉存入個人想法筆記：
-                          </p>
-                        </div>
+                    <div className={isSidebarMaximized ? 'max-w-4xl mx-auto space-y-4' : 'space-y-3.5'}>
+                      {chatMessages.length === 0 ? (
+                        <div className="text-center py-8 px-4 space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mx-auto shadow-2xs">
+                            <MessageSquareQuote className="w-6 h-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-slate-800">歡迎向 GPT-6 Luna 智庫顧問提問！</p>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto">
+                              您可以直接針對當前篇目提出疑問，解答後還可一鍵轉存入個人想法筆記：
+                            </p>
+                          </div>
 
-                        {/* 快捷問題 */}
-                        <div className="flex flex-col gap-1.5 pt-2">
-                          {[
-                            '💡 本篇核心重點與啟發是什麼？',
-                            '💡 專案現場落地時有何具體做法？',
-                            '💡 常見實務風險與因應策略？',
-                          ].map((prompt, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => handleSendQuestion(prompt.replace(/^[💡\s]+/, ''))}
-                              disabled={isAsking}
-                              className="text-xs bg-white hover:bg-purple-50 text-purple-900 border border-purple-200 rounded-lg px-2.5 py-1.5 text-left transition-all shadow-2xs hover:shadow-xs cursor-pointer active:scale-98"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      chatMessages.map((msg, idx) => (
-                        <div
-                          key={idx}
-                          className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          {msg.role === 'assistant' && (
-                            <div className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
-                              <Sparkles className="w-3 h-3" />
-                            </div>
-                          )}
-
-                          <div
-                            className={`max-w-[88%] rounded-2xl p-3 text-xs leading-relaxed shadow-2xs ${
-                              msg.role === 'user'
-                                ? 'bg-indigo-600 text-white rounded-tr-xs'
-                                : 'bg-white border border-slate-200 text-slate-800 rounded-tl-xs space-y-1.5'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2 text-[10px] opacity-75 mb-1">
-                              <span className="font-semibold">{msg.role === 'user' ? '您' : 'GPT-6 Luna'}</span>
-                              <span>{msg.createdAt}</span>
-                            </div>
-
-                            {msg.role === 'user' ? (
-                              <p className="whitespace-pre-wrap">{msg.content}</p>
-                            ) : (
-                              <div className="prose prose-xs max-w-none text-slate-800">
-                                <MarkdownPreview content={msg.content} />
-                              </div>
-                            )}
-
-                            {msg.role === 'assistant' && (
-                              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveAnswerToNotes(msg, idx)}
-                                  disabled={savingNoteIndex === idx}
-                                  className={`text-[11px] font-medium flex items-center gap-1 px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                                    savedNoteIndex === idx
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 font-semibold'
-                                      : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
-                                  }`}
-                                  title="將此解析一鍵存入我的想法筆記 (雲端永久保存)"
-                                >
-                                  {savedNoteIndex === idx ? (
-                                    <>
-                                      <Check className="w-3 h-3 text-emerald-600" />
-                                      <span>已存入想法</span>
-                                    </>
-                                  ) : savingNoteIndex === idx ? (
-                                    <>
-                                      <Loader2 className="w-3 h-3 text-amber-600 animate-spin" />
-                                      <span>儲存中...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Bookmark className="w-3 h-3 text-amber-600" />
-                                      <span>📌 存入想法</span>
-                                    </>
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    copyToClipboard(msg.content);
-                                    setCopiedIndex(idx);
-                                    setTimeout(() => setCopiedIndex(null), 2000);
-                                  }}
-                                  className="text-[11px] text-slate-400 hover:text-slate-700 flex items-center gap-1 px-1.5 py-0.5 rounded cursor-pointer"
-                                >
-                                  {copiedIndex === idx ? (
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                  ) : (
-                                    <Copy className="w-3 h-3" />
-                                  )}
-                                </button>
-                              </div>
-                            )}
+                          {/* 快捷問題 */}
+                          <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-2 pt-2">
+                            {[
+                              '💡 本篇核心重點與啟發是什麼？',
+                              '💡 專案現場落地時有何具體做法？',
+                              '💡 常見實務風險與因應策略？',
+                            ].map((prompt, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleSendQuestion(prompt.replace(/^[💡\s]+/, ''))}
+                                disabled={isAsking}
+                                className="text-xs bg-white hover:bg-purple-50 text-purple-900 border border-purple-200 rounded-lg px-3 py-2 text-left transition-all shadow-2xs hover:shadow-xs cursor-pointer active:scale-98"
+                              >
+                                {prompt}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                      ))
-                    )}
+                      ) : (
+                        chatMessages.map((msg, idx) => (
+                          <div
+                            key={idx}
+                            className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            {msg.role === 'assistant' && (
+                              <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </div>
+                            )}
 
-                    {isAsking && (
-                      <div className="flex gap-2 justify-start">
-                        <div className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs animate-pulse">
-                          <Sparkles className="w-3 h-3" />
-                        </div>
-                        <div className="bg-white border border-purple-200 text-slate-700 rounded-2xl rounded-tl-xs p-3 text-xs shadow-2xs flex items-center gap-2">
-                          <Loader2 className="w-3.5 h-3.5 text-purple-600 animate-spin" />
-                          <span className="font-medium text-purple-900">GPT-6 Luna 深度思考回答中...</span>
-                        </div>
-                      </div>
-                    )}
+                            <div
+                              className={`rounded-2xl leading-relaxed shadow-2xs transition-all ${
+                                isSidebarMaximized || sidebarWidth >= 620
+                                  ? 'max-w-[95%] p-4 sm:p-5 text-sm sm:text-base'
+                                  : 'max-w-[88%] p-3 text-xs'
+                              } ${
+                                msg.role === 'user'
+                                  ? 'bg-indigo-600 text-white rounded-tr-xs'
+                                  : 'bg-white border border-slate-200 text-slate-800 rounded-tl-xs space-y-2'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-3 text-[11px] opacity-75 mb-1">
+                                <span className="font-semibold">{msg.role === 'user' ? '您' : 'GPT-6 Luna (智庫顧問)'}</span>
+                                <span>{msg.createdAt}</span>
+                              </div>
 
-                    <div ref={chatBottomRef} />
+                              {msg.role === 'user' ? (
+                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                              ) : (
+                                <div className={`prose max-w-none text-slate-800 ${
+                                  isSidebarMaximized || sidebarWidth >= 620
+                                    ? 'prose-sm sm:prose-base'
+                                    : 'prose-xs'
+                                }`}>
+                                  <MarkdownPreview content={msg.content} />
+                                </div>
+                              )}
+
+                              {msg.role === 'assistant' && (
+                                <div className="pt-2.5 mt-2.5 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveAnswerToNotes(msg, idx)}
+                                    disabled={savingNoteIndex === idx}
+                                    className={`text-xs font-medium flex items-center gap-1 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                                      savedNoteIndex === idx
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 font-semibold'
+                                        : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
+                                    }`}
+                                    title="將此解析一鍵存入我的想法筆記 (雲端永久保存)"
+                                  >
+                                    {savedNoteIndex === idx ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>已存入想法</span>
+                                      </>
+                                    ) : savingNoteIndex === idx ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                                        <span>儲存中...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Bookmark className="w-3.5 h-3.5 text-amber-600" />
+                                        <span>📌 存入想法</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      copyToClipboard(msg.content);
+                                      setCopiedIndex(idx);
+                                      setTimeout(() => setCopiedIndex(null), 2000);
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-slate-700 flex items-center gap-1 px-2 py-1 rounded cursor-pointer"
+                                  >
+                                    {copiedIndex === idx ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                    <span className="text-[11px]">{copiedIndex === idx ? '已複製' : '複製'}</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+
+                      {isAsking && (
+                        <div className="flex gap-2.5 justify-start">
+                          <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs animate-pulse">
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="bg-white border border-purple-200 text-slate-700 rounded-2xl rounded-tl-xs p-3.5 text-xs shadow-2xs flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
+                            <span className="font-medium text-purple-900">GPT-6 Luna 深度思考回答中...</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div ref={chatBottomRef} />
+                    </div>
                   </div>
 
                   {/* 底部提問輸入列 */}
-                  <div className="p-3 bg-white border-t border-slate-200 flex items-end gap-2 shrink-0">
-                    <Textarea
-                      value={questionInput}
-                      onChange={(e) => setQuestionInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendQuestion();
-                        }
-                      }}
-                      placeholder={`向 AI 提出針對此${typeConfig.label}的疑問... (Enter 送出)`}
-                      rows={1}
-                      className="min-h-[38px] max-h-[100px] text-xs resize-none bg-slate-50 focus:bg-white border-slate-200 focus-visible:ring-purple-400 py-2"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={isAsking || !questionInput.trim()}
-                      onClick={() => handleSendQuestion()}
-                      className="h-[38px] px-3.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs gap-1 shrink-0 cursor-pointer"
-                    >
-                      {isAsking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      <span>送出</span>
-                    </Button>
+                  <div className="p-3 bg-white border-t border-slate-200 shrink-0">
+                    <div className={`flex items-end gap-2 ${isSidebarMaximized ? 'max-w-4xl mx-auto' : ''}`}>
+                      <Textarea
+                        value={questionInput}
+                        onChange={(e) => setQuestionInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendQuestion();
+                          }
+                        }}
+                        placeholder={`向 AI 提出針對此${typeConfig.label}的疑問... (Enter 送出)`}
+                        rows={isSidebarMaximized ? 2 : 1}
+                        className={`min-h-[38px] max-h-[120px] resize-none bg-slate-50 focus:bg-white border-slate-200 focus-visible:ring-purple-400 py-2 ${
+                          isSidebarMaximized || sidebarWidth >= 620 ? 'text-sm' : 'text-xs'
+                        }`}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isAsking || !questionInput.trim()}
+                        onClick={() => handleSendQuestion()}
+                        className="h-[38px] px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                      >
+                        {isAsking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        <span>送出</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1579,8 +1771,9 @@ export function ArticleReaderDialog({
               {sidebarTab === 'notes' && (
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50/30">
                   {/* 快速記錄自己的想法輸入框 */}
-                  <div className="p-4 bg-white border-b border-slate-200 space-y-2.5 shrink-0 shadow-2xs">
-                    <div className="flex items-center justify-between text-xs">
+                  <div className="p-4 bg-white border-b border-slate-200 shrink-0 shadow-2xs">
+                    <div className={`space-y-2.5 ${isSidebarMaximized ? 'max-w-4xl mx-auto' : ''}`}>
+                      <div className="flex items-center justify-between text-xs">
                       <span className="font-bold text-amber-900 flex items-center gap-1.5">
                         <Edit3 className="w-3.5 h-3.5 text-amber-600" />
                         <span>記錄本次研讀想法或反思</span>
@@ -1596,8 +1789,10 @@ export function ArticleReaderDialog({
                       value={newThoughtInput}
                       onChange={(e) => setNewThoughtInput(e.target.value)}
                       placeholder="讀到這裡有什麼靈感、疑問或可套用於專案現場的做法？寫下來儲存..."
-                      rows={3}
-                      className="text-xs bg-amber-50/30 border-amber-200 focus:bg-white resize-none"
+                      rows={isSidebarMaximized ? 4 : 3}
+                      className={`bg-amber-50/30 border-amber-200 focus:bg-white resize-none ${
+                        isSidebarMaximized || sidebarWidth >= 620 ? 'text-sm' : 'text-xs'
+                      }`}
                     />
 
                     <div className="flex items-center justify-between pt-1">
@@ -1622,12 +1817,14 @@ export function ArticleReaderDialog({
                       </Button>
                     </div>
                   </div>
+                </div>
 
                   {/* 歷史想法與反思歷程清單 */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
-                      <span>思考成長軌跡 ({reflections.length} 則)</span>
-                    </div>
+                    <div className={isSidebarMaximized ? 'max-w-4xl mx-auto space-y-3' : 'space-y-3'}>
+                      <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                        <span>思考成長軌跡 ({reflections.length} 則)</span>
+                      </div>
 
                     {reflections.length === 0 ? (
                       <div className="text-center py-10 bg-white rounded-xl border border-dashed border-amber-200 p-4 space-y-2">
@@ -1649,12 +1846,15 @@ export function ArticleReaderDialog({
                             </span>
                             <span>{ref.createdAt}</span>
                           </div>
-                          <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                          <div className={`text-slate-800 leading-relaxed whitespace-pre-wrap ${
+                            isSidebarMaximized || sidebarWidth >= 620 ? 'text-sm' : 'text-xs'
+                          }`}>
                             <MarkdownPreview content={ref.content} />
                           </div>
                         </div>
                       ))
                     )}
+                    </div>
                   </div>
                 </div>
               )}
