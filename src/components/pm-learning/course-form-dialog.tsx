@@ -56,6 +56,7 @@ import {
   parseTextToChecklistChapters,
 } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
+import { SmartArticleEditor } from './smart-article-editor';
 
 interface CourseFormDialogProps {
   isOpen: boolean;
@@ -785,25 +786,23 @@ export function CourseFormDialog({
                 支援 Markdown 語法，系統將依此內容提供 AI 導讀與即時問答
               </span>
             </div>
-            <Textarea
+            <SmartArticleEditor
               value={articleContent}
-              onChange={(e) => {
-                const val = e.target.value;
+              onChange={(val) => {
                 setArticleContent(val);
                 if (contentType === 'video') setVideoTimestampNotes(val);
                 if (contentType === 'book') setBookQuotesAndReflections(val);
               }}
               placeholder={
                 contentType === 'article'
-                  ? '直接將付費專欄或文章內文貼於此處...&#10;&#10;支援 Markdown 標題 (#, ##)、項目清單 (- )、引用區塊 (> ) 與圖片語法。'
+                  ? '直接將 Notion 或付費文章圖文按 Ctrl+V 貼於此處（圖表與格式將自動保留）... 亦支援直接貼上截圖與 Markdown 語法。'
                   : contentType === 'book'
-                  ? '貼入書籍核心觀點、各章重點摘錄或實務落地反思...&#10;&#10;例如：&#10;### 核心觀點&#10;> 「投資關鍵在於因子的長期超額報酬與風險控管。」&#10;&#10;### 落地行動清單&#10;1. 建立量化指標篩選機制&#10;2. 每季檢視因子有效性'
+                  ? '貼入書籍核心觀點、各章重點摘錄或實務落地反思（支援圖表、心智圖截圖直接貼上）...'
                   : contentType === 'video'
-                  ? '貼入影音重點精華、逐字稿筆記或時間戳記...&#10;&#10;例如：&#10;- **02:15** Modbus TCP 通訊輪詢重點&#10;- **08:30** OPC UA 端點配置&#10;- **15:00** 現場除錯常見問題'
-                  : '將線上課程的核心講義、重點單元大綱或研習筆記貼於此處...&#10;&#10;支援 Markdown 標題 (#, ##)、項目清單 (- )、引用區塊 (> )。系統可針對此內容執行 AI 導讀與深入問答。'
+                  ? '貼入影音重點精華、時間戳記筆記或教學截圖...'
+                  : '將線上課程的核心講義、單元重點或投影片截圖貼於此處...'
               }
               rows={8}
-              className="font-mono text-xs leading-relaxed"
             />
           </div>
 
@@ -1063,12 +1062,12 @@ export function CourseFormDialog({
                             收合
                           </button>
                         </div>
-                        <Textarea
+                        <SmartArticleEditor
                           value={chap.content || ''}
-                          onChange={(e) => handleUpdateChapterContent(cIdx, e.target.value)}
-                          placeholder={`貼上第 ${cIdx + 1} 篇的獨立內文 (支援 Markdown)... 研讀時將可直接閱讀此篇專屬內容`}
+                          onChange={(val) => handleUpdateChapterContent(cIdx, val)}
+                          placeholder={`貼上第 ${cIdx + 1} 篇的獨立內文 (支援圖文並茂一鍵貼上、截圖與 Markdown)...`}
                           rows={4}
-                          className="text-xs bg-white border-indigo-200 focus-visible:ring-indigo-400"
+                          minHeight="120px"
                         />
                         <div className="flex items-center gap-1.5 pt-0.5">
                           <ExternalLink className="h-3.5 w-3.5 text-slate-400 shrink-0" />

@@ -54,10 +54,12 @@ import {
   PMLearningChecklistItem,
 } from '@/types/pm-learning';
 import { MarkdownPreview } from './markdown-preview';
+import { SmartArticleEditor } from './smart-article-editor';
 import {
   analyzeArticleContentAction,
   askArticleQuestionAction,
   updatePMMemberProgress,
+  updatePMLearningCourse,
 } from '@/lib/pm-learning-actions';
 import { normalizeChecklistToChapters } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
@@ -119,7 +121,12 @@ export function ArticleReaderDialog({
   const [activeChapterIndex, setActiveChapterIndex] = useState<number>(-1);
   const [isUpdatingProgress, setIsUpdatingProgress] = useState(false);
 
-  // 5. 本機對話快取 Key
+  // 6. 隨讀圖文即時編輯/貼上狀態
+  const [isEditingContent, setIsEditingContent] = useState(false);
+  const [editorDraftContent, setEditorDraftContent] = useState('');
+  const [isSavingContent, setIsSavingContent] = useState(false);
+
+  // 7. 本機對話快取 Key
   const chatStorageKey = course?.id ? `pm_learning_chat_${course.id}_${currentUserId || 'default'}` : '';
 
   // 監聽是否外部傳入預設開啟 AI 提問
@@ -307,14 +314,17 @@ export function ArticleReaderDialog({
   // 篇章前後切換
   const handleGoNextChapter = () => {
     if (activeChapterIndex < chapters.length - 1) {
+      setIsEditingContent(false);
       setActiveChapterIndex((prev) => prev + 1);
     }
   };
 
   const handleGoPrevChapter = () => {
     if (activeChapterIndex > 0) {
+      setIsEditingContent(false);
       setActiveChapterIndex((prev) => prev - 1);
     } else if (activeChapterIndex === 0) {
+      setIsEditingContent(false);
       setActiveChapterIndex(-1);
     }
   };
@@ -607,6 +617,83 @@ export function ArticleReaderDialog({
   const currentChapter = activeChapterIndex >= 0 ? chapters[activeChapterIndex] : null;
   const currentChapterContent = currentChapter?.content?.trim();
 
+  // 開啟隨讀圖文編輯器
+  const handleOpenContentEditor = () => {
+    if (activeChapterIndex >= 0 && currentChapter) {
+      setEditorDraftContent(currentChapter.content || '');
+    } else {
+      setEditorDraftContent(course.content || '');
+    }
+    setIsEditingContent(true);
+  };
+
+  // 取消編輯
+  const handleCancelContentEditor = () => {
+    setIsEditingContent(false);
+    setEditorDraftContent('');
+  };
+
+  // 儲存圖文內容（即時寫入雲端資料庫並同步更新父層）
+  const handleSaveContent = async () => {
+    if (!course) return;
+    setIsSavingContent(true);
+    try {
+      if (activeChapterIndex >= 0 && currentChapter) {
+        // 更新特定篇章的 content
+        const updatedChapters = chapters.map((c, idx) => {
+          if (idx === activeChapterIndex) {
+            return { ...c, content: editorDraftContent };
+          }
+          return c;
+        });
+        const res = await updatePMLearningCourse(course.id, {
+          defaultChecklist: updatedChapters,
+        });
+        if (res.success && res.data) {
+          if (onCourseUpdated) onCourseUpdated(res.data);
+          setIsEditingContent(false);
+          toast({
+            title: '✅ 本篇圖文內容已成功儲存！',
+            description: `已成功保存「${currentChapter.title}」之內文與圖表數據。`,
+          });
+        } else {
+          toast({
+            title: '儲存失敗',
+            description: res.message || '無法儲存篇章內文',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        // 全文總覽模式
+        const res = await updatePMLearningCourse(course.id, {
+          content: editorDraftContent,
+        });
+        if (res.success && res.data) {
+          if (onCourseUpdated) onCourseUpdated(res.data);
+          setIsEditingContent(false);
+          toast({
+            title: '✅ 全文圖文內容已成功儲存！',
+            description: '已成功更新本項目主要內文與圖表數據。',
+          });
+        } else {
+          toast({
+            title: '儲存失敗',
+            description: res.message || '無法儲存全文內容',
+            variant: 'destructive',
+          });
+        }
+      }
+    } catch (err: any) {
+      toast({
+        title: '儲存出錯',
+        description: err?.message || '未知錯誤',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingContent(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
@@ -708,6 +795,28 @@ export function ArticleReaderDialog({
                   <span className="hidden md:inline">我的想法</span>
                 </>
               )}
+            </Button>
+
+            {/* 快速貼上 / 編輯圖文按鈕 */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (isEditingContent) {
+                  setIsEditingContent(false);
+                } else {
+                  handleOpenContentEditor();
+                }
+              }}
+              className={`h-8 text-xs gap-1.5 font-semibold transition-all cursor-pointer ${
+                isEditingContent
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 ring-2 ring-amber-200'
+                  : 'text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+              title={isEditingContent ? '退出編輯模式' : '快速貼上 / 編輯圖文內容 (支援圖片直接貼入)'}
+            >
+              <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">{isEditingContent ? '退出編輯' : '貼上/編輯圖文'}</span>
             </Button>
 
             {/* 側邊欄展開/收起開關 */}
@@ -872,7 +981,10 @@ export function ArticleReaderDialog({
                       {/* 全文總覽按鈕 */}
                       <button
                         type="button"
-                        onClick={() => setActiveChapterIndex(-1)}
+                        onClick={() => {
+                          setIsEditingContent(false);
+                          setActiveChapterIndex(-1);
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
                           activeChapterIndex === -1
                             ? 'bg-indigo-600 text-white shadow-xs'
@@ -891,7 +1003,10 @@ export function ArticleReaderDialog({
                           <button
                             key={chap.id || cIdx}
                             type="button"
-                            onClick={() => setActiveChapterIndex(cIdx)}
+                            onClick={() => {
+                              setIsEditingContent(false);
+                              setActiveChapterIndex(cIdx);
+                            }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
                               isActive
                                 ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-200'
@@ -968,33 +1083,155 @@ export function ArticleReaderDialog({
                   </div>
                 )}
 
-                {/* 正文閱讀 Markdown 內容 */}
-                <div className="prose prose-slate max-w-none leading-relaxed text-slate-800 text-base md:text-lg">
-                  {currentChapter ? (
-                    currentChapterContent ? (
-                      <MarkdownPreview content={currentChapterContent} readingMode={true} />
-                    ) : mainMarkdown !== '（尚未填寫內文）' ? (
-                      <div className="space-y-4">
-                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
-                          <Lightbulb className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>提示：本篇共享全系列主內文。研讀完畢可點擊上方「標記此篇為已讀」或下方「閱讀下一篇」。</span>
+                {/* 模式切換：編輯圖文 or 沉浸式閱讀 */}
+                {isEditingContent ? (
+                  <div className="bg-slate-50 border border-indigo-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-sm animate-in fade-in-50">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <Edit3 className="w-4 h-4 text-indigo-600" />
+                        <span className="font-bold text-sm text-slate-800">
+                          {currentChapter
+                            ? `正在編輯：第 ${activeChapterIndex + 1} 篇《${currentChapter.title}》圖文內容`
+                            : '正在編輯：全文總覽圖文內容'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleCancelContentEditor}
+                          disabled={isSavingContent}
+                          className="h-8 text-xs text-slate-600 cursor-pointer"
+                        >
+                          取消
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveContent}
+                          disabled={isSavingContent}
+                          className="h-8 text-xs font-bold gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer shadow-xs"
+                        >
+                          {isSavingContent ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Save className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isSavingContent ? '儲存中...' : '儲存內文'}</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-200/80 leading-relaxed">
+                      💡 <strong>一鍵貼上提示</strong>：
+                      可在 Notion、網頁或 Word 中按 <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono text-[11px]">Ctrl+A</kbd> 全選複製，並於下方輸入框按 <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono text-[11px]">Ctrl+V</kbd> 貼上。
+                      文字、標題、表格與<strong>圖表照片</strong>皆會自動保留！亦可點擊工具列「插入圖片」直接上傳截圖。
+                    </div>
+
+                    <SmartArticleEditor
+                      value={editorDraftContent}
+                      onChange={setEditorDraftContent}
+                      minHeight="420px"
+                      rows={18}
+                      placeholder="請在此處按 Ctrl+V 貼上圖文（支援圖片直接貼入），或輸入重點內文..."
+                      showPreviewTab={true}
+                    />
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancelContentEditor}
+                        disabled={isSavingContent}
+                        className="h-8 text-xs text-slate-600"
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveContent}
+                        disabled={isSavingContent}
+                        className="h-8 text-xs font-bold gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        {isSavingContent ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5" />
+                        )}
+                        <span>{isSavingContent ? '儲存中...' : '儲存內文'}</span>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* 正文閱讀 Markdown 內容 */
+                  <div className="prose prose-slate max-w-none leading-relaxed text-slate-800 text-base md:text-lg">
+                    {currentChapter ? (
+                      currentChapterContent ? (
+                        <MarkdownPreview content={currentChapterContent} readingMode={true} />
+                      ) : mainMarkdown !== '（尚未填寫內文）' ? (
+                        <div className="space-y-4">
+                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <Lightbulb className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>提示：本篇共享全系列主內文。您也可以為此篇貼入獨立專屬圖文。</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleOpenContentEditor}
+                              className="h-7 text-xs bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-semibold"
+                            >
+                              <Edit3 className="w-3 h-3 mr-1" />
+                              為此篇貼入圖文
+                            </Button>
+                          </div>
+                          <MarkdownPreview content={mainMarkdown} readingMode={true} />
                         </div>
+                      ) : (
+                        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-3">
+                          <FileText className="w-8 h-8 mx-auto text-slate-400" />
+                          <p className="font-semibold text-slate-700">第 {activeChapterIndex + 1} 篇尚未填寫獨立內文</p>
+                          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                            您可以直接一鍵貼入 Notion/網頁文章與圖表，或查閱全文總覽！
+                          </p>
+                          <div className="pt-2">
+                            <Button
+                              size="sm"
+                              onClick={handleOpenContentEditor}
+                              className="h-8 text-xs font-bold gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>一鍵貼上本篇圖文 (支援圖片直接貼入)</span>
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      /* 全文總覽模式 */
+                      <div>
+                        {mainMarkdown === '（尚未填寫內文）' && (
+                          <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-3 mb-6">
+                            <FileText className="w-8 h-8 mx-auto text-slate-400" />
+                            <p className="font-semibold text-slate-700">本項目尚未填寫內文</p>
+                            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                              您可以直接將 Notion / 網頁中的圖文一鍵貼上，系統會完整保留圖表與文章架構！
+                            </p>
+                            <div className="pt-2">
+                              <Button
+                                size="sm"
+                                onClick={handleOpenContentEditor}
+                                className="h-8 text-xs font-bold gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>立即一鍵貼上圖文</span>
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                         <MarkdownPreview content={mainMarkdown} readingMode={true} />
                       </div>
-                    ) : (
-                      <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 space-y-3">
-                        <FileText className="w-8 h-8 mx-auto text-slate-400" />
-                        <p className="font-semibold text-slate-700">第 {activeChapterIndex + 1} 篇尚未填寫獨立內文</p>
-                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                          您可以在編輯中為此篇填入重點，或查閱全文總覽！
-                        </p>
-                      </div>
-                    )
-                  ) : (
-                    /* 全文總覽模式 */
-                    <MarkdownPreview content={mainMarkdown} readingMode={true} />
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 篇末切換與翻頁導覽 (僅當有章節時) */}
                 {chapters.length > 0 && activeChapterIndex >= 0 && (

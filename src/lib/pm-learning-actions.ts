@@ -686,7 +686,7 @@ export async function analyzeArticleContentAction(
       return { success: false, message: '找不到指定文章' };
     }
 
-    const textToAnalyze = (
+    let textToAnalyze = (
       customText ||
       target.content ||
       target.bookQuotesAndReflections ||
@@ -694,6 +694,23 @@ export async function analyzeArticleContentAction(
       target.description ||
       target.title
     ).trim();
+
+    // 若 defaultChecklist 篇目有各自的 content，亦彙整入全文脈絡供 AI 深度分析
+    if (!customText && Array.isArray(target.defaultChecklist)) {
+      const extraChapterTexts = target.defaultChecklist
+        .map((c: any, idx: number) => {
+          if (c && typeof c === 'object' && c.content?.trim()) {
+            return `### 【第 ${idx + 1} 篇：${c.title || ''}】\n${c.content.trim()}`;
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+      if (extraChapterTexts) {
+        textToAnalyze = textToAnalyze ? `${textToAnalyze}\n\n${extraChapterTexts}` : extraChapterTexts;
+      }
+    }
+
     if (!textToAnalyze) {
       return { success: false, message: '目前尚無重點內容或內文可供 AI 分析' };
     }
@@ -748,7 +765,7 @@ export async function analyzeArticleContentAction(
             },
             {
               role: 'user',
-              content: `標題：${target.title}\n載體類型：${typeLabel}\n領域：${target.category}\n出刊/來源：${target.source || target.instructorOrPlatform || ''}${target.subSource ? ` (${target.subSource})` : ''}${target.issueDate ? ` (${target.issueDate})` : ''}\n${chaptersContext}\n\n重點內容與全文：\n${textToAnalyze.slice(0, 8000)}`,
+              content: `標題：${target.title}\n載體類型：${typeLabel}\n領域：${target.category}\n出刊/來源：${target.source || target.instructorOrPlatform || ''}${target.subSource ? ` (${target.subSource})` : ''}${target.issueDate ? ` (${target.issueDate})` : ''}${target.externalUrl ? `\n外部來源/Notion網址：${target.externalUrl}` : ''}${Array.isArray(target.attachments) && target.attachments.length > 0 ? `\n相關附件/成果連結：${target.attachments.map((a: any) => `${a.name || a.fileName}: ${a.url || a.webViewLink}`).join('; ')}` : ''}\n${chaptersContext}\n\n重點內容與全文（包含圖表標註與數據說明）：\n${textToAnalyze.slice(0, 10000)}`,
             },
           ],
           response_format: { type: 'json_object' },
@@ -917,12 +934,16 @@ export async function askArticleQuestionAction(
       `領域：${target.category}`,
       `出刊/來源：${target.source || target.instructorOrPlatform || '專案知識庫'}${target.subSource ? ` (${target.subSource})` : ''}`,
       target.issueDate ? `出刊/發布日期：${target.issueDate}` : '',
+      target.externalUrl ? `外部來源/Notion/專欄網址：${target.externalUrl}` : '',
+      Array.isArray(target.attachments) && target.attachments.length > 0
+        ? `相關成果/附件連結：\n${target.attachments.map((a: any) => `- ${a.name || a.fileName}: ${a.url || a.webViewLink}`).join('\n')}`
+        : '',
       activeChapterTitle ? `【目前研讀焦點篇目】：${activeChapterTitle}` : '',
       chaptersContext,
       target.aiAnalysis?.summary ? `\n【AI 核心摘要】\n${target.aiAnalysis.summary}` : '',
       target.aiAnalysis?.keyTakeaways?.length ? `\n【核心啟發 (Key Takeaways)】\n${target.aiAnalysis.keyTakeaways.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}` : '',
       target.aiAnalysis?.actionableInsights?.length ? `\n【實務落地建議】\n${target.aiAnalysis.actionableInsights.map((a) => `▸ ${a}`).join('\n')}` : '',
-      `\n【重點內容/完整內文】\n${textToAnalyze.slice(0, 10000)}`
+      `\n【重點內容/完整內文（包含圖表標註與數據說明）】\n${textToAnalyze.slice(0, 12000)}`
     ].filter(Boolean).join('\n');
 
     const systemPrompt = `你是一位精通智慧製造（如鋼鐵表面處理、熱浸鍍鋅、產線自動化、MES系統、產線OT連網）與企業級專案管理 (PMP / Agile / 卡關跟催) 的資深顧問兼智庫教練。
@@ -934,9 +955,10 @@ ${backgroundContext}
 【回答指導原則】
 1. 請以親切、專業、條理分明的「繁體中文（台灣）」回答。
 2. 緊扣本內容的核心主軸與論述，切中問題要害。
-3. 結合智慧製造現場（如燁輝、億威等製造與專案實務）提供「具體且可落地的實務建議或解讀」。
-4. 格式請善用清晰的 Markdown（標題、清單列表、重點粗體），使研讀者容易理解消化。
-5. 若問題超出本內容範圍，請誠實說明內容未提及，並以資深專案顧問的專業經驗給予補充視角。`;
+3. 若內文包含圖表標註（如營收佔比、數據走勢、流程圖等）或提及附件：請依據圖表與數據脈絡進行深入解讀與商業/製造業實務意涵分析。
+4. 結合智慧製造現場（如燁輝、億威等製造與專案實務）提供「具體且可落地的實務建議或解讀」。
+5. 格式請善用清晰的 Markdown（標題、清單列表、重點粗體），使研讀者容易理解消化。
+6. 若問題超出本內容範圍，請誠實說明內容未提及，並以資深專案顧問的專業經驗給予補充視角。`;
 
     if (apiKey) {
       try {

@@ -87,6 +87,7 @@ export interface PMLearningCourse {
   // === 影音資源與個人閱讀專屬欄位 ===
   videoTimestampNotes?: string; // 影音重點時戳與筆記
   bookQuotesAndReflections?: string; // 個人閱讀反思、金句與工作落地行動清單 (Action Items)
+  attachments?: PMLearningAttachment[]; // 關聯成果/附件清單
 
   createdBy?: string;
   createdAt: string;
