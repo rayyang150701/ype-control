@@ -40,6 +40,9 @@ import {
   Calculator,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
   Layers,
   Link as LinkIcon,
   ShieldCheck,
@@ -181,6 +184,31 @@ export function MyLearningView({
 
   // 全域展開/收合控制
   const [expandAllState, setExpandAllState] = useState<boolean>(false);
+
+  // 側欄展開/收合控制 (平常縮成一直行，需要時展開，極致節省空間並記憶習慣)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(true);
+  const [showDetailedKpi, setShowDetailedKpi] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pm_learning_sidebar_collapsed');
+      if (saved !== null) {
+        setIsSidebarCollapsed(saved === 'true');
+      }
+    } catch (e) {
+      // 容錯保護
+    }
+  }, []);
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('pm_learning_sidebar_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   // 載體型態切換分頁 (全部 | 課程 | 文章 | 影音 | 閱讀)
   const [selectedContentType, setSelectedContentType] = useState<'all' | PMLearningContentType>('all');
@@ -542,342 +570,475 @@ export function MyLearningView({
   const isAdminOrJames = isCourseManager(currentUser);
 
   return (
-    <div className="space-y-3">
-      {/* 頂部人員切換與身分識別區 (限定億威電子 PMO 部門) */}
-      <div className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-sm flex items-center justify-center shadow-2xs shrink-0">
-            {(activeMember?.displayName || activeMember?.email || 'PM').slice(0, 1).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h2 className="text-base font-bold text-slate-900">
-                {activeMember?.displayName || activeMember?.email} 的個人工作區
-              </h2>
-              <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-semibold">
-                🏢 億威電子 · {activeMember?.department || 'PMO專案管理處'}
-              </Badge>
-              {isAdminOrJames && (
-                <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-xs gap-1 font-semibold">
-                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-                  <span>管理員權限</span>
-                </Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              點擊展開詳情、手動調整學習進度、維護時數、自訂上下移動排序。
-            </p>
-          </div>
-        </div>
-
-        {/* 右側操作群：切換成員 + 個人自行新增課程按鈕 */}
-        <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto">
-          {/* 人員切換下拉選單 */}
-          <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-            <UserIcon className="h-3.5 w-3.5 text-slate-500" />
-            <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">切換成員:</span>
-            <select
-              value={activeMember?.uid}
-              onChange={(e) => onActiveUserIdChange(e.target.value)}
-              className="h-7 px-2 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              {(pmoMembers || []).map((m) => (
-                <option key={m.uid} value={m.uid}>
-                  {m.displayName || m.email} (億威 · {m.department || 'PM'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 維護領域類別按鈕 */}
-          {onOpenCategoryManager && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onOpenCategoryManager}
-              className="h-8 px-2.5 text-xs font-semibold text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 shadow-2xs"
-              title="維護、新增、編輯或重新命名課程領域清單"
-            >
-              <Tag className="h-3.5 w-3.5 text-indigo-600" />
-              <span>維護領域</span>
-            </Button>
-          )}
-
-          {/* 個人自行新增課程按鈕 */}
-          <Button
-            type="button"
-            onClick={() => onOpenCreateDialog(activeMember?.uid)}
-            className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1 shadow-2xs"
-            title="個人可自行新增自選學習課程，並自動納入個人工作區與團隊學習地圖"
-          >
-            <Plus className="h-4 w-4" />
-            <span>新增學習項目</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* 個人成果與時數指標列 (Personal KPI Bar) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/80">
-        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-slate-500">已指派項目</span>
-          <div className="text-lg font-bold text-slate-800 mt-0.5">
-            {personalStats.total} 堂{' '}
-            <span className="text-xs font-normal text-slate-400">({personalStats.totalHours} 小時)</span>
-          </div>
-        </div>
-        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-amber-600">積極進行中</span>
-          <div className="text-lg font-bold text-amber-600 mt-0.5">{personalStats.inProgress} 堂</div>
-        </div>
-        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
-          <span className="text-[11px] font-semibold text-blue-600">已完訓結業</span>
-          <div className="text-lg font-bold text-blue-600 mt-0.5">
-            {personalStats.completed} 堂{' '}
-            <span className="text-xs font-normal text-blue-600/80">({personalStats.completedHours}h)</span>
-          </div>
-        </div>
-        <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-indigo-600">個人完訓率</span>
-            <span className="text-xs font-bold text-indigo-700">
-              {personalStats.avgPercent}%{' '}
-              <span className="text-[10px] text-slate-400 font-normal">
-                (時數 {personalStats.hoursPercent}%)
-              </span>
-            </span>
-          </div>
-          <Progress value={personalStats.avgPercent} className="h-2 mt-1.5 bg-indigo-100" />
-        </div>
-      </div>
-
-      {/* 無課程提示 */}
-      {sortedMyCourses.length === 0 && (
-        <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
-          <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
-          <h3 className="text-sm font-semibold text-slate-700">
-            目前尚未指派課程給 {activeMember?.displayName || activeMember?.email}
-          </h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            您可以點擊上方「+ 自行新增學習課程」建立專屬進修項目，或切換至「主管 / 團隊視角 (Team View)」進行指派。
-          </p>
-          <Button
-            type="button"
-            onClick={() => onOpenCreateDialog(activeMember?.uid)}
-            className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            建立第一門自選學習課程
-          </Button>
-        </div>
-      )}
-
-      {/* 四大載體切換分頁 + 搜尋與篩選工具列 */}
-      {sortedMyCourses.length > 0 && (
-        <div className="space-y-2.5">
-          {/* 1. 四大載體切換分頁列 (全部 | 線上課程 | 知識文章 | 影音資源 | 個人閱讀) */}
-          <div className="bg-white p-1.5 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setSelectedContentType('all')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
-                  selectedContentType === 'all'
-                    ? 'bg-white text-indigo-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>🌐 全部</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
-                  {contentTypeCounts.all}
-                </span>
-              </button>
-
-              {(['course', 'article', 'video', 'book'] as PMLearningContentType[]).map((type) => {
-                const cfg = CONTENT_TYPE_CONFIG[type];
-                const count = contentTypeCounts[type] || 0;
-                const isSelected = selectedContentType === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setSelectedContentType(type)}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
-                      isSelected
-                        ? 'bg-white text-indigo-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <span>{cfg.icon}</span>
-                    <span>{cfg.label}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 新增項目快捷按鈕 */}
-            <Button
-              type="button"
-              size="sm"
-              onClick={() =>
-                onOpenCreateDialog(
-                  activeMember?.uid,
-                  selectedContentType !== 'all' ? selectedContentType : 'course'
-                )
-              }
-              className="h-7 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white gap-1 shadow-2xs"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>
-                {selectedContentType === 'article'
-                  ? '新增文章'
-                  : selectedContentType === 'video'
-                  ? '新增影音'
-                  : selectedContentType === 'book'
-                  ? '新增書籍'
-                  : '新增項目'}
-              </span>
-            </Button>
-          </div>
-
-          {/* 2. 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
-          <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
-            <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
-              <Tag className="w-3.5 h-3.5 text-indigo-600" />
-              領域:
-            </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {allCategories.map((cat) => (
+    <div className="w-full">
+      {/* 左右分欄佈局：左側可收合導航/篩選側欄 + 右側主內容區 */}
+      <div className="flex flex-col lg:flex-row gap-3.5 items-start w-full">
+        {/* ============================================================== */}
+        {/* 左側可收合側欄 (Collapsible Sidebar)                             */}
+        {/* - 收合狀態：寬度 56px (一直行)，顯示精簡圖示，完全不佔垂直高度      */}
+        {/* - 展開狀態：寬度 270px，顯示完整分類、領域標籤、成員切換與篩選     */}
+        {/* ============================================================== */}
+        <aside
+          className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xs transition-all duration-300 shrink-0 ${
+            isSidebarCollapsed ? 'w-full lg:w-14' : 'w-full lg:w-64 xl:w-72'
+          } sticky top-3 self-start max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden z-10`}
+        >
+          {/* A. 當側欄收合 (isSidebarCollapsed === true) */}
+          {isSidebarCollapsed ? (
+            <>
+              {/* 移動裝置 (< lg) 縮起時顯示之極簡橫列導航按鈕 */}
+              <div className="flex lg:hidden items-center justify-between p-2.5 bg-white w-full">
                 <button
-                  key={cat}
                   type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                    selectedCategory === cat
-                      ? 'bg-indigo-600 text-white shadow-2xs'
-                      : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
+                  onClick={toggleSidebar}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 shadow-2xs hover:bg-indigo-100 transition-colors"
                 >
-                  {cat}
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>展開導覽與篩選選單</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-200/80 text-indigo-900 font-mono">
+                    {contentTypeCounts[selectedContentType] || contentTypeCounts.all}
+                  </span>
                 </button>
-              ))}
-            </div>
-          </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {activeMember?.displayName || 'PM'}
+                  </span>
+                  {isFiltered && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="text-[11px] font-semibold text-rose-600 hover:text-rose-700"
+                    >
+                      清除篩選
+                    </button>
+                  )}
+                </div>
+              </div>
 
-          {/* 3. 關鍵字搜尋與細部下拉選單列 */}
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 flex-1">
-              {/* 關鍵字搜尋 */}
-              <div className="relative min-w-[200px] max-w-sm flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              {/* 電腦版 (lg+) 縮成一直行迷你直立 Dock (寬度 56px) */}
+              <div className="hidden lg:flex flex-col items-center w-full py-2.5 space-y-2">
+                {/* 頂部展開按鈕 */}
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 transition-all shadow-2xs group relative"
+                  title="展開左側導航與篩選選單 (點擊展開)"
+                >
+                  <SlidersHorizontal className="h-4 w-4 text-indigo-600 transition-transform group-hover:scale-110" />
+                  <span className="sr-only">展開側欄</span>
+                </button>
+
+                {/* 載體直立圖示快捷鍵清單 */}
+                <div className="flex flex-col items-center gap-1.5 pt-1 w-full px-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedContentType('all')}
+                    className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs transition-all relative ${
+                      selectedContentType === 'all'
+                        ? 'bg-indigo-600 text-white shadow-xs font-bold ring-2 ring-indigo-300'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                    title={`全部項目 (${contentTypeCounts.all})`}
+                  >
+                    <span className="text-sm">🌐</span>
+                    <span className="text-[9px] font-bold leading-none mt-0.5">{contentTypeCounts.all}</span>
+                  </button>
+
+                  {(['course', 'article', 'video', 'book'] as PMLearningContentType[]).map((type) => {
+                    const cfg = CONTENT_TYPE_CONFIG[type];
+                    const count = contentTypeCounts[type] || 0;
+                    const isSelected = selectedContentType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setSelectedContentType(type)}
+                        className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs transition-all relative ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-xs font-bold ring-2 ring-indigo-300'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                        title={`${cfg.label} (${count})`}
+                      >
+                        <span className="text-sm leading-none">{cfg.icon}</span>
+                        <span className="text-[9px] font-bold leading-none mt-0.5">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="w-8 border-t border-slate-200/80 my-1" />
+
+                {/* 領域圖示按鈕 */}
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs transition-all relative ${
+                    selectedCategory !== '全部'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                  title={`領域: ${selectedCategory} (點擊展開側欄切換)`}
+                >
+                  <Tag className="h-4 w-4" />
+                  {selectedCategory !== '全部' && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 absolute top-1.5 right-1.5" />
+                  )}
+                </button>
+
+                {/* 篩選重設快速圖示 */}
+                {isFiltered && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="w-10 h-8 rounded-xl flex items-center justify-center text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all text-xs"
+                    title="已套用篩選條件，點擊一鍵清除全部"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+
+                {/* 底部成員頭像 (點擊可展開人員切換) */}
+                <div className="mt-auto pt-3 pb-1 flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    className="w-9 h-9 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs hover:ring-2 hover:ring-indigo-400 transition-all"
+                    title={`${activeMember?.displayName || activeMember?.email} (點擊展開人員切換)`}
+                  >
+                    {(activeMember?.displayName || activeMember?.email || 'PM').slice(0, 1).toUpperCase()}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* B. 當側欄展開 (isSidebarCollapsed === false) */
+            <>
+              {/* 側欄頂部列：標題與縮起按鈕 */}
+              <div className="flex items-center justify-between px-3.5 py-3 border-b border-slate-100 bg-slate-50/70 shrink-0">
+                <div className="flex items-center gap-1.5 font-extrabold text-xs text-slate-800">
+                  <SlidersHorizontal className="h-4 w-4 text-indigo-600" />
+                  <span>導覽與篩選</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSidebar}
+                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 gap-1 font-semibold"
+                  title="縮合成一直行以獲取最大內文閱讀空間"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>縮成直行</span>
+                </Button>
+              </div>
+
+              {/* 側欄主要滾動內容 */}
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs divide-y divide-slate-100/80">
+                {/* 1. 成員與工作區身分 */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-linear-to-tr from-indigo-600 to-blue-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs shrink-0">
+                      {(activeMember?.displayName || activeMember?.email || 'PM').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-slate-900 truncate">
+                        {activeMember?.displayName || activeMember?.email}
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">
+                        億威電子 · {activeMember?.department || 'PMO專案管理處'}
+                      </div>
+                    </div>
+                    {isAdminOrJames && (
+                      <Badge className="bg-amber-50 text-amber-800 border-amber-200 text-[10px] px-1.5 py-0 font-semibold shrink-0">
+                        管理員
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* 切換成員下拉選單 */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      切換 PM 成員
+                    </label>
+                    <select
+                      value={activeMember?.uid}
+                      onChange={(e) => onActiveUserIdChange(e.target.value)}
+                      className="w-full h-7.5 px-2 rounded-lg border border-slate-200 bg-slate-50/80 text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {(pmoMembers || []).map((m) => (
+                        <option key={m.uid} value={m.uid}>
+                          {m.displayName || m.email} ({m.department || 'PM'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 2. 載體類型分類 */}
+                <div className="pt-3 space-y-1.5">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    載體類型
+                  </div>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedContentType('all')}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        selectedContentType === 'all'
+                          ? 'bg-indigo-50 text-indigo-900 font-extrabold border border-indigo-200/80 shadow-2xs'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>🌐</span>
+                        <span>全部項目</span>
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
+                        {contentTypeCounts.all}
+                      </span>
+                    </button>
+
+                    {(['course', 'article', 'video', 'book'] as PMLearningContentType[]).map((type) => {
+                      const cfg = CONTENT_TYPE_CONFIG[type];
+                      const count = contentTypeCounts[type] || 0;
+                      const isSelected = selectedContentType === type;
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setSelectedContentType(type)}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            isSelected
+                              ? 'bg-indigo-50 text-indigo-900 font-extrabold border border-indigo-200/80 shadow-2xs'
+                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{cfg.icon}</span>
+                            <span>{cfg.label}</span>
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 font-mono">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. 修習狀態篩選 */}
+                <div className="pt-3 space-y-1.5">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    修習狀態
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {[
+                      { key: '全部', label: '全部狀態' },
+                      { key: '進行中', label: '⚡ 進行中' },
+                      { key: '已完訓', label: '✅ 已完訓' },
+                      { key: '待開始', label: '📌 待開始' },
+                    ].map((st) => (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => setSelectedStatus(st.key)}
+                        className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-all text-center ${
+                          selectedStatus === st.key
+                            ? 'bg-indigo-600 text-white font-bold'
+                            : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. 領域主題分類 */}
+                <div className="pt-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      領域主題
+                    </span>
+                    {onOpenCategoryManager && (
+                      <button
+                        type="button"
+                        onClick={onOpenCategoryManager}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-0.5"
+                        title="維護領域清單"
+                      >
+                        <Tag className="h-3 w-3" />
+                        <span>維護領域</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-44 overflow-y-auto pr-1">
+                    {allCategories.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all ${
+                          selectedCategory === cat
+                            ? 'bg-indigo-600 text-white shadow-2xs font-bold'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. 進階條件 (出刊月份、時效性、來源平台) */}
+                <div className="pt-3 space-y-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    進階條件
+                  </div>
+                  {/* 出刊月份 */}
+                  {(selectedContentType === 'all' || selectedContentType === 'article') &&
+                    allIssueDates.length > 1 && (
+                      <select
+                        value={selectedIssueDate}
+                        onChange={(e) => setSelectedIssueDate(e.target.value)}
+                        className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="全部">全部出刊月份</option>
+                        {allIssueDates
+                          .filter((d) => d !== '全部')
+                          .map((d) => (
+                            <option key={d} value={d}>
+                              📅 出刊: {d}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+
+                  {/* 時效性質 */}
+                  {(selectedContentType === 'all' || selectedContentType === 'article') && (
+                    <select
+                      value={selectedTimeliness}
+                      onChange={(e) => setSelectedTimeliness(e.target.value)}
+                      className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="全部">全部時效性</option>
+                      <option value="time_sensitive">⚡ 時效趨勢</option>
+                      <option value="evergreen">🌱 常青知識</option>
+                    </select>
+                  )}
+
+                  {/* 來源平台 */}
+                  {allPlatforms.length > 1 && (
+                    <select
+                      value={selectedPlatform}
+                      onChange={(e) => setSelectedPlatform(e.target.value)}
+                      className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="全部">全部來源 / 平台</option>
+                      {allPlatforms
+                        .filter((p) => p !== '全部')
+                        .map((p) => (
+                          <option key={p} value={p}>
+                            來源: {p}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* 6. 清除所有篩選按鈕 */}
+                {isFiltered && (
+                  <div className="pt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetFilters}
+                      className="w-full h-7.5 text-xs text-rose-600 border-rose-200 hover:bg-rose-50 gap-1 font-semibold"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>重設所有篩選條件</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* ============================================================== */}
+        {/* 右側主內容區 (Main Content Area)                                */}
+        {/* - 頂部超緊湊單行操作列 (搜尋 + 單行精簡 KPI 摘要 + 排序 + 新增)  */}
+        {/* - 內文課程與文章清單直接頂到最上方，省下近 400px 垂直高度！     */}
+        {/* ============================================================== */}
+        <main className="flex-1 min-w-0 space-y-2.5 w-full">
+          {/* 1. 頂部緊湊操作列 */}
+          <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+            {/* 左側：展開側欄按鈕 (縮起時醒目顯示) + 搜尋框 */}
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              {isSidebarCollapsed && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleSidebar}
+                  className="h-8 px-2.5 text-xs text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 gap-1 font-semibold shrink-0 shadow-2xs"
+                  title="展開左側導航與篩選選單"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-indigo-600" />
+                  <span className="hidden sm:inline">側欄選單</span>
+                </Button>
+              )}
+
+              {/* 關鍵字搜尋框 */}
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜尋標題、專欄/講師、內文、期別或筆記..."
-                  className="pl-9 pr-7 h-9 text-xs"
+                  placeholder="搜尋標題、專欄、內文、期別或筆記..."
+                  className="pl-8 pr-7 h-8 text-xs"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                     title="清除關鍵字"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
-
-              {/* 出刊月份/期別下拉 (有文章或全部時顯示) */}
-              {(selectedContentType === 'all' || selectedContentType === 'article') &&
-                allIssueDates.length > 1 && (
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 text-indigo-500 hidden sm:inline" />
-                    <select
-                      value={selectedIssueDate}
-                      onChange={(e) => setSelectedIssueDate(e.target.value)}
-                      className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="全部">全部出刊月份</option>
-                      {allIssueDates
-                        .filter((d) => d !== '全部')
-                        .map((d) => (
-                          <option key={d} value={d}>
-                            📅 出刊: {d}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-
-              {/* 時效性質下拉 (文章時顯示) */}
-              {(selectedContentType === 'all' || selectedContentType === 'article') && (
-                <select
-                  value={selectedTimeliness}
-                  onChange={(e) => setSelectedTimeliness(e.target.value)}
-                  className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="全部">全部時效性</option>
-                  <option value="time_sensitive">⚡ 時效趨勢 (近期關鍵)</option>
-                  <option value="evergreen">🌱 常青知識 (長期適用)</option>
-                </select>
-              )}
-
-              {/* 平台 / 講師下拉篩選 */}
-              <div className="flex items-center gap-1.5">
-                <BookOpen className="h-3.5 w-3.5 text-slate-400 hidden sm:inline" />
-                <select
-                  value={selectedPlatform}
-                  onChange={(e) => setSelectedPlatform(e.target.value)}
-                  className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="全部">全部來源 / 平台</option>
-                  {allPlatforms
-                    .filter((p) => p !== '全部')
-                    .map((p) => (
-                      <option key={p} value={p}>
-                        來源: {p}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* 學習狀態下拉篩選 */}
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="全部">全部修習狀態</option>
-                <option value="進行中">⚡ 積極進行中</option>
-                <option value="已完訓">✅ 已完訓結業</option>
-                <option value="待開始">📌 尚未開始 (0%)</option>
-              </select>
-
-              {/* 重設篩選按鈕 */}
-              {isFiltered && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleResetFilters}
-                  className="h-9 px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 gap-1 font-semibold"
-                  title="重設所有篩選條件"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>清除篩選</span>
-                </Button>
-              )}
             </div>
 
-            {/* 右側：排序方式 + 全部展開 / 全部收合按鈕 */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-auto">
-              {/* 排序方式選單 */}
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                <ArrowUpDown className="h-3.5 w-3.5 text-indigo-600" />
-                <span className="text-xs font-semibold text-slate-600 hidden lg:inline">排序:</span>
+            {/* 中間：極簡單行 KPI 摘要膠囊 (僅佔單行高度！) */}
+            <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-indigo-50/70 border border-indigo-100 rounded-lg text-xs font-medium text-slate-700 shrink-0 shadow-2xs">
+              <span className="font-bold text-slate-900">
+                總計 {personalStats.total} 堂{' '}
+                <span className="text-[10px] text-slate-400 font-normal">({personalStats.totalHours}h)</span>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-amber-700 font-bold">進行中 {personalStats.inProgress}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-blue-700 font-bold">完訓 {personalStats.completed}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-indigo-700 font-bold">達成率 {personalStats.avgPercent}%</span>
+              <button
+                type="button"
+                onClick={() => setShowDetailedKpi((p) => !p)}
+                className="text-[11px] text-indigo-600 hover:text-indigo-800 ml-1 font-semibold underline decoration-dotted"
+                title="點擊展開/收合詳細數據與時數分析卡片"
+              >
+                {showDetailedKpi ? '收起 ▴' : '詳情 ▾'}
+              </button>
+            </div>
+
+            {/* 右側：排序方式 + 全部展開/收合 + 新增學習項目 */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+              {/* 排序選單 */}
+              <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
+                <ArrowUpDown className="h-3 w-3 text-indigo-600" />
                 <select
                   value={sortCriterion}
                   onChange={(e) =>
@@ -885,40 +1046,113 @@ export function MyLearningView({
                       e.target.value as 'custom' | 'progress-desc' | 'progress-asc' | 'date-desc' | 'date-asc'
                     )
                   }
-                  className="h-7 px-2 rounded-md border border-slate-200 bg-white text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
-                  title="選擇課程與學習項目的排序方式（預設完成度最高放最下，置頂項目優先排於最頂端）"
+                  className="h-7 px-1.5 rounded border-0 bg-transparent text-xs font-semibold text-indigo-900 focus:outline-none cursor-pointer"
+                  title="選擇排序方式"
                 >
-                  <option value="progress-asc">📉 預設：進度 低 → 高 (完成放最下)</option>
-                  <option value="custom">↕ 自訂排序 (可手動調整)</option>
-                  <option value="progress-desc">📈 進度：高 → 低 (100% ~ 0%)</option>
-                  <option value="date-desc">📅 發布日期：新 → 舊</option>
-                  <option value="date-asc">📅 發布日期：舊 → 新</option>
+                  <option value="progress-asc">📉 進度低→高 (完成放最下)</option>
+                  <option value="custom">↕ 自訂排序 (可上下移動)</option>
+                  <option value="progress-desc">📈 進度高→低</option>
+                  <option value="date-desc">📅 日期新→舊</option>
+                  <option value="date-asc">📅 日期舊→新</option>
                 </select>
               </div>
 
+              {/* 全部展開/收合 */}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setExpandAllState((prev) => !prev)}
-                className="h-9 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold shadow-2xs"
+                className="h-8 px-2 text-xs text-indigo-700 border-indigo-200 hover:bg-indigo-50 gap-1 font-semibold shadow-2xs"
+                title={expandAllState ? '全部收合' : '全部展開'}
               >
                 {expandAllState ? (
                   <>
                     <ChevronUp className="h-3.5 w-3.5" />
-                    <span>全部收合 ▴</span>
+                    <span className="hidden sm:inline">收合 ▴</span>
                   </>
                 ) : (
                   <>
                     <ChevronDown className="h-3.5 w-3.5" />
-                    <span>全部展開 ▾</span>
+                    <span className="hidden sm:inline">展開 ▾</span>
                   </>
                 )}
               </Button>
+
+              {/* 新增學習項目按鈕 */}
+              <Button
+                type="button"
+                onClick={() =>
+                  onOpenCreateDialog(
+                    activeMember?.uid,
+                    selectedContentType !== 'all' ? selectedContentType : 'course'
+                  )
+                }
+                className="h-8 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold gap-1 shadow-2xs"
+                title="新增學習項目"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>新增</span>
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+
+          {/* 2. 詳細 KPI 統計卡片 (預設收起，點擊「詳情 ▾」才展開) */}
+          {showDetailedKpi && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 shadow-2xs transition-all">
+              <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                <span className="text-[11px] font-semibold text-slate-500">已指派項目</span>
+                <div className="text-base font-bold text-slate-800 mt-0.5">
+                  {personalStats.total} 堂{' '}
+                  <span className="text-xs font-normal text-slate-400">({personalStats.totalHours} 小時)</span>
+                </div>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                <span className="text-[11px] font-semibold text-amber-600">積極進行中</span>
+                <div className="text-base font-bold text-amber-600 mt-0.5">{personalStats.inProgress} 堂</div>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                <span className="text-[11px] font-semibold text-blue-600">已完訓結業</span>
+                <div className="text-base font-bold text-blue-600 mt-0.5">
+                  {personalStats.completed} 堂{' '}
+                  <span className="text-xs font-normal text-blue-600/80">({personalStats.completedHours}h)</span>
+                </div>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-indigo-600">個人完訓率</span>
+                  <span className="text-xs font-bold text-indigo-700">
+                    {personalStats.avgPercent}%{' '}
+                    <span className="text-[10px] text-slate-400 font-normal">
+                      (時數 {personalStats.hoursPercent}%)
+                    </span>
+                  </span>
+                </div>
+                <Progress value={personalStats.avgPercent} className="h-1.5 mt-1 bg-indigo-100" />
+              </div>
+            </div>
+          )}
+
+          {/* 無課程提示 (全新成員尚未有任何項目) */}
+          {sortedMyCourses.length === 0 && (
+            <div className="text-center py-16 bg-white rounded-xl border border-dashed border-slate-200 space-y-3">
+              <BookOpen className="h-10 w-10 text-slate-300 mx-auto" />
+              <h3 className="text-sm font-semibold text-slate-700">
+                目前尚未指派課程給 {activeMember?.displayName || activeMember?.email}
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                您可以點擊上方「+ 新增」建立專屬進修項目，或切換至「主管 / 團隊視角 (Team View)」進行指派。
+              </p>
+              <Button
+                type="button"
+                onClick={() => onOpenCreateDialog(activeMember?.uid)}
+                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                建立第一門自選學習項目
+              </Button>
+            </div>
+          )}
 
       {/* 項目列表計數與提示 */}
       {sortedMyCourses.length > 0 && (
@@ -1012,6 +1246,8 @@ export function MyLearningView({
             </PersonalCardErrorBoundary>
           );
         })}
+      </div>
+        </main>
       </div>
 
       {/* 知識文章沉浸式閱讀視窗 (支援 AI 摘要與筆記) */}
