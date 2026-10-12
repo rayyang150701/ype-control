@@ -170,8 +170,13 @@ export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps)
     header: '電子郵件',
     cell: ({ row }) => {
       const email = row.original.email;
+      const isDraft = !email || row.original.department === '待維護';
       return email ? (
         <span className="text-slate-800">{email}</span>
+      ) : isDraft ? (
+        <span className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 font-normal">
+          未設定 (待管理員維護)
+        </span>
       ) : (
         <span className="text-xs text-muted-foreground italic">(未設定 / 停用)</span>
       );
@@ -199,12 +204,20 @@ export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps)
     header: '部門別',
     cell: ({ row }) => {
       const dept = row.original.department;
-      return dept ? (
+      if (!dept) {
+        return <span className="text-muted-foreground text-xs">未設定</span>;
+      }
+      if (dept === '待維護') {
+        return (
+          <Badge variant="outline" className="font-sans text-xs bg-amber-50 text-amber-800 border-amber-200 font-normal">
+            待維護
+          </Badge>
+        );
+      }
+      return (
         <Badge variant="outline" className="font-mono text-xs bg-slate-50">
           {dept}
         </Badge>
-      ) : (
-        <span className="text-muted-foreground text-xs">未設定</span>
       );
     },
     filterFn: (row, id, value) => {
@@ -256,12 +269,32 @@ export const columns = ({ onEdit, onResetPassword, isSuperAdmin }: ColumnsProps)
   {
     accessorKey: 'status',
     header: '帳號狀態',
+    filterFn: (row, id, value) => {
+      if (!value || value === 'all') return true;
+      const status = row.original.status;
+      const email = row.original.email;
+      const dept = row.original.department;
+      const isDraft = status === 'pending' && (!email || dept === '待維護');
+      if (value === 'active') return status === 'active';
+      if (value === 'draft') return isDraft;
+      if (value === 'disabled') return status === 'pending' && !isDraft;
+      return true;
+    },
     cell: ({ row }) => {
       const status = row.original.status;
+      const email = row.original.email;
+      const dept = row.original.department;
       if (status === 'active') {
         return (
           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 font-medium text-xs">
             啟用中
+          </Badge>
+        );
+      }
+      if (!email || dept === '待維護') {
+        return (
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 font-medium text-xs">
+            ⏳ 待維護 (初版)
           </Badge>
         );
       }

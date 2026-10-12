@@ -89,6 +89,7 @@ export function InternalTasksClient({
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
+  const [userList, setUserList] = useState<User[]>(users);
 
   useEffect(() => {
     setProjects(initialProjects);
@@ -97,6 +98,10 @@ export function InternalTasksClient({
   useEffect(() => {
     setActionItems(initialActionItems);
   }, [initialActionItems]);
+
+  useEffect(() => {
+    setUserList(users);
+  }, [users]);
 
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
 
@@ -408,7 +413,7 @@ export function InternalTasksClient({
       if (item.status === 'completed') return;
       const proj = projectMap.get(item.projectId);
       if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
-      const { department } = getItemPendingCompanyAndDepartment(item, users, clients);
+      const { department } = getItemPendingCompanyAndDepartment(item, userList, clients);
       if (department) {
         map.set(department, (map.get(department) || 0) + 1);
       }
@@ -416,7 +421,7 @@ export function InternalTasksClient({
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
-  }, [actionItems, projectMap, users, clients]);
+  }, [actionItems, projectMap, userList, clients]);
 
   // 整理待辦公司選項與未結案待辦計數
   const companyFilterOptions = useMemo(() => {
@@ -425,7 +430,7 @@ export function InternalTasksClient({
       if (item.status === 'completed') return;
       const proj = projectMap.get(item.projectId);
       if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
-      const { company } = getItemPendingCompanyAndDepartment(item, users, clients);
+      const { company } = getItemPendingCompanyAndDepartment(item, userList, clients);
       if (company) {
         map.set(company, (map.get(company) || 0) + 1);
       }
@@ -433,7 +438,7 @@ export function InternalTasksClient({
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
-  }, [actionItems, projectMap, users, clients]);
+  }, [actionItems, projectMap, userList, clients]);
 
   // 過濾後的待辦清單
   const filteredItems = useMemo(() => {
@@ -456,7 +461,7 @@ export function InternalTasksClient({
       );
 
       // 待辦部門與待辦公司篩選
-      const itemPending = getItemPendingCompanyAndDepartment(item, users, clients);
+      const itemPending = getItemPendingCompanyAndDepartment(item, userList, clients);
       const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(itemPending.department);
       const matchesCompany = selectedCompanies.length === 0 || selectedCompanies.includes(itemPending.company);
 
@@ -471,7 +476,7 @@ export function InternalTasksClient({
 
       return matchesSearch && matchesStatus && matchesWaiting && matchesDepartment && matchesCompany && matchesPm && matchesTpm;
     });
-  }, [actionItems, searchQuery, selectedStatuses, selectedWaitingOns, selectedDepartments, selectedCompanies, selectedPms, selectedTpms, projectMap, projects, users, clients]);
+  }, [actionItems, searchQuery, selectedStatuses, selectedWaitingOns, selectedDepartments, selectedCompanies, selectedPms, selectedTpms, projectMap, projects, userList, clients]);
 
   // 統計評估案 vs 已開案 vs 暫緩 vs 已結案 vs 專案終止
   const categoryCounts = useMemo(() => {
@@ -2205,7 +2210,7 @@ export function InternalTasksClient({
         <TaskCentricView
           items={actionItems}
           projects={projects}
-          users={users}
+          users={userList}
           clients={clients}
           isAdmin={isAdmin}
           onEditItem={handleOpenEdit}
@@ -2973,10 +2978,13 @@ export function InternalTasksClient({
         item={editingItem}
         defaultProjectId={defaultProjectId}
         projects={projects}
-        users={users}
+        users={userList}
         clients={clients}
         actionItems={actionItems}
-        onSuccess={(savedItem) => {
+        onSuccess={(savedItem, createdUserDraft) => {
+          if (createdUserDraft) {
+            setUserList((prev) => [createdUserDraft, ...prev.filter((u) => u.uid !== createdUserDraft.uid)]);
+          }
           if (savedItem) {
             const targetProj = projects.find((p) => p.id === savedItem.projectId);
             const enrichedItem: ProjectActionItem = {
@@ -3018,7 +3026,7 @@ export function InternalTasksClient({
       <NewPocProjectDialog
         open={pocDialogOpen}
         onOpenChange={setPocDialogOpen}
-        users={users}
+        users={userList}
         clients={clients}
         onSuccess={(newProj) => {
           if (newProj) {
@@ -3049,7 +3057,7 @@ export function InternalTasksClient({
           }
         }}
         project={projectToEdit}
-        users={users}
+        users={userList}
         clients={clients}
         onSuccess={(updatedData) => {
           setProjects((prev) =>

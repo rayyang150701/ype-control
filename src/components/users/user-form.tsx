@@ -208,6 +208,14 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
               ? '修改成員基本資料、密碼重設或調整系統授權角色。'
               : '建立新使用者帳號並設定初始登入密碼、所屬公司與權限。'}
           </DialogDescription>
+          {isEditMode && initialData?.status === 'pending' && (!initialData?.email || initialData?.department === '待維護') && (
+            <div className="mt-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <span className="text-amber-600 font-bold shrink-0">📌 初版成員：</span>
+              <span>
+                此人員為在「待辦事項」指派時自動建置之初版。您可在此為其補充 Email、部門別、角色權限與初始密碼，並將狀態切換為「啟用」。
+              </span>
+            </div>
+          )}
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">

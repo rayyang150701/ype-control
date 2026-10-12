@@ -21,6 +21,7 @@ interface SearchableComboboxProps {
   className?: string;
   disabled?: boolean;
   emptyHint?: string;
+  customValueHint?: string;
 }
 
 export function SearchableCombobox({
@@ -31,6 +32,7 @@ export function SearchableCombobox({
   className,
   disabled = false,
   emptyHint,
+  customValueHint,
 }: SearchableComboboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isBrowsingAll, setIsBrowsingAll] = useState(false);
@@ -222,7 +224,9 @@ export function SearchableCombobox({
                 <UserPlus className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                 <span className="truncate">使用手動輸入：「{value}」</span>
               </div>
-              <span className="text-[10px] text-amber-700 shrink-0 ml-1">(點此或 Enter 保留)</span>
+              <span className="text-[10px] text-amber-700 shrink-0 ml-1">
+                {customValueHint || '(點此或 Enter 保留)'}
+              </span>
             </button>
           )}
 

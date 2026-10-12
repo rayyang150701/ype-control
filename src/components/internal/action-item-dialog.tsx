@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from '@/components/ui/select';
-import { Building2, Pin, CalendarPlus, Video, ExternalLink } from 'lucide-react';
+import { Building2, Pin, CalendarPlus, Video, ExternalLink, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
@@ -26,7 +26,7 @@ interface ActionItemDialogProps {
   users?: User[];
   clients?: Client[];
   actionItems?: ProjectActionItem[];
-  onSuccess: (savedItem?: ProjectActionItem) => void;
+  onSuccess: (savedItem?: ProjectActionItem, createdUserDraft?: User) => void;
 }
 
 const PHASES: ActionItemPhase[] = [
@@ -66,6 +66,13 @@ export function ActionItemDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [clientList, setClientList] = useState<Client[]>(initialClients);
+  const [localUsers, setLocalUsers] = useState<User[]>(users);
+
+  useEffect(() => {
+    if (users && users.length > 0) {
+      setLocalUsers(users);
+    }
+  }, [users]);
 
   // 若父層沒傳或需要更新 clients，主動載入客戶清單
   useEffect(() => {
@@ -213,7 +220,7 @@ export function ActionItemDialog({
 
     // 1. 若責任歸屬未指定或為空，顯示系統所有成員供選擇
     if (!selectedClientName || selectedClientName === '未指定') {
-      users.forEach((u) => {
+      localUsers.forEach((u) => {
         const val = (u.displayName || u.username || u.email || '').trim();
         if (!val) return;
         const hint = u.department
@@ -236,8 +243,8 @@ export function ActionItemDialog({
     }
 
     // 2. 當有指定責任歸屬客戶時，選單選項嚴格且僅來自「成員維護清單」(users) 與「客戶維護清單」(clients)！
-    // (a) 屬於該客戶的成員清單 (users)
-    users.forEach((u) => {
+    // (a) 屬於該客戶的成員清單 (localUsers)
+    localUsers.forEach((u) => {
       let isMatch = false;
       if (u.clientName && isCompanyMatch(u.clientName, selectedClientName)) {
         isMatch = true;
@@ -312,7 +319,28 @@ export function ActionItemDialog({
     });
 
     return Array.from(optionsMap.values());
-  }, [users, selectedClientName, effectiveClientOptions]);
+  }, [localUsers, selectedClientName, effectiveClientOptions]);
+
+  // 判斷當前等誰處理是否屬於新增人名 (尚未在成員清單中建檔)
+  const isWaitingOnNewMember = useMemo(() => {
+    const val = (waitingOn || '').trim();
+    if (!val) return false;
+    const ignoreList = ['未指定', '無', '待確認', '待定', '全部', 'all', 'none'];
+    if (ignoreList.includes(val.toLowerCase())) return false;
+    // 檢查是否已存在於候選選項
+    const inOptions = waitingOnMemberOptions.some(
+      (opt) => opt.value.trim().toLowerCase() === val.toLowerCase()
+    );
+    if (inOptions) return false;
+    // 檢查是否已存在於本機成員清單
+    const inUsers = localUsers.some(
+      (u) =>
+        (u.displayName && u.displayName.trim().toLowerCase() === val.toLowerCase()) ||
+        (u.username && u.username.trim().toLowerCase() === val.toLowerCase()) ||
+        (u.email && u.email.trim().toLowerCase() === val.toLowerCase())
+    );
+    return !inUsers;
+  }, [waitingOn, waitingOnMemberOptions, localUsers]);
 
   useEffect(() => {
     if (open) {
@@ -484,8 +512,17 @@ export function ActionItemDialog({
           operator,
         });
         if (res.success) {
-          toast({ title: '更新成功', description: '待辦歷程已成功儲存' });
-          onSuccess(res.data as any);
+          const draftUser = (res as any).createdUserDraft as User | undefined;
+          if (draftUser) {
+            setLocalUsers((prev) => [draftUser, ...prev.filter((u) => u.uid !== draftUser.uid)]);
+          }
+          toast({
+            title: '更新成功',
+            description: draftUser
+              ? `待辦歷程已成功儲存，並已為「${draftUser.displayName}」自動建置成員帳號初版（待管理員維護細節）！`
+              : '待辦歷程已成功儲存',
+          });
+          onSuccess(res.data as any, draftUser);
           onOpenChange(false);
         } else {
           toast({ title: '更新失敗', description: res.message, variant: 'destructive' });
@@ -509,8 +546,17 @@ export function ActionItemDialog({
           operator,
         });
         if (res.success) {
-          toast({ title: '新增成功', description: '待辦事項已建立！' });
-          onSuccess(res.data as any);
+          const draftUser = (res as any).createdUserDraft as User | undefined;
+          if (draftUser) {
+            setLocalUsers((prev) => [draftUser, ...prev.filter((u) => u.uid !== draftUser.uid)]);
+          }
+          toast({
+            title: '新增成功',
+            description: draftUser
+              ? `待辦事項已建立，並已為「${draftUser.displayName}」自動建置成員帳號初版（待管理員維護細節）！`
+              : '待辦事項已建立！',
+          });
+          onSuccess(res.data as any, draftUser);
           onOpenChange(false);
         } else {
           toast({ title: '新增失敗', description: res.message, variant: 'destructive' });
@@ -867,8 +913,20 @@ export function ActionItemDialog({
                       ? `「${owner}」尚無預設成員，可直接手動輸入姓名`
                       : '請先選擇責任歸屬客戶，或直接手動輸入姓名'
                   }
+                  customValueHint="(點此或 Enter 保留，儲存後自動建立成員初版)"
                 />
               </div>
+              {isWaitingOnNewMember && (
+                <div className="flex items-start gap-1.5 mt-1.5 text-xs text-amber-900 bg-amber-50/90 px-2.5 py-1.5 rounded-md border border-amber-200 animate-in fade-in-0">
+                  <UserPlus className="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <span>新成員姓名「<strong>{waitingOn.trim()}</strong>」：</span>
+                    <span className="text-amber-800">
+                      儲存待辦時將自動於<strong>成員帳號</strong>中建置初版（歸屬：{owner || '億威電子'}，狀態：初版待維護），最後由管理員進行細節資料維護。
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -1861,6 +1861,127 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
     }
 }
 
+/**
+ * 當待辦事項中指派了未在成員清單的人名時，自動在 public.users 建立「初版」成員資料，
+ * 供管理員後續進行帳號細節資料維護（如 Email、登入密碼、部門別與權限啟用）。
+ */
+export async function ensureUserDraftIfNeeded(
+    rawName: string,
+    rawCompany?: string
+): Promise<{ created: boolean; user?: User } | null> {
+    if (!rawName || !rawName.trim()) return null;
+
+    const trimmed = rawName.trim();
+    // 排除非人名的常見狀態文字
+    const ignoreList = ['未指定', '無', '待確認', '待定', '全部', 'all', 'none', 'n/a', 'na'];
+    if (ignoreList.includes(trimmed.toLowerCase())) return null;
+
+    // 解析括號中的補充說明，例如 "Leo (FAE)" 或 "Leo（生管）"
+    let cleanName = trimmed;
+    let inferredDept = '待維護';
+    const matchWithDept = trimmed.match(/^([^\(（]+)[\(（]([^\)）]+)[\)）]$/);
+    if (matchWithDept) {
+        cleanName = matchWithDept[1].trim();
+        inferredDept = matchWithDept[2].trim();
+    }
+
+    if (!cleanName) return null;
+
+    // 清理公司名稱
+    let company = (rawCompany || '億威電子').trim();
+    if (!company || company === '未指定') company = '億威電子';
+
+    // 檢查 cleanName 是否為公司名或單位名（若是單位或廠商名稱，則不建立人員帳號）
+    const knownCompanies = ['億威', '億威電子', '燁輝', '燁輝企業', '燁輝燕巢', '宇陽', '宇陽傳動', '荃達'];
+    if (knownCompanies.some(c => c.toLowerCase() === cleanName.toLowerCase())) {
+        return null;
+    }
+
+    const supabase = getSupabaseClient();
+
+    // 查詢 clients 資料表，若 cleanName 為既有客戶名稱，則不當作人名建立
+    try {
+        const { data: clients } = await supabase.from('clients').select('name');
+        if (clients?.some(c => c.name?.trim().toLowerCase() === cleanName.toLowerCase())) {
+            return null;
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    // 查詢 public.users 資料表，檢查該姓名或 Email 是否已經存在
+    try {
+        const { data: existingByName } = await supabase
+            .from('users')
+            .select('uid, display_name, email')
+            .ilike('display_name', cleanName);
+
+        if (existingByName && existingByName.length > 0) {
+            return null;
+        }
+
+        const { data: existingByEmail } = await supabase
+            .from('users')
+            .select('uid, display_name, email')
+            .ilike('email', cleanName);
+
+        if (existingByEmail && existingByEmail.length > 0) {
+            return null;
+        }
+
+        // 決定預設角色：若公司為億威則為 execution，若燁輝則為 monitor，其他為 viewer
+        let defaultRole: UserRole = 'viewer';
+        if (company.includes('億威')) {
+            defaultRole = 'execution';
+        } else if (company.includes('燁輝')) {
+            defaultRole = 'monitor';
+        }
+
+        const newUid = crypto.randomUUID();
+        const nowIso = new Date().toISOString();
+
+        const draftUserPayload = {
+            uid: newUid,
+            email: null,
+            display_name: cleanName,
+            role: defaultRole,
+            status: 'pending' as UserStatus, // 待啟用 / 初版待維護
+            department: inferredDept,
+            client_name: company,
+            created_at: nowIso,
+        };
+
+        const { error: insertError } = await supabase.from('users').insert(draftUserPayload);
+        if (insertError) {
+            console.warn('建立初版成員帳號失敗 (可能已存在):', insertError.message);
+            return null;
+        }
+
+        revalidatePath('/users');
+        revalidatePath('/internal-tasks');
+
+        const createdUser: User = {
+            uid: newUid,
+            username: cleanName,
+            email: '',
+            displayName: cleanName,
+            role: defaultRole,
+            status: 'pending',
+            department: inferredDept,
+            clientName: company,
+            createdAt: nowIso,
+        };
+
+        return {
+            created: true,
+            user: createdUser,
+        };
+    } catch (err) {
+        console.warn('ensureUserDraftIfNeeded 執行發生錯誤:', err);
+        return null;
+    }
+}
+
 export async function createActionItem(data: {
     projectId: string;
     subProjectId?: string | null;
@@ -2000,8 +2121,24 @@ export async function createActionItem(data: {
             console.warn('[AuditLog] 記錄新增待辦履歷失敗:', auditErr);
         }
 
+        // 若有指派等候對象且尚未建立為成員，自動建置初版人員資料
+        let createdUserDraft: User | undefined = undefined;
+        if (data.waitingOn) {
+            const draftRes = await ensureUserDraftIfNeeded(data.waitingOn, data.owner);
+            if (draftRes?.created && draftRes.user) {
+                createdUserDraft = draftRes.user;
+            }
+        }
+
         revalidatePath('/internal-tasks');
-        return { success: true, message: '待辦事項已建立！', data: newItem };
+        return {
+            success: true,
+            message: createdUserDraft
+                ? `待辦事項已建立，並已為「${createdUserDraft.displayName}」自動建置成員帳號初版！`
+                : '待辦事項已建立！',
+            data: newItem,
+            createdUserDraft,
+        };
     } catch (err: any) {
         console.error('建立待辦事項失敗:', err);
         return { success: false, message: err?.message || '建立待辦事項失敗' };
@@ -2212,10 +2349,22 @@ export async function updateActionItem(id: string, data: Partial<{
             console.warn('[AuditLog] 記錄更新待辦履歷失敗:', auditErr);
         }
 
+        // 若有指派等候對象且尚未建立為成員，自動建置初版人員資料
+        let createdUserDraft: User | undefined = undefined;
+        if (data.waitingOn) {
+            const draftRes = await ensureUserDraftIfNeeded(data.waitingOn, data.owner || existing.owner);
+            if (draftRes?.created && draftRes.user) {
+                createdUserDraft = draftRes.user;
+            }
+        }
+
         revalidatePath('/internal-tasks');
         return { 
             success: true, 
-            message: '待辦事項已更新！',
+            createdUserDraft,
+            message: createdUserDraft
+                ? `待辦歷程已更新，並已為「${createdUserDraft.displayName}」自動建置成員帳號初版！`
+                : '待辦事項已更新！',
             data: updated ? {
                 id: updated.id,
                 projectId: updated.project_id,

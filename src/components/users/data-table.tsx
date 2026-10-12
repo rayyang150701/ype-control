@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Client } from '@/types';
-import { Building2, Layers, Search, RotateCcw } from 'lucide-react';
+import { Building2, Layers, Search, RotateCcw, CheckCircle2 } from 'lucide-react';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -91,6 +91,7 @@ export function DataTable<TData, TValue>({
 
   const clientFilterValue = (table.getColumn('clientName')?.getFilterValue() as string) ?? 'all';
   const departmentFilterValue = (table.getColumn('department')?.getFilterValue() as string) ?? 'all';
+  const statusFilterValue = (table.getColumn('status')?.getFilterValue() as string) ?? 'all';
   const isFiltered = columnFilters.some(
     (f) => f.value !== undefined && f.value !== '' && f.value !== 'all'
   );
@@ -163,6 +164,29 @@ export function DataTable<TData, TValue>({
                     {dept}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 帳號狀態 下拉篩選 */}
+          <div className="w-full sm:w-40">
+            <Select
+              value={statusFilterValue}
+              onValueChange={(val) =>
+                table.getColumn('status')?.setFilterValue(val === 'all' ? undefined : val)
+              }
+            >
+              <SelectTrigger className="h-9 text-xs bg-white">
+                <div className="flex items-center gap-1.5 truncate">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                  <SelectValue placeholder="所有狀態" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">⚡ 全部狀態</SelectItem>
+                <SelectItem value="active" className="text-xs">🟢 啟用中</SelectItem>
+                <SelectItem value="draft" className="text-xs">⏳ 待維護 (初版)</SelectItem>
+                <SelectItem value="disabled" className="text-xs">🔴 已停用</SelectItem>
               </SelectContent>
             </Select>
           </div>
