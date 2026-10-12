@@ -117,7 +117,7 @@ export function TaskCentricView({
 
   // 細部篩選條件 (維度切換 + 多重勾選)
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterDimension, setFilterDimension] = useState<'pm' | 'project' | 'department' | 'company' | 'waitingOn'>('pm');
+  const [filterDimension, setFilterDimension] = useState<'pm' | 'project' | 'waitingOn'>('pm');
   const [selectedPms, setSelectedPms] = useState<string[]>([]);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -316,13 +316,27 @@ export function TaskCentricView({
   }, [items, projectMap, users, clients, selectedCompanies]);
 
   const departmentMultiOptions = useMemo<MultiSelectOption[]>(() => {
-    return departmentOptions.map((d) => ({
-      id: d.department,
-      label: d.department,
-      count: d.count,
-      icon: <span className="text-slate-400">👥</span>,
-    }));
-  }, [departmentOptions]);
+    return departmentOptions.map((d) => {
+      let subText: string | undefined = undefined;
+      if (selectedCompanies.length > 1) {
+        const found = items.find((item) => {
+          const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
+          return department === d.department && selectedCompanies.includes(company);
+        });
+        if (found) {
+          const { company } = getItemPendingCompanyAndDepartment(found, users, clients);
+          subText = company;
+        }
+      }
+      return {
+        id: d.department,
+        label: d.department,
+        count: d.count,
+        subText,
+        icon: <span className="text-slate-400">👥</span>,
+      };
+    });
+  }, [departmentOptions, selectedCompanies, items, users, clients]);
 
   // 整理所有未結案、未完成的「等候對象」清單 (包含公司與部門資訊，並支援動態篩選)
   const activeWaitingOnList = useMemo(() => {
@@ -360,7 +374,7 @@ export function TaskCentricView({
     }));
   }, [activeWaitingOnList]);
 
-  // 複合篩選維度對應表
+  // 複合篩選維度對應表 (負責 PM / 所屬專案 / 等候對象)
   const dimensionConfig = useMemo(() => {
     return {
       pm: {
@@ -379,22 +393,6 @@ export function TaskCentricView({
         onChange: setSelectedProjectIds,
         colorClass: 'border-indigo-500 bg-indigo-50/70 text-indigo-900 font-bold',
       },
-      department: {
-        title: '待處理部門',
-        placeholder: '全部待處理部門',
-        options: departmentMultiOptions,
-        selectedValues: selectedDepartments,
-        onChange: setSelectedDepartments,
-        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-950 font-bold',
-      },
-      company: {
-        title: '待處理公司',
-        placeholder: '全部待處理公司',
-        options: companyMultiOptions,
-        selectedValues: selectedCompanies,
-        onChange: setSelectedCompanies,
-        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-950 font-bold',
-      },
       waitingOn: {
         title: '等候對象',
         placeholder: '全部等候對象',
@@ -409,10 +407,6 @@ export function TaskCentricView({
     selectedPms,
     projectMultiOptions,
     selectedProjectIds,
-    departmentMultiOptions,
-    selectedDepartments,
-    companyMultiOptions,
-    selectedCompanies,
     waitingOnMultiOptions,
     selectedWaitingOns,
   ]);
@@ -659,16 +653,63 @@ export function TaskCentricView({
             />
           </div>
 
-          {/* 第 1 欄位：維度選擇器 */}
+          {/* 待處理公司 (獨立第 1 階篩選) */}
+          <MultiSelectFilterPopover
+            title="待處理公司"
+            placeholder="🏢 待處理公司"
+            options={companyMultiOptions}
+            selectedValues={selectedCompanies}
+            onSelectionChange={(newComps) => {
+              setSelectedCompanies(newComps);
+              // 若變更或清空公司，自動清理不再屬於新公司的已選部門
+              if (newComps.length === 0) {
+                setSelectedDepartments([]);
+              } else {
+                setSelectedDepartments((prev) => {
+                  const validDepts = new Set<string>();
+                  items.forEach((item) => {
+                    const { company, department } = getItemPendingCompanyAndDepartment(item, users, clients);
+                    if (newComps.includes(company)) validDepts.add(department);
+                  });
+                  return prev.filter((d) => validDepts.has(d));
+                });
+              }
+            }}
+            activeColorClass="border-amber-500 bg-amber-50/70 text-amber-950 font-bold"
+            width="w-[130px] sm:w-[140px]"
+          />
+
+          {/* 待處理部門 (獨立第 2 階連動篩選：分開選擇，先選公司再選部門) */}
+          <MultiSelectFilterPopover
+            title={
+              selectedCompanies.length === 1
+                ? `${selectedCompanies[0]} 部門`
+                : '待處理部門'
+            }
+            placeholder={
+              selectedCompanies.length === 0
+                ? '👥 部門 (請先選公司)'
+                : selectedCompanies.length === 1
+                ? `👥 ${selectedCompanies[0]} 部門`
+                : '👥 待處理部門'
+            }
+            options={departmentMultiOptions}
+            selectedValues={selectedDepartments}
+            onSelectionChange={setSelectedDepartments}
+            disabled={selectedCompanies.length === 0}
+            disabledTooltip="請先選擇左側「待處理公司」，即可連動篩選所屬部門"
+            activeColorClass="border-amber-500 bg-amber-50/70 text-amber-950 font-bold"
+            width="w-[140px] sm:w-[155px]"
+          />
+
+          {/* 第 3 欄位：其他維度選擇器 (負責 PM / 所屬專案 / 等候對象) */}
           <Select value={filterDimension} onValueChange={(val: any) => setFilterDimension(val)}>
-            <SelectTrigger className="w-[140px] sm:w-[150px] h-9 text-xs font-semibold bg-white shrink-0">
+            <SelectTrigger className="w-[125px] sm:w-[135px] h-9 text-xs font-semibold bg-white shrink-0">
               <div className="flex items-center gap-1.5 truncate">
                 <Filter className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span className="truncate">
                   {filterDimension === 'pm' && '👤 負責 PM'}
                   {filterDimension === 'project' && '📁 所屬專案'}
-                  {filterDimension === 'department' && '👥 待處理部門'}
-                  {filterDimension === 'company' && '🏢 待處理公司'}
                   {filterDimension === 'waitingOn' && '⏳ 等候對象'}
                 </span>
               </div>
@@ -680,19 +721,13 @@ export function TaskCentricView({
               <SelectItem value="project">
                 📁 所屬專案 {selectedProjectIds.length > 0 ? `(● ${selectedProjectIds.length})` : ''}
               </SelectItem>
-              <SelectItem value="department">
-                👥 待處理部門 {selectedDepartments.length > 0 ? `(● ${selectedDepartments.length})` : ''}
-              </SelectItem>
-              <SelectItem value="company">
-                🏢 待處理公司 {selectedCompanies.length > 0 ? `(● ${selectedCompanies.length})` : ''}
-              </SelectItem>
               <SelectItem value="waitingOn">
                 ⏳ 等候對象 {selectedWaitingOns.length > 0 ? `(● ${selectedWaitingOns.length})` : ''}
               </SelectItem>
             </SelectContent>
           </Select>
 
-          {/* 第 2 欄位：多重勾選篩選器 */}
+          {/* 第 4 欄位：對應選中維度的多選 Popover */}
           <MultiSelectFilterPopover
             title={dimensionConfig[filterDimension].title}
             placeholder={dimensionConfig[filterDimension].placeholder}
@@ -700,6 +735,7 @@ export function TaskCentricView({
             selectedValues={dimensionConfig[filterDimension].selectedValues}
             onSelectionChange={dimensionConfig[filterDimension].onChange}
             activeColorClass={dimensionConfig[filterDimension].colorClass}
+            width="w-[140px] sm:w-[160px]"
           />
 
           {/* 排序下拉 */}
@@ -795,7 +831,13 @@ export function TaskCentricView({
               <span>🏢 公司: {comp}</span>
               <button
                 type="button"
-                onClick={() => setSelectedCompanies((prev) => prev.filter((c) => c !== comp))}
+                onClick={() => {
+                  setSelectedCompanies((prev) => {
+                    const next = prev.filter((c) => c !== comp);
+                    if (next.length === 0) setSelectedDepartments([]);
+                    return next;
+                  });
+                }}
                 className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
                 title="移除此條件"
               >

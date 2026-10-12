@@ -27,6 +27,8 @@ export interface MultiSelectFilterProps {
   triggerClassName?: string;
   activeColorClass?: string;
   width?: string;
+  disabled?: boolean;
+  disabledTooltip?: string;
 }
 
 export function MultiSelectFilterPopover({
@@ -39,6 +41,8 @@ export function MultiSelectFilterPopover({
   triggerClassName,
   activeColorClass = "border-blue-500 bg-blue-50/70 text-blue-900 font-bold",
   width = "w-[175px] sm:w-[195px]",
+  disabled = false,
+  disabledTooltip,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
@@ -88,6 +92,27 @@ export function MultiSelectFilterPopover({
     const firstName = firstMatch ? firstMatch.label : selectedValues[0];
     return `${firstName} +${selectedValues.length - 1}`;
   }, [selectedValues, options, placeholder, title]);
+
+  if (disabled) {
+    return (
+      <div className={className} title={disabledTooltip || `請先選擇關聯條件後再篩選 ${title}`}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled
+          className={cn(
+            `${width} h-9 text-xs font-medium justify-between shrink-0 bg-slate-100/90 text-slate-400 border-dashed border-slate-300 cursor-not-allowed opacity-80`,
+            triggerClassName
+          )}
+        >
+          <span className="truncate text-left flex-1 mr-1">
+            {placeholder || `全部${title}`}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 opacity-40 shrink-0" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

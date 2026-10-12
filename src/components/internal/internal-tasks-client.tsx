@@ -197,7 +197,7 @@ export function InternalTasksClient({
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedWaitingOns, setSelectedWaitingOns] = useState<string[]>([]);
   const [filterDimension, setFilterDimension] = useState<
-    'pm' | 'tpm' | 'department' | 'company' | 'client' | 'sourceType' | 'internalStatus' | 'status' | 'waitingOn'
+    'pm' | 'tpm' | 'client' | 'sourceType' | 'internalStatus' | 'status' | 'waitingOn'
   >('pm');
   const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
@@ -407,13 +407,15 @@ export function InternalTasksClient({
   }, [projects]);
 
   // 整理待辦部門選項與未結案待辦計數
+  // 整理待辦部門選項與未結案待辦計數 (若已選公司，則自動篩選該公司之部門)
   const departmentFilterOptions = useMemo(() => {
     const map = new Map<string, number>();
     actionItems.forEach((item) => {
       if (item.status === 'completed') return;
       const proj = projectMap.get(item.projectId);
       if (proj && (proj.internalStatus === 'completed' || proj.status === 'completed')) return;
-      const { department } = getItemPendingCompanyAndDepartment(item, userList, clients);
+      const { company, department } = getItemPendingCompanyAndDepartment(item, userList, clients);
+      if (selectedCompanies.length > 0 && !selectedCompanies.includes(company)) return;
       if (department) {
         map.set(department, (map.get(department) || 0) + 1);
       }
@@ -421,7 +423,7 @@ export function InternalTasksClient({
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-TW'));
-  }, [actionItems, projectMap, userList, clients]);
+  }, [actionItems, projectMap, userList, clients, selectedCompanies]);
 
   // 整理待辦公司選項與未結案待辦計數
   const companyFilterOptions = useMemo(() => {
@@ -617,22 +619,7 @@ export function InternalTasksClient({
         onChange: setSelectedTpms,
         colorClass: 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold',
       },
-      department: {
-        title: '待辦部門',
-        placeholder: '全部待辦部門',
-        options: departmentFilterOptions.map((d) => ({ id: d.name, label: d.name, count: d.count })),
-        selectedValues: selectedDepartments,
-        onChange: setSelectedDepartments,
-        colorClass: 'border-indigo-500 bg-indigo-50/70 text-indigo-900 font-bold',
-      },
-      company: {
-        title: '待辦公司',
-        placeholder: '全部待辦公司',
-        options: companyFilterOptions.map((c) => ({ id: c.name, label: c.name, count: c.count })),
-        selectedValues: selectedCompanies,
-        onChange: setSelectedCompanies,
-        colorClass: 'border-amber-500 bg-amber-50/70 text-amber-900 font-bold',
-      },
+
       client: {
         title: '客戶名稱',
         placeholder: '全部客戶',
@@ -2241,17 +2228,63 @@ export function InternalTasksClient({
             />
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-            {/* 第 1 欄位：先選擇篩選條件維度 */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* 待處理公司 (獨立第 1 階篩選) */}
+            <MultiSelectFilterPopover
+              title="待處理公司"
+              placeholder="🏢 待處理公司"
+              options={companyFilterOptions.map((c) => ({ id: c.name, label: c.name, count: c.count }))}
+              selectedValues={selectedCompanies}
+              onSelectionChange={(newComps) => {
+                setSelectedCompanies(newComps);
+                if (newComps.length === 0) {
+                  setSelectedDepartments([]);
+                } else {
+                  setSelectedDepartments((prev) => {
+                    const validDepts = new Set<string>();
+                    actionItems.forEach((item) => {
+                      const { company, department } = getItemPendingCompanyAndDepartment(item, userList, clients);
+                      if (newComps.includes(company)) validDepts.add(department);
+                    });
+                    return prev.filter((d) => validDepts.has(d));
+                  });
+                }
+              }}
+              activeColorClass="border-amber-500 bg-amber-50/70 text-amber-900 font-bold"
+              width="w-[130px] sm:w-[140px]"
+            />
+
+            {/* 待處理部門 (獨立第 2 階連動篩選：分開選擇，先選公司再選部門) */}
+            <MultiSelectFilterPopover
+              title={
+                selectedCompanies.length === 1
+                  ? `${selectedCompanies[0]} 部門`
+                  : '待處理部門'
+              }
+              placeholder={
+                selectedCompanies.length === 0
+                  ? '👥 部門 (請先選公司)'
+                  : selectedCompanies.length === 1
+                  ? `👥 ${selectedCompanies[0]} 部門`
+                  : '👥 待處理部門'
+              }
+              options={departmentFilterOptions.map((d) => ({ id: d.name, label: d.name, count: d.count }))}
+              selectedValues={selectedDepartments}
+              onSelectionChange={setSelectedDepartments}
+              disabled={selectedCompanies.length === 0}
+              disabledTooltip="請先選擇左側「待處理公司」，即可連動篩選所屬部門"
+              activeColorClass="border-indigo-500 bg-indigo-50/70 text-indigo-900 font-bold"
+              width="w-[140px] sm:w-[155px]"
+            />
+
+            {/* 第 3 欄位：其餘專案與待辦維度選擇器 */}
             <Select value={filterDimension} onValueChange={(val: any) => setFilterDimension(val)}>
-              <SelectTrigger className="w-[140px] sm:w-[150px] h-9 text-xs font-semibold bg-background shrink-0">
+              <SelectTrigger className="w-[135px] sm:w-[145px] h-9 text-xs font-semibold bg-background shrink-0">
                 <div className="flex items-center gap-1.5 truncate">
                   <Filter className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <span className="truncate">
                     {filterDimension === 'pm' && '👤 負責 PM'}
                     {filterDimension === 'tpm' && '👥 TPM 窗口'}
-                    {filterDimension === 'department' && '👥 待辦部門'}
-                    {filterDimension === 'company' && '🏢 待辦公司'}
                     {filterDimension === 'client' && '🏢 客戶名稱'}
                     {filterDimension === 'sourceType' && '🏭 專案來源'}
                     {filterDimension === 'internalStatus' && '📌 專案狀態'}
@@ -2266,12 +2299,6 @@ export function InternalTasksClient({
                 </SelectItem>
                 <SelectItem value="tpm">
                   👥 TPM 窗口 {selectedTpms.length > 0 ? `(● ${selectedTpms.length})` : ''}
-                </SelectItem>
-                <SelectItem value="department">
-                  👥 待辦部門 {selectedDepartments.length > 0 ? `(● ${selectedDepartments.length})` : ''}
-                </SelectItem>
-                <SelectItem value="company">
-                  🏢 待辦公司 {selectedCompanies.length > 0 ? `(● ${selectedCompanies.length})` : ''}
                 </SelectItem>
                 <SelectItem value="client">
                   🏢 客戶名稱 {selectedClients.length > 0 ? `(● ${selectedClients.length})` : ''}
@@ -2291,14 +2318,15 @@ export function InternalTasksClient({
               </SelectContent>
             </Select>
 
-            {/* 第 2 欄位：多重勾選篩選器 */}
+            {/* 第 4 欄位：對應選中維度的多選 Popover */}
             <MultiSelectFilterPopover
-              title={dimensionConfig[filterDimension].title}
-              placeholder={dimensionConfig[filterDimension].placeholder}
-              options={dimensionConfig[filterDimension].options}
-              selectedValues={dimensionConfig[filterDimension].selectedValues}
-              onSelectionChange={dimensionConfig[filterDimension].onChange}
-              activeColorClass={dimensionConfig[filterDimension].colorClass}
+              title={dimensionConfig[filterDimension]?.title || '篩選'}
+              placeholder={dimensionConfig[filterDimension]?.placeholder || '全部'}
+              options={dimensionConfig[filterDimension]?.options || []}
+              selectedValues={dimensionConfig[filterDimension]?.selectedValues || []}
+              onSelectionChange={dimensionConfig[filterDimension]?.onChange || (() => {})}
+              activeColorClass={dimensionConfig[filterDimension]?.colorClass}
+              width="w-[140px] sm:w-[160px]"
             />
 
             {hasActiveFilters && (
@@ -2367,7 +2395,13 @@ export function InternalTasksClient({
                 <span>🏢 公司: {comp}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedCompanies((prev) => prev.filter((c) => c !== comp))}
+                  onClick={() => {
+                    setSelectedCompanies((prev) => {
+                      const next = prev.filter((c) => c !== comp);
+                      if (next.length === 0) setSelectedDepartments([]);
+                      return next;
+                    });
+                  }}
                   className="hover:bg-amber-200 rounded-full p-0.5 cursor-pointer"
                   title="移除此條件"
                 >
