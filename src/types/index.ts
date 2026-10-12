@@ -9,7 +9,7 @@ export type UserRole =
   | 'super_admin'  // 相容舊資料 (視同 admin)
   | 'editor'       // 相容舊資料
   | 'viewer';      // 相容舊資料
-export type UserStatus = 'pending' | 'active';
+export type UserStatus = 'pending' | 'active' | 'pending_edit';
 
 export interface CurrentUser {
   uid: string;

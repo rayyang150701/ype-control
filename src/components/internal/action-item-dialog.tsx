@@ -913,7 +913,7 @@ export function ActionItemDialog({
                       ? `「${owner}」尚無預設成員，可直接手動輸入姓名`
                       : '請先選擇責任歸屬客戶，或直接手動輸入姓名'
                   }
-                  customValueHint="(點此或 Enter 保留，儲存後自動建立成員初版)"
+                  customValueHint="(點此或 Enter 保留，儲存後自動建立待編輯人員)"
                 />
               </div>
               {isWaitingOnNewMember && (
@@ -922,7 +922,7 @@ export function ActionItemDialog({
                   <div className="text-[11px] leading-relaxed">
                     <span>新成員姓名「<strong>{waitingOn.trim()}</strong>」：</span>
                     <span className="text-amber-800">
-                      儲存待辦時將自動於<strong>成員帳號</strong>中建置初版（歸屬：{owner || '億威電子'}，狀態：初版待維護），最後由管理員進行細節資料維護。
+                      儲存待辦時將自動於<strong>成員帳號</strong>中建置為「待編輯人員」（歸屬：{owner || '億威電子'}），最後由管理員進行細節資料維護。
                     </span>
                   </div>
                 </div>

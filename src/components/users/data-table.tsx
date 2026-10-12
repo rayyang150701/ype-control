@@ -185,8 +185,8 @@ export function DataTable<TData, TValue>({
               <SelectContent>
                 <SelectItem value="all" className="text-xs">⚡ 全部狀態</SelectItem>
                 <SelectItem value="active" className="text-xs">🟢 啟用中</SelectItem>
-                <SelectItem value="draft" className="text-xs">⏳ 待維護 (初版)</SelectItem>
-                <SelectItem value="disabled" className="text-xs">🔴 已停用</SelectItem>
+                <SelectItem value="pending_edit" className="text-xs">⏳ 待編輯人員</SelectItem>
+                <SelectItem value="pending" className="text-xs">🔴 已停用</SelectItem>
               </SelectContent>
             </Select>
           </div>

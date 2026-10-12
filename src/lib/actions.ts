@@ -179,8 +179,8 @@ export async function loginUser(credentials: { accountOrEmail: string; password:
             .eq('email', targetEmail)
             .maybeSingle();
 
-        if (dbUser && dbUser.status === 'pending') {
-            return { success: false, message: '此帳號已被設為停用，請聯繫系統管理者。' };
+        if (dbUser && (dbUser.status === 'pending' || dbUser.status === 'pending_edit')) {
+            return { success: false, message: '此帳號尚未啟用或待管理員編輯維護，請聯繫系統管理者。' };
         }
 
         let role = (dbUser?.role || authResult.user.user_metadata?.role || 'editor') as UserRole;
@@ -266,7 +266,7 @@ export async function createUser(data: {
 }) {
     const supabase = getSupabaseClient();
     try {
-        const isPending = data.status === 'pending';
+        const isActive = data.status === 'active';
         const cleanEmail = (data.email || '').trim();
         const cleanDisplayName = (data.displayName || '').trim();
         const cleanClientName = (data.clientName || '').trim();
@@ -277,7 +277,7 @@ export async function createUser(data: {
         if (!cleanDepartment) return { success: false, message: '請輸入部門別' };
 
         // 僅啟用狀態才強制要求 Email 與密碼
-        if (!isPending) {
+        if (isActive) {
             if (!cleanEmail) return { success: false, message: '帳號啟用時請輸入電子郵件' };
             if (!data.password?.trim()) return { success: false, message: '帳號啟用時請設定密碼' };
         }
@@ -332,7 +332,7 @@ export async function createUser(data: {
             email: cleanEmail || null,
             display_name: cleanDisplayName,
             role: data.role,
-            status: data.status || (isPending ? 'pending' : 'active'),
+            status: data.status || (isActive ? 'active' : 'pending'),
             department: cleanDepartment,
             client_name: cleanClientName || '燁輝',
             created_at: new Date().toISOString(),
@@ -1085,6 +1085,12 @@ export async function updateProject(
         } catch (e) {
             console.warn('記錄專案更新履歷失敗:', e);
         }
+
+        // 若在專案中指派了未在成員名冊中的人名，自動建置為待編輯人員
+        if (data.responsiblePm) await ensureUserDraftIfNeeded(data.responsiblePm, '億威電子');
+        if (tpmOfficeContact) await ensureUserDraftIfNeeded(tpmOfficeContact, '燁輝');
+        if (yiehPhuiProjectManager) await ensureUserDraftIfNeeded(yiehPhuiProjectManager, clientName);
+        if (egigaContact) await ensureUserDraftIfNeeded(egigaContact, '億威電子');
         
         revalidatePath('/dashboard');
         revalidatePath('/internal-tasks');
@@ -1945,7 +1951,7 @@ export async function ensureUserDraftIfNeeded(
             email: null,
             display_name: cleanName,
             role: defaultRole,
-            status: 'pending' as UserStatus, // 待啟用 / 初版待維護
+            status: 'pending_edit' as UserStatus, // 待編輯人員
             department: inferredDept,
             client_name: company,
             created_at: nowIso,
@@ -1966,7 +1972,7 @@ export async function ensureUserDraftIfNeeded(
             email: '',
             displayName: cleanName,
             role: defaultRole,
-            status: 'pending',
+            status: 'pending_edit',
             department: inferredDept,
             clientName: company,
             createdAt: nowIso,
@@ -2134,7 +2140,7 @@ export async function createActionItem(data: {
         return {
             success: true,
             message: createdUserDraft
-                ? `待辦事項已建立，並已為「${createdUserDraft.displayName}」自動建置成員帳號初版！`
+                ? `待辦事項已建立，並已為「${createdUserDraft.displayName}」自動建置為待編輯人員！`
                 : '待辦事項已建立！',
             data: newItem,
             createdUserDraft,
@@ -2363,7 +2369,7 @@ export async function updateActionItem(id: string, data: Partial<{
             success: true, 
             createdUserDraft,
             message: createdUserDraft
-                ? `待辦歷程已更新，並已為「${createdUserDraft.displayName}」自動建置成員帳號初版！`
+                ? `待辦歷程已更新，並已為「${createdUserDraft.displayName}」自動建置為待編輯人員！`
                 : '待辦事項已更新！',
             data: updated ? {
                 id: updated.id,
@@ -2652,6 +2658,12 @@ export async function createInternalProject(data: {
         }).select('id, name, case_number, status, tpm_office_contact, yieh_phui_project_manager, project_purpose, created_at, on_hold_notes').single();
 
         if (error) throw error;
+
+        // 若在專案中指派了未在成員名冊中的人名，自動建置為待編輯人員
+        if (responsiblePm) await ensureUserDraftIfNeeded(responsiblePm, '億威電子');
+        if (tpmOfficeContact) await ensureUserDraftIfNeeded(tpmOfficeContact, '燁輝');
+        if (clientContact) await ensureUserDraftIfNeeded(clientContact, clientName);
+
         revalidatePath('/internal-tasks');
         revalidatePath('/dashboard');
         return { 
@@ -2789,6 +2801,11 @@ export async function updateInternalProject(projectId: string, data: {
             .eq('id', projectId);
 
         if (updateErr) throw updateErr;
+
+        // 若在專案中指派了未在成員名冊中的人名，自動建置為待編輯人員
+        if (data.responsiblePm) await ensureUserDraftIfNeeded(data.responsiblePm, '億威電子');
+        if (data.tpmOfficeContact) await ensureUserDraftIfNeeded(data.tpmOfficeContact, '燁輝');
+        if (data.clientContact) await ensureUserDraftIfNeeded(data.clientContact, data.clientName || meta.clientName || '燁輝');
 
         revalidatePath('/internal-tasks');
         revalidatePath('/dashboard');

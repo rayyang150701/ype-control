@@ -48,15 +48,15 @@ const userSchema = z.object({
       errorMap: () => ({ message: '請選擇一個角色' }),
     }
   ),
-  status: z.enum(['active', 'pending'], {
+  status: z.enum(['active', 'pending', 'pending_edit'], {
     errorMap: () => ({ message: '請選擇一個狀態' }),
   }),
 }).superRefine((data, ctx) => {
-  const isPending = data.status === 'pending';
+  const isActive = data.status === 'active';
   const cleanEmail = (data.email || '').trim();
 
   // 帳號啟用時，電子郵件為必填且格式必須正確
-  if (!isPending) {
+  if (isActive) {
     if (!cleanEmail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -71,7 +71,7 @@ const userSchema = z.object({
       });
     }
   } else {
-    // 停用狀態下，若使用者仍有輸入 email，檢查其格式
+    // 停用或待編輯狀態下，若使用者仍有輸入 email，檢查其格式
     if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -125,20 +125,20 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
   const currentStatus = form.watch('status');
   const isEmailRequired = currentStatus === 'active';
 
-  // 當切換為停用狀態時，主動清除 email 和 password 的驗證錯誤
+  // 當切換為停用或待編輯狀態時，主動清除 email 和 password 的驗證錯誤
   useEffect(() => {
-    if (currentStatus === 'pending') {
+    if (currentStatus === 'pending' || currentStatus === 'pending_edit') {
       form.clearErrors('email');
       form.clearErrors('password');
     }
   }, [currentStatus, form]);
 
   const onSubmit = (data: UserFormData) => {
-    const isAccountPending = data.status === 'pending';
+    const isAccountActive = data.status === 'active';
     const cleanEmail = (data.email || '').trim();
 
     // 密碼檢查 (僅主管理員可設定密碼；且若帳號為啟用狀態，建立新帳號時密碼為必填)
-    if (isSuperAdmin && !isAccountPending) {
+    if (isSuperAdmin && isAccountActive) {
       if (!isEditMode && (!data.password || data.password.trim().length < 6)) {
         form.setError('password', { message: '建立啟用帳號時密碼為必填，且至少需 6 個字元' });
         return;
@@ -208,11 +208,11 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
               ? '修改成員基本資料、密碼重設或調整系統授權角色。'
               : '建立新使用者帳號並設定初始登入密碼、所屬公司與權限。'}
           </DialogDescription>
-          {isEditMode && initialData?.status === 'pending' && (!initialData?.email || initialData?.department === '待維護') && (
+          {isEditMode && initialData?.status === 'pending_edit' && (
             <div className="mt-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
-              <span className="text-amber-600 font-bold shrink-0">📌 初版成員：</span>
+              <span className="text-amber-600 font-bold shrink-0">⏳ 待編輯人員：</span>
               <span>
-                此人員為在「待辦事項」指派時自動建置之初版。您可在此為其補充 Email、部門別、角色權限與初始密碼，並將狀態切換為「啟用」。
+                此成員為在專案或待辦指派時手動鍵入自動建置之「待編輯人員」。您可在此為其補充 Email、部門別、角色權限與初始密碼，並將狀態切換為「🟢 啟用中」。
               </span>
             </div>
           )}
@@ -417,8 +417,9 @@ export function UserForm({ isOpen, onClose, initialData, clients = [] }: UserFor
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="active">啟用</SelectItem>
-                        <SelectItem value="pending">停用 (禁用登入)</SelectItem>
+                        <SelectItem value="active">🟢 啟用中</SelectItem>
+                        <SelectItem value="pending_edit">⏳ 待編輯人員</SelectItem>
+                        <SelectItem value="pending">🔴 已停用 (禁用登入)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

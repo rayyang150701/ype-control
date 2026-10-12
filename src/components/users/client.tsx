@@ -80,15 +80,15 @@ export function UsersClient({ data, clients = [] }: UsersClientProps) {
       </div>
 
       {(() => {
-        const draftUsers = data.filter((u) => u.status === 'pending' && (!u.email || u.department === '待維護'));
-        if (draftUsers.length === 0) return null;
+        const pendingEditUsers = data.filter((u) => u.status === 'pending_edit');
+        if (pendingEditUsers.length === 0) return null;
         return (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-amber-50/90 border border-amber-200 rounded-lg text-xs text-amber-900 shadow-2xs">
             <div className="flex items-center gap-2">
               <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
               <span>
-                共有 <strong>{draftUsers.length}</strong> 位由待辦指派自動建置之初版人員待維護細節：
-                <span className="font-semibold ml-1">{draftUsers.map((u) => u.displayName).join('、')}</span>
+                共有 <strong>{pendingEditUsers.length}</strong> 位專案或待辦手動鍵入之「待編輯人員」待維護細節：
+                <span className="font-semibold ml-1">{pendingEditUsers.map((u) => u.displayName).join('、')}</span>
               </span>
             </div>
             <span className="text-[11px] text-amber-700 font-medium shrink-0">
