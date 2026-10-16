@@ -199,7 +199,7 @@ export function InternalTasksClient({
   const [filterDimension, setFilterDimension] = useState<
     'pm' | 'tpm' | 'client' | 'sourceType' | 'internalStatus' | 'status' | 'waitingOn'
   >('pm');
-  const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated'>('caseNumberAsc');
+  const [sortBy, setSortBy] = useState<'caseNumberAsc' | 'caseNumberDesc' | 'recentUpdated' | 'activeTasksFirst'>('caseNumberAsc');
   const [hideEmptyProjects, setHideEmptyProjects] = useState<boolean>(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [showCompletedMap, setShowCompletedMap] = useState<Record<string, boolean>>({});
@@ -872,7 +872,7 @@ export function InternalTasksClient({
       return true;
     });
 
-    // 4. 排序 (案號正序/倒序、最近更新)
+    // 4. 排序 (案號正序/倒序、最近更新、未完成待辦優先)
     result.sort((a, b) => {
       if (sortBy === 'caseNumberAsc') {
         return compareCaseNumbers(a.project.caseNumber, b.project.caseNumber, true);
@@ -882,6 +882,13 @@ export function InternalTasksClient({
         const timeA = getProjectRecentTimestamp(a.project, a.items);
         const timeB = getProjectRecentTimestamp(b.project, b.items);
         return timeB.localeCompare(timeA); // 最近更新在最上面
+      } else if (sortBy === 'activeTasksFirst') {
+        const activeA = a.items.filter((i) => i.status !== 'completed').length;
+        const activeB = b.items.filter((i) => i.status !== 'completed').length;
+        if (activeA > 0 && activeB === 0) return -1;
+        if (activeA === 0 && activeB > 0) return 1;
+        if (activeA !== activeB) return activeB - activeA;
+        return compareCaseNumbers(a.project.caseNumber, b.project.caseNumber, true);
       }
       return 0;
     });
@@ -2142,13 +2149,14 @@ export function InternalTasksClient({
             <>
               <div className="flex items-center gap-1.5">
                 <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-                  <SelectTrigger className="w-[160px] h-8 text-xs bg-white">
+                  <SelectTrigger className="w-[165px] h-8 text-xs bg-white">
                     <ArrowUpDown className="h-3.5 w-3.5 mr-1 text-slate-500" />
                     <SelectValue placeholder="排序方式" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="caseNumberAsc">🔢 案號由小到大 (1→55)</SelectItem>
                     <SelectItem value="caseNumberDesc">🔢 案號由大到小 (55→1)</SelectItem>
+                    <SelectItem value="activeTasksFirst">🔥 未完成待辦優先</SelectItem>
                     <SelectItem value="recentUpdated">🕒 依照最近更新/待辦</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2563,6 +2571,9 @@ export function InternalTasksClient({
             const isProjOverdue = !isCompleted && !isOnHold && projExpectedDate && projDiffDays > 0;
             const isProjUpcoming = !isCompleted && !isOnHold && projExpectedDate && projDiffDays >= -7 && projDiffDays <= 0;
 
+            const hasActiveTasks = activeItems.length > 0;
+            const hasOnlyCompletedTasks = activeItems.length === 0 && completedItems.length > 0;
+
             return (
               <div
                 key={project.id}
@@ -2576,6 +2587,8 @@ export function InternalTasksClient({
                     ? 'border-rose-300 bg-rose-50/50 shadow-sm'
                     : isOnHold
                     ? 'border-amber-300 bg-amber-50/50 shadow-sm'
+                    : hasActiveTasks
+                    ? 'border-orange-300 border-l-4 border-l-orange-500 bg-white shadow-sm'
                     : 'border-slate-200 bg-white shadow-sm'
                 }`}
               >
@@ -2589,6 +2602,8 @@ export function InternalTasksClient({
                     ? 'bg-rose-100/70 border-rose-200/90'
                     : isOnHold
                     ? 'bg-amber-100/70 border-amber-200/90'
+                    : hasActiveTasks
+                    ? 'bg-orange-50/35 border-orange-100'
                     : 'bg-white border-slate-100'
                 }`}>
                   <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -2763,10 +2778,51 @@ export function InternalTasksClient({
                         </div>
                       )}
 
-                      {/* 待辦統計徽章 (整合至同一行) */}
-                      <span className="text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-medium shrink-0">
-                        待辦 {items.length}項
-                      </span>
+                      {/* 待辦統計徽章 (依「有未完成待辦」、「全數完成」、「無待辦」區分醒目顏色) */}
+                      {hasActiveTasks ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => toggleCollapse(project.id)}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-orange-600 bg-orange-500 hover:bg-orange-600 text-white font-bold shadow-xs shrink-0 cursor-pointer transition-colors"
+                            title={`此專案尚有 ${activeItems.length} 項未完成待辦事項，點擊展開/收合檢視`}
+                          >
+                            <Hourglass className="h-3 w-3 shrink-0" />
+                            <span>待辦未完成 {activeItems.length}項</span>
+                          </button>
+                          {completedItems.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCollapsedProjects((prev) => ({ ...prev, [project.id]: false }));
+                                setShowCompletedMap((prev) => ({ ...prev, [project.id]: true }));
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium shrink-0 cursor-pointer transition-colors"
+                              title={`另有 ${completedItems.length} 項已完成事項，點擊展開查看`}
+                            >
+                              <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                              <span>已完成 {completedItems.length}項</span>
+                            </button>
+                          )}
+                        </>
+                      ) : hasOnlyCompletedTasks ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCollapsedProjects((prev) => ({ ...prev, [project.id]: false }));
+                            setShowCompletedMap((prev) => ({ ...prev, [project.id]: true }));
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold shrink-0 cursor-pointer transition-colors"
+                          title={`此專案共 ${completedItems.length} 項待辦皆已完成，點擊直接展開檢視已完成紀錄`}
+                        >
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                          <span>已完成 {completedItems.length}項 (全數完成)</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/80 font-normal shrink-0">
+                          待辦 0項
+                        </span>
+                      )}
                       {blockedItems.length > 0 && (
                         <Badge variant="outline" className="text-[10px] px-1 py-0 border-rose-300 bg-rose-50 text-rose-600 font-medium shrink-0">
                           <AlertCircle className="h-3 w-3 mr-0.5" />
