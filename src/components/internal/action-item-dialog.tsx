@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,11 @@ interface ActionItemDialogProps {
   users?: User[];
   clients?: Client[];
   actionItems?: ProjectActionItem[];
-  onSuccess: (savedItem?: ProjectActionItem, createdUserDraft?: User) => void;
+  onSuccess: (
+    savedItem?: ProjectActionItem,
+    createdUserDraft?: User,
+    options?: { isBackgroundSync?: boolean }
+  ) => void;
 }
 
 const PHASES: ActionItemPhase[] = [
@@ -109,6 +113,13 @@ export function ActionItemDialog({
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
+  const attachmentsRef = useRef<ActionItemAttachment[]>(item?.attachments || []);
+  const initializedSessionRef = useRef<string | null>(null);
+
+  const handleAttachmentsChange = (nextList: ActionItemAttachment[]) => {
+    attachmentsRef.current = nextList;
+    setAttachments(nextList);
+  };
 
   // 專屬雲端資料夾：一個專案只對應一個資料夾 (不論底下有幾個待辦)
   // - 既有專案：以專案 ID 為識別碼，專案改名後仍會沿用同一個資料夾
@@ -133,13 +144,15 @@ export function ActionItemDialog({
     newAttachment: ActionItemAttachment,
     updatedList: ActionItemAttachment[]
   ) => {
+    attachmentsRef.current = updatedList;
+    setAttachments(updatedList);
     if (item?.id) {
       try {
         const res = await updateActionItem(item.id, {
           attachments: updatedList,
         });
         if (res.success && res.data) {
-          onSuccess(res.data as any);
+          onSuccess(res.data as any, undefined, { isBackgroundSync: true });
           toast({
             title: '附件已自動儲存至待辦事項',
             description: `檔案「${newAttachment.name}」已同步存入 Google Drive 與待辦事項記錄中。`,
@@ -343,48 +356,60 @@ export function ActionItemDialog({
   }, [waitingOn, waitingOnMemberOptions, localUsers]);
 
   useEffect(() => {
-    if (open) {
-      const todayStr = getLocalTodayDateStr();
-      if (item) {
-        setProjectId(item.projectId);
-        setIsCreatingNewProject(false);
-        setTitle(item.title);
-        setMeetingUrl(item.meetingUrl || '');
-        setPhase(item.phase);
-        setStatus(item.status);
-        setOwner(item.owner || '');
-        setWaitingOn(item.waitingOn || '');
-        setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
-        setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
-        // 每次打開編輯待辦時，自動預設填入當天最新存檔日期（若同專案在2, 5, 10天分別更新，存檔皆為當天最新日期）
-        setLastUpdatedDate(todayStr);
-        setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
-        setLessonLearnt(item.lessonLearnt || '');
-        setAttachments(item.attachments || []);
-        setIsPinned(Boolean(item.isPinned));
-      } else {
-        const targetProjId = defaultProjectId || (projects[0]?.id || '');
-        const targetProj = projects.find((p) => p.id === targetProjId);
-        setProjectId(targetProjId);
-        setIsCreatingNewProject(false);
-        setNewProjectName('');
-        setNewProjectCaseNumber('');
-        setNewProjectCategory('評估案');
-        setNewProjectEvaluationDate(todayStr);
-        setTitle('');
-        setMeetingUrl('');
-        setPhase('1.2 施工階段');
-        setStatus('pending');
-        setOwner(targetProj?.clientName || '燁輝');
-        setWaitingOn('');
-        setDueDate('');
-        setCompletedAt('');
-        setLastUpdatedDate(todayStr);
-        setNotes('');
-        setLessonLearnt('');
-        setAttachments([]);
-        setIsPinned(false);
-      }
+    if (!open) {
+      initializedSessionRef.current = null;
+      return;
+    }
+
+    const sessionKey = item?.id ? `edit:${item.id}` : `new:${defaultProjectId || ''}`;
+    if (initializedSessionRef.current === sessionKey) {
+      return;
+    }
+    initializedSessionRef.current = sessionKey;
+
+    const todayStr = getLocalTodayDateStr();
+    if (item) {
+      setProjectId(item.projectId);
+      setIsCreatingNewProject(false);
+      setTitle(item.title);
+      setMeetingUrl(item.meetingUrl || '');
+      setPhase(item.phase);
+      setStatus(item.status);
+      setOwner(item.owner || '');
+      setWaitingOn(item.waitingOn || '');
+      setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
+      setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
+      // 每次打開編輯待辦時，自動預設填入當天最新存檔日期（若同專案在2, 5, 10天分別更新，存檔皆為當天最新日期）
+      setLastUpdatedDate(todayStr);
+      setNotes((item.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
+      setLessonLearnt(item.lessonLearnt || '');
+      const initialAtts = item.attachments || [];
+      attachmentsRef.current = initialAtts;
+      setAttachments(initialAtts);
+      setIsPinned(Boolean(item.isPinned));
+    } else {
+      const targetProjId = defaultProjectId || (projects[0]?.id || '');
+      const targetProj = projects.find((p) => p.id === targetProjId);
+      setProjectId(targetProjId);
+      setIsCreatingNewProject(false);
+      setNewProjectName('');
+      setNewProjectCaseNumber('');
+      setNewProjectCategory('評估案');
+      setNewProjectEvaluationDate(todayStr);
+      setTitle('');
+      setMeetingUrl('');
+      setPhase('1.2 施工階段');
+      setStatus('pending');
+      setOwner(targetProj?.clientName || '燁輝');
+      setWaitingOn('');
+      setDueDate('');
+      setCompletedAt('');
+      setLastUpdatedDate(todayStr);
+      setNotes('');
+      setLessonLearnt('');
+      attachmentsRef.current = [];
+      setAttachments([]);
+      setIsPinned(false);
     }
   }, [open, item, defaultProjectId, projects]);
 
@@ -494,6 +519,8 @@ export function ActionItemDialog({
         department: currentUser.department,
       } : undefined;
 
+      const finalAttachments = attachmentsRef.current;
+
       if (item?.id) {
         const res = await updateActionItem(item.id, {
           title,
@@ -506,7 +533,7 @@ export function ActionItemDialog({
           updatedAt: saveUpdatedAt,
           notes: cleanNotes,
           lessonLearnt,
-          attachments,
+          attachments: finalAttachments,
           isPinned,
           meetingUrl: meetingUrl.trim() || undefined,
           operator,
@@ -540,7 +567,7 @@ export function ActionItemDialog({
           updatedAt: saveUpdatedAt,
           notes: cleanNotes,
           lessonLearnt,
-          attachments,
+          attachments: finalAttachments,
           isPinned,
           meetingUrl: meetingUrl.trim() || undefined,
           operator,
@@ -1014,7 +1041,7 @@ export function ActionItemDialog({
           {/* 附件上傳 (Google Drive 直傳) */}
           <AttachmentsUploader
             attachments={attachments}
-            onChange={setAttachments}
+            onChange={handleAttachmentsChange}
             disabled={isSubmitting}
             onUploadingChange={setIsUploadingAttachments}
             onAttachmentUploaded={handleAttachmentUploaded}

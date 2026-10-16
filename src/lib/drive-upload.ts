@@ -176,14 +176,21 @@ export function generateUploadId(): string {
  */
 export async function lookupUploadedFile(
   uploadId: string,
-  folderId?: string | null
+  folderId?: string | null,
+  fileName?: string,
+  fileSize?: number
 ): Promise<ActionItemAttachment | null> {
-  const body = { action: 'lookup', uploadId, ...(folderId ? { folderId } : {}) };
+  const body = {
+    action: 'lookup',
+    uploadId,
+    ...(fileName ? { fileName } : {}),
+    ...(folderId ? { folderId } : {}),
+  };
   const toAttachment = (f: any): ActionItemAttachment => ({
     id: f.id,
     fileId: f.id,
     name: f.name,
-    size: f.size || 0,
+    size: f.size || fileSize || 0,
     mimeType: f.mimeType || 'application/octet-stream',
     webViewLink: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
     webContentLink: f.webContentLink || `https://drive.google.com/uc?id=${f.id}&export=download`,
@@ -199,41 +206,33 @@ export async function lookupUploadedFile(
     if (res.ok) {
       const data = await res.json();
       if (data?.success && data.found && data.file?.id) return toAttachment(data.file);
-      if (data?.success && data.found === false) return null;
     }
   } catch {
-    // 回退至直接端點
+    // 忽略並繼續嘗試備援查詢
   }
 
-  try {
-    const gasUrl = process.env.NEXT_PUBLIC_GOOGLE_APPS_SCRIPT_URL || DEFAULT_GAS_URL;
-    const res = await fetch(gasUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow',
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.success && data.found && data.file?.id) return toAttachment(data.file);
-    }
-  } catch (err) {
-    console.warn('查詢上傳結果失敗:', err);
+  // 備援：透過 Google Drive Service Account API (/api/drive/check-recent-file) 依檔名與大小即時檢索
+  if (fileName) {
+    const recent = await checkRecentFileInDrive(fileName, fileSize, 20);
+    if (recent) return recent;
   }
+
   return null;
 }
 
-/** 輪詢 uploadId，直到 GAS 完成寫入或逾時 */
+/** 輪詢 uploadId 與雲端近期檔案，直到 GAS 完成寫入或逾時 */
 async function pollLookupUploadedFile(
   uploadId: string,
   folderId: string | null,
   maxMs: number,
   intervalMs: number,
-  onTick?: (elapsedSec: number) => void
+  onTick?: (elapsedSec: number) => void,
+  fileName?: string,
+  fileSize?: number
 ): Promise<ActionItemAttachment | null> {
   const start = Date.now();
   while (true) {
-    const found = await lookupUploadedFile(uploadId, folderId);
+    const found = await lookupUploadedFile(uploadId, folderId, fileName, fileSize);
     if (found) return found;
     const elapsed = Date.now() - start;
     if (elapsed >= maxMs) return null;
@@ -454,13 +453,21 @@ export async function uploadFileToDrive(
       stageMessage: '檔案已送達，等待 Google 雲端硬碟完成寫入...',
     });
 
-    const reconciled = await pollLookupUploadedFile(uploadId, targetFolderId, 180000, 4000, (sec) => {
-      onProgress?.(95, 'publishing', {
-        percent: 95,
-        status: 'publishing',
-        stageMessage: `雲端硬碟寫入中，請勿重複上傳 (已等待 ${sec} 秒)...`,
-      });
-    });
+    const reconciled = await pollLookupUploadedFile(
+      uploadId,
+      targetFolderId,
+      180000,
+      3000,
+      (sec) => {
+        onProgress?.(95, 'publishing', {
+          percent: 95,
+          status: 'publishing',
+          stageMessage: `雲端硬碟寫入中，請勿重複上傳 (已等待 ${sec} 秒)...`,
+        });
+      },
+      file.name,
+      file.size
+    );
     if (reconciled) {
       onProgress?.(100, 'done', {
         percent: 100,
@@ -533,10 +540,17 @@ export async function uploadFileToDrive(
       console.warn('內部代理端點連線異常，檢查雲端硬碟收件狀態或切換備援:', proxyErr);
     }
 
-    // ★ 重複檔案防護：切換備援直傳前，先以 uploadId 查詢 GAS 是否「已經」收件。
-    // 即使查詢沒找到而重送，GAS 也會依 uploadId 冪等處理，不會重複建檔。
+    // ★ 重複檔案防護：切換備援直傳前，先以 uploadId 及檔名查詢雲端硬碟是否「已經」收件。
     try {
-      const reconciled = await pollLookupUploadedFile(uploadId, targetFolderId, 4000, 2000);
+      const reconciled = await pollLookupUploadedFile(
+        uploadId,
+        targetFolderId,
+        4000,
+        2000,
+        undefined,
+        file.name,
+        file.size
+      );
       if (reconciled) {
         onProgress?.(100, 'done', {
           percent: 100,

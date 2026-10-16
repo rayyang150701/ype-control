@@ -9,6 +9,34 @@ const DEFAULT_GAS_URL =
   'https://script.google.com/macros/s/AKfycbzofi5NGKF9qv8q6JTnThYSp85OOqH2ElJ7d_zFWGtLP6QZ_92G2s1FTAb4BmYozeSkqw/exec';
 
 /**
+ * 向 Google Apps Script 發送 POST 請求，並正確處理 GAS 的 HTTP 302 轉址：
+ * GAS 執行完 doPost(e) 後會回傳 302 Found 導向 script.googleusercontent.com/macros/echo?...
+ * 在 Node.js (undici) 中若使用 redirect: 'follow'，會因保留 POST 標頭導致 googleusercontent 回傳 HTTP 404。
+ * 因此必須以 redirect: 'manual' 攔截 302 Location，再改用乾淨的 GET 請求讀取最終 JSON 回應。
+ */
+async function postToGas(gasUrl: string, payload: Record<string, any>): Promise<Response> {
+  const res = await fetch(gasUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    redirect: 'manual',
+  });
+
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location');
+    if (location) {
+      return await fetch(location, {
+        method: 'GET',
+        headers: { Accept: 'application/json, text/plain, */*' },
+        redirect: 'follow',
+      });
+    }
+  }
+
+  return res;
+}
+
+/**
  * 系統內部 Drive 代理端點：
  * 接收 Client 端上傳與刪除請求，由伺服器端直通 Google Apps Script (5TB 雲端硬碟)。
  * 好處：
@@ -30,12 +58,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: '缺少 fileId' }, { status: 400 });
       }
 
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'delete', fileId }),
-        redirect: 'follow',
-      });
+      const res = await postToGas(gasUrl, { action: 'delete', fileId });
 
       if (!res.ok) {
         return NextResponse.json(
@@ -55,12 +78,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: '缺少 folderName' }, { status: 400 });
       }
 
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'ensureFolder', folderName, key, parentFolderId }),
-        redirect: 'follow',
-      });
+      const res = await postToGas(gasUrl, { action: 'ensureFolder', folderName, key, parentFolderId });
 
       if (!res.ok) {
         return NextResponse.json(
@@ -73,16 +91,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data);
     }
 
-    // 以 uploadId 查詢檔案是否已寫入雲端硬碟 (冪等上傳用)
+    // 以 uploadId 或檔名查詢檔案是否已寫入雲端硬碟 (冪等上傳用)
     if (body.action === 'lookup') {
-      if (!body.uploadId) {
-        return NextResponse.json({ success: false, message: '缺少 uploadId' }, { status: 400 });
+      if (!body.uploadId && !body.fileName) {
+        return NextResponse.json({ success: false, message: '缺少 uploadId 或 fileName' }, { status: 400 });
       }
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'lookup', uploadId: body.uploadId, folderId: body.folderId }),
-        redirect: 'follow',
+      const res = await postToGas(gasUrl, {
+        action: 'lookup',
+        uploadId: body.uploadId,
+        fileName: body.fileName,
+        folderId: body.folderId,
       });
       if (!res.ok) {
         return NextResponse.json(
@@ -103,17 +121,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 呼叫 Google Apps Script 端點
-    const res = await fetch(gasUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        fileName,
-        mimeType: mimeType || 'application/octet-stream',
-        base64,
-        ...(folderId ? { folderId } : {}),
-        ...(uploadId ? { uploadId } : {}),
-      }),
-      redirect: 'follow',
+    const res = await postToGas(gasUrl, {
+      fileName,
+      mimeType: mimeType || 'application/octet-stream',
+      base64,
+      ...(folderId ? { folderId } : {}),
+      ...(uploadId ? { uploadId } : {}),
     });
 
     if (!res.ok) {

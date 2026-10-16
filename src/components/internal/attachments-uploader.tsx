@@ -220,7 +220,12 @@ export function AttachmentsUploader({
       )
     );
     try {
-      const recovered = await lookupUploadedFile(task.uploadId);
+      const recovered = await lookupUploadedFile(
+        task.uploadId,
+        undefined,
+        task.file.name,
+        task.file.size
+      );
       if (recovered) {
         const currentList = attachmentsRef.current || [];
         const updatedList = [

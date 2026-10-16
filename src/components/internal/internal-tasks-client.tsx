@@ -3071,7 +3071,7 @@ export function InternalTasksClient({
         users={userList}
         clients={clients}
         actionItems={actionItems}
-        onSuccess={(savedItem, createdUserDraft) => {
+        onSuccess={(savedItem, createdUserDraft, options) => {
           if (createdUserDraft) {
             setUserList((prev) => [createdUserDraft, ...prev.filter((u) => u.uid !== createdUserDraft.uid)]);
           }
@@ -3088,6 +3088,9 @@ export function InternalTasksClient({
               setActionItems((prev) =>
                 prev.map((i) => (i.id === savedItem.id ? { ...i, ...enrichedItem } : i))
               );
+              setEditingItem((prev) =>
+                prev && prev.id === savedItem.id ? { ...prev, ...enrichedItem } : prev
+              );
             } else {
               // 新增項目：永遠放在最前面！
               setActionItems((prev) => [enrichedItem, ...prev.filter((i) => i.id !== savedItem.id)]);
@@ -3095,19 +3098,21 @@ export function InternalTasksClient({
               setCollapsedProjects((prev) => ({ ...prev, [savedItem.projectId]: false }));
             }
 
-            // 背景更新伺服端快取 (不重整頁面，不遺失目前捲動軸位置)
-            router.refresh();
+            if (!options?.isBackgroundSync) {
+              // 背景更新伺服端快取 (不重整頁面，不遺失目前捲動軸位置)
+              router.refresh();
 
-            // 平滑定位到該專案或待辦項目，保持畫面視角不跳回頂部
-            setTimeout(() => {
-              const targetEl =
-                document.getElementById(`item-${savedItem.id}`) ||
-                document.getElementById(`task-item-${savedItem.id}`) ||
-                document.getElementById(`project-${savedItem.projectId}`);
-              if (targetEl) {
-                targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }
-            }, 100);
+              // 平滑定位到該專案或待辦項目，保持畫面視角不跳回頂部
+              setTimeout(() => {
+                const targetEl =
+                  document.getElementById(`item-${savedItem.id}`) ||
+                  document.getElementById(`task-item-${savedItem.id}`) ||
+                  document.getElementById(`project-${savedItem.projectId}`);
+                if (targetEl) {
+                  targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+              }, 100);
+            }
           }
         }}
       />
