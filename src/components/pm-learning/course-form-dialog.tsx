@@ -35,6 +35,8 @@ import {
   ClipboardPaste,
   ChevronDown,
   ChevronUp,
+  ArrowUp,
+  ArrowDown,
   Pin,
 } from 'lucide-react';
 import {
@@ -54,6 +56,7 @@ import {
 import {
   normalizeChecklistToChapters,
   parseTextToChecklistChapters,
+  checklistItemsToChapters,
 } from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { SmartArticleEditor } from './smart-article-editor';
@@ -193,7 +196,20 @@ export function CourseFormDialog({
       const existingList = Array.isArray(courseToEdit.defaultChecklist)
         ? courseToEdit.defaultChecklist
         : [];
-      setChapters(normalizeChecklistToChapters(existingList));
+      if (existingList.length > 0) {
+        setChapters(normalizeChecklistToChapters(existingList));
+      } else {
+        // 若 defaultChecklist 為空，自動從指派成員已建立的個人檢核清單同步載入章節結構
+        const mpValues = Object.values(courseToEdit.memberProgress || {});
+        const memberWithChecklist = mpValues.find(
+          (mp) => Array.isArray(mp?.checklist) && mp.checklist.length > 0
+        );
+        if (memberWithChecklist && Array.isArray(memberWithChecklist.checklist)) {
+          setChapters(checklistItemsToChapters(memberWithChecklist.checklist));
+        } else {
+          setChapters([]);
+        }
+      }
     } else {
       setContentType(initialType);
       setTitle('');
@@ -272,6 +288,18 @@ export function CourseFormDialog({
     setChapters((prev) => prev.filter((_, idx) => idx !== chapterIdx));
   };
 
+  const handleMoveChapter = (chapterIdx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? chapterIdx - 1 : chapterIdx + 1;
+    if (targetIdx < 0 || targetIdx >= chapters.length) return;
+    setChapters((prev) => {
+      const next = [...prev];
+      const temp = next[chapterIdx];
+      next[chapterIdx] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
+  };
+
   const handleUpdateChapterTitle = (chapterIdx: number, title: string) => {
     setChapters((prev) =>
       prev.map((c, idx) => (idx === chapterIdx ? { ...c, title } : c))
@@ -316,6 +344,24 @@ export function CourseFormDialog({
         return {
           ...c,
           subUnits: c.subUnits.filter((_, sIdx) => sIdx !== subIdx),
+        };
+      })
+    );
+  };
+
+  const handleMoveSubUnit = (chapterIdx: number, subIdx: number, direction: 'up' | 'down') => {
+    setChapters((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== chapterIdx) return c;
+        const targetIdx = direction === 'up' ? subIdx - 1 : subIdx + 1;
+        if (targetIdx < 0 || targetIdx >= c.subUnits.length) return c;
+        const nextSubs = [...c.subUnits];
+        const temp = nextSubs[subIdx];
+        nextSubs[subIdx] = nextSubs[targetIdx];
+        nextSubs[targetIdx] = temp;
+        return {
+          ...c,
+          subUnits: nextSubs,
         };
       })
     );
@@ -984,7 +1030,29 @@ export function CourseFormDialog({
                   >
                     {/* 第一階：大單元/篇目標題與操作 */}
                     <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100">
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-1.5 flex-1">
+                        {/* 大單元上下排序按鈕 */}
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            disabled={cIdx === 0}
+                            onClick={() => handleMoveChapter(cIdx, 'up')}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                            title="大單元上移"
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={cIdx === chapters.length - 1}
+                            onClick={() => handleMoveChapter(cIdx, 'down')}
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                            title="大單元下移"
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </button>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => handleToggleDialogChapter(cIdx)}
@@ -1031,7 +1099,7 @@ export function CourseFormDialog({
                         </Button>
 
                         <span className="text-[10px] text-slate-400 font-medium">
-                          {chap.subUnits.length > 0 ? `${chap.subUnits.length} 個子單元` : ''}
+                          {chap.subUnits.length > 0 ? `${chap.subUnits.length} 個子單元` : '無子單元'}
                         </span>
                         <Button
                           type="button"
@@ -1081,7 +1149,7 @@ export function CourseFormDialog({
                       </div>
                     )}
 
-                    {/* 第二階：子單元清單 (支援展開/縮回) */}
+                    {/* 第二階：子單元清單 (支援展開/縮回與上下移動排序) */}
                     {isDialogChapterExpanded(cIdx) && (
                       <div className="space-y-1.5 pl-3 border-l-2 border-indigo-100 ml-1">
                         {chap.subUnits.map((sub, sIdx) => (
@@ -1090,6 +1158,27 @@ export function CourseFormDialog({
                             className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:bg-slate-100/70 transition-colors"
                           >
                             <div className="flex items-center gap-1.5 flex-1">
+                              {/* 子單元上下排序按鈕 */}
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={sIdx === 0}
+                                  onClick={() => handleMoveSubUnit(cIdx, sIdx, 'up')}
+                                  className="p-0.5 rounded hover:bg-slate-200 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                  title="子單元上移"
+                                >
+                                  <ArrowUp className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={sIdx === chap.subUnits.length - 1}
+                                  onClick={() => handleMoveSubUnit(cIdx, sIdx, 'down')}
+                                  className="p-0.5 rounded hover:bg-slate-200 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                  title="子單元下移"
+                                >
+                                  <ArrowDown className="h-3 w-3" />
+                                </button>
+                              </div>
                               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
                               <Input
                                 value={sub}
@@ -1124,7 +1213,7 @@ export function CourseFormDialog({
                             placeholder={
                               contentType === 'article'
                                 ? `新增此篇子段落 / 探討重點 (選填)...`
-                                : `輸入子單元名稱 (例如：${cIdx + 1}.${chap.subUnits.length + 1} ...)`
+                                : `新增子單元標題 (選填，若不需子標題可留空)...`
                             }
                             className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
                             onKeyDown={(e) => {

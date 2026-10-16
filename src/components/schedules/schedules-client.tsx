@@ -12,10 +12,18 @@ import {
   BarChart3,
   ArrowDownToLine,
   Lock,
+  Search,
+  SlidersHorizontal,
+  X,
+  RotateCcw,
+  ChevronLeft,
+  List,
+  ClipboardList,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/components/admin-context';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -35,6 +43,7 @@ import {
   isTripReportOverdue,
   isTripEndedWithoutReport,
 } from '@/lib/calendar-helper';
+import { getYiehPhuiTpmNames, isTpmPerson } from '@/lib/tpm-helper';
 import {
   getBusinessTrips,
   createBusinessTrip,
@@ -45,7 +54,6 @@ import {
   getAllProjectsForInternal,
 } from '@/lib/actions';
 
-import { TripFilterPanel } from './trip-filter-panel';
 import { MonthView } from './month-view';
 import { WeekView } from './week-view';
 import { ScheduleListView } from './schedule-list-view';
@@ -609,6 +617,71 @@ export function SchedulesClient({
     }
   };
 
+  // 側邊欄展開/收合狀態与頂部進階篩選展開狀態
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [showTopAdvancedFilter, setShowTopAdvancedFilter] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('schedules_sidebar_collapsed');
+      if (saved === 'true') setIsSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('schedules_sidebar_collapsed', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  // 篩選所需下拉清單：負責 PM、燁輝 TPM、當前年份週別
+  const allPMs = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...trips.map((t) => t.pm).filter(Boolean),
+          ...projects.map((p) => p.responsiblePm).filter(Boolean),
+        ] as string[])
+      )
+        .filter((pm) => !isTpmPerson(pm))
+        .sort(),
+    [trips, projects]
+  );
+
+  const allTPMs = useMemo(() => getYiehPhuiTpmNames(users || []), [users]);
+  const weeks = useMemo(() => getYearWeeks(currentYear), [currentYear]);
+
+  const activeAdvancedCount = [
+    filter.customerId,
+    filter.projectId,
+    filter.pm,
+    filter.category,
+    filter.status,
+    filter.week,
+    filter.tpm,
+  ].filter(Boolean).length;
+
+  const hasAnyFilter = Boolean(filter.searchKeyword?.trim()) || activeAdvancedCount > 0;
+
+  const handleSearchChange = (val: string) => {
+    setFilter((prev) => ({
+      ...prev,
+      searchKeyword: val || undefined,
+    }));
+  };
+
+  const handleResetFilter = () => {
+    setFilter({});
+  };
+
   // 計算統計數字
   const pendingCount = useMemo(
     () => filteredTrips.filter((t) => t.status === 'pending').length,
@@ -652,212 +725,788 @@ export function SchedulesClient({
   }
 
   return (
-    <div className="space-y-4 print:space-y-0 print:m-0 print:p-0">
-      {/* 頂部主控台標題列 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <CalendarIcon className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight">專案行程</h1>
-              <Badge variant="secondary" className="text-xs">
-                {filteredTrips.length} 筆行程
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-              <span>跨廠出差調校、會議與專案行程追蹤</span>
-              {pendingCount > 0 && (
-                <span className="text-amber-600 font-medium">・ 待確認 {pendingCount} 筆</span>
-              )}
-              {overdueCount > 0 && (
-                <span className="text-red-600 font-bold">・ 待補出差報告 {overdueCount} 筆</span>
-              )}
-              {unreportedCount > 0 && (
-                <span className="text-orange-600 font-medium">・ 未回報 {unreportedCount} 筆</span>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="w-full print:space-y-0 print:m-0 print:p-0">
+      <div className="flex flex-col lg:flex-row gap-3.5 items-start w-full">
+        {/* ============================================================== */}
+        {/* 左側可收合側面欄位 (Collapsible Left Sidebar - 選項與操作面板)    */}
+        {/* ============================================================== */}
+        <aside
+          className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xs transition-all duration-300 shrink-0 ${
+            isSidebarCollapsed ? 'w-full lg:w-14' : 'w-full lg:w-64 xl:w-68'
+          } lg:sticky lg:top-[116px] self-start lg:max-h-[calc(100vh-7.8rem)] flex flex-col overflow-hidden z-20 print:hidden`}
+        >
+          {isSidebarCollapsed ? (
+            <>
+              {/* 行動裝置 (< lg) 收合時橫列 */}
+              <div className="flex lg:hidden items-center justify-between p-2.5 bg-white w-full">
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50 text-blue-700 font-bold text-xs rounded-lg border border-blue-200 shadow-2xs"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-blue-600" />
+                  <span>展開專案行程選項面板</span>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    {filteredTrips.length} 筆
+                  </Badge>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  {permissions.schedules.canManage && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenCreateForm()}
+                      className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>新增行程</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
 
-        {/* 頂部動作按鈕群 */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={reloadData}
-            disabled={isRefreshing}
-            className="text-xs h-9 gap-1.5"
-            title="刷新行程資料"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>刷新</span>
-          </Button>
+              {/* 桌面版 (lg+) 直立極簡圖示列 (寬度 56px) */}
+              <div className="hidden lg:flex flex-col items-center w-full py-2.5 space-y-2">
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200/80 transition-all shadow-2xs"
+                  title="展開左側專案行程選項欄"
+                >
+                  <SlidersHorizontal className="h-4 w-4 text-blue-600" />
+                </button>
 
-          {/* Notion 同步按鈕（僅在設定了 NOTION_DATABASE_ID 時顯示意義） */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleNotionSync}
-            disabled={isSyncingNotion}
-            className="text-xs h-9 gap-1.5 text-slate-700 border-slate-300 hover:bg-slate-50"
-            title={lastNotionSync ? `上次同步：${lastNotionSync}` : '從 Notion 同步最新行程'}
-          >
-            <ArrowDownToLine className={`w-3.5 h-3.5 text-slate-600 ${isSyncingNotion ? 'animate-bounce' : ''}`} />
-            <span>{isSyncingNotion ? '同步中…' : 'Notion 同步'}</span>
-            {lastNotionSync && (
-              <span className="text-[10px] text-gray-400 hidden lg:inline">({lastNotionSync})</span>
+                {permissions.schedules.canManage && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateForm()}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all"
+                    title="新增行程"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                )}
+
+                <div className="w-8 border-t border-slate-200/80 my-1" />
+
+                {/* 視圖切換快捷圖示 */}
+                <button
+                  type="button"
+                  onClick={() => setViewType('month')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all ${
+                    viewType === 'month'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="月檢視"
+                >
+                  <span>月</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('week')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all ${
+                    viewType === 'week'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="週檢視"
+                >
+                  <span>週</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('list')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all ${
+                    viewType === 'list'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="列表檢視"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('overdue')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all relative ${
+                    viewType === 'overdue'
+                      ? 'bg-red-50 text-red-700 border border-red-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={`待補件 (${overdueCount} 筆)`}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                  <span className="text-[9px] text-red-600 leading-none mt-0.5">{overdueCount}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('unreported')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all relative ${
+                    viewType === 'unreported'
+                      ? 'bg-orange-50 text-orange-700 border border-orange-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={`未回報 (${unreportedCount} 筆)`}
+                >
+                  <ClipboardList className="h-3.5 w-3.5 text-orange-600" />
+                  <span className="text-[9px] text-orange-600 leading-none mt-0.5">{unreportedCount}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('analytics')}
+                  className={`w-10 h-9 rounded-xl flex flex-col items-center justify-center text-[10px] font-bold transition-all ${
+                    viewType === 'analytics'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="出差分析"
+                >
+                  <BarChart3 className="h-3.5 w-3.5" />
+                </button>
+
+                <div className="w-8 border-t border-slate-200/80 my-1" />
+
+                {/* 動作快捷圖示 */}
+                <button
+                  type="button"
+                  onClick={reloadData}
+                  disabled={isRefreshing}
+                  className="w-10 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all"
+                  title="刷新行程資料"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNotionSync}
+                  disabled={isSyncingNotion}
+                  className="w-10 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all"
+                  title="Notion 同步"
+                >
+                  <ArrowDownToLine className={`h-3.5 w-3.5 ${isSyncingNotion ? 'animate-bounce text-blue-600' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="w-10 h-8 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-50 transition-all"
+                  title="匯出 CSV"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                </button>
+                {permissions.schedules.canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setShowHolidayModal(true)}
+                    className="w-10 h-8 rounded-xl flex items-center justify-center text-red-600 hover:bg-red-50 transition-all"
+                    title="假日管理"
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                  </button>
+                )}
+
+                {hasAnyFilter && (
+                  <button
+                    type="button"
+                    onClick={handleResetFilter}
+                    className="w-10 h-8 rounded-xl flex items-center justify-center text-rose-600 hover:bg-rose-50 border border-rose-200 transition-all"
+                    title="重設所有篩選條件"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            /* 側邊欄展開狀態 */
+            <>
+              <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/80 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-2xs">
+                    <CalendarIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-extrabold text-sm text-slate-900">專案行程</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {filteredTrips.length} 筆
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleSidebar}
+                  className="h-7 px-2 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 gap-1 font-semibold"
+                  title="縮成直行以放大右側行事曆空間"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>縮成直行</span>
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-3.5 text-xs divide-y divide-slate-100">
+                {/* 1. 操作選項與統計速覽 */}
+                <div className="space-y-2.5">
+                  {permissions.schedules.canManage && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenCreateForm()}
+                      className="w-full h-8.5 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-2xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>新增出差 / 會議行程</span>
+                    </Button>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={reloadData}
+                      disabled={isRefreshing}
+                      className="h-7.5 text-xs gap-1 justify-center text-slate-700"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      <span>刷新</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNotionSync}
+                      disabled={isSyncingNotion}
+                      className="h-7.5 text-xs gap-1 justify-center text-slate-700"
+                      title={lastNotionSync ? `上次同步：${lastNotionSync}` : '從 Notion 同步最新行程'}
+                    >
+                      <ArrowDownToLine className={`w-3 h-3 ${isSyncingNotion ? 'animate-bounce' : ''}`} />
+                      <span>{isSyncingNotion ? '同步中' : 'Notion同步'}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportCSV}
+                      className="h-7.5 text-xs gap-1 justify-center text-slate-700"
+                    >
+                      <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                      <span>匯出 CSV</span>
+                    </Button>
+                    {permissions.schedules.canManage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowHolidayModal(true)}
+                        className="h-7.5 text-xs gap-1 justify-center text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <CalendarDays className="w-3 h-3 text-red-600" />
+                        <span>假日管理</span>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* 狀態指標膠囊 (點擊可快速切換或篩選) */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFilter((prev) => ({
+                          ...prev,
+                          status: prev.status === 'pending' ? undefined : 'pending',
+                        }))
+                      }
+                      className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        filter.status === 'pending'
+                          ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold'
+                          : 'bg-amber-50/60 border-amber-200/80 text-amber-800 hover:bg-amber-100/70'
+                      }`}
+                      title="點擊篩選待確認行程"
+                    >
+                      <div className="text-[10px] text-amber-700">待確認</div>
+                      <div className="text-xs font-extrabold">{pendingCount}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewType('overdue')}
+                      className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        viewType === 'overdue'
+                          ? 'bg-red-100 border-red-400 text-red-900 font-bold'
+                          : 'bg-red-50/60 border-red-200/80 text-red-700 hover:bg-red-100/70'
+                      }`}
+                      title="點擊檢視待補出差報告"
+                    >
+                      <div className="text-[10px] text-red-600">待補報告</div>
+                      <div className="text-xs font-extrabold">{overdueCount}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewType('unreported')}
+                      className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                        viewType === 'unreported'
+                          ? 'bg-orange-100 border-orange-400 text-orange-900 font-bold'
+                          : 'bg-orange-50/60 border-orange-200/80 text-orange-700 hover:bg-orange-100/70'
+                      }`}
+                      title="點擊檢視未回報行程"
+                    >
+                      <div className="text-[10px] text-orange-600">未回報</div>
+                      <div className="text-xs font-extrabold">{unreportedCount}</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. 行程類別快速切換 */}
+                <div className="pt-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">行程類別</span>
+                    {filter.category && (
+                      <button
+                        type="button"
+                        onClick={() => setFilter((prev) => ({ ...prev, category: undefined }))}
+                        className="text-[10px] text-blue-600 hover:underline"
+                      >
+                        顯示全部
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilter((prev) => ({ ...prev, category: undefined }))}
+                      className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                        !filter.category
+                          ? 'bg-blue-600 text-white font-semibold'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      全部
+                    </button>
+                    {TRIP_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() =>
+                          setFilter((prev) => ({
+                            ...prev,
+                            category: prev.category === cat.value ? undefined : cat.value,
+                          }))
+                        }
+                        className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                          filter.category === cat.value
+                            ? 'bg-blue-600 text-white font-semibold'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. 多維度篩選選項 */}
+                <div className="pt-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">進階篩選選項</span>
+                    {hasAnyFilter && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilter}
+                        className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-0.5"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>重設</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">客戶單位</label>
+                    <select
+                      value={filter.customerId || ''}
+                      onChange={(e) => setFilter({ ...filter, customerId: e.target.value || undefined })}
+                      className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">全部客戶</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.code ? `(${c.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">所屬專案</label>
+                    <select
+                      value={filter.projectId || ''}
+                      onChange={(e) => setFilter({ ...filter, projectId: e.target.value || undefined })}
+                      className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 truncate"
+                    >
+                      <option value="">全部專案</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">負責 PM</label>
+                      <select
+                        value={filter.pm || ''}
+                        onChange={(e) => setFilter({ ...filter, pm: e.target.value || undefined })}
+                        className="w-full h-7.5 px-1.5 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 truncate"
+                      >
+                        <option value="">全部 PM</option>
+                        {allPMs.map((pm) => (
+                          <option key={pm} value={pm}>
+                            {pm}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">TPM 窗口</label>
+                      <select
+                        value={filter.tpm || ''}
+                        onChange={(e) => setFilter({ ...filter, tpm: e.target.value || undefined })}
+                        className="w-full h-7.5 px-1.5 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 truncate"
+                      >
+                        <option value="">全部 TPM</option>
+                        {allTPMs.map((tpm) => (
+                          <option key={tpm} value={tpm}>
+                            {tpm}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">確認狀態</label>
+                      <select
+                        value={filter.status || ''}
+                        onChange={(e) => setFilter({ ...filter, status: (e.target.value as any) || undefined })}
+                        className="w-full h-7.5 px-1.5 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">全部狀態</option>
+                        <option value="confirmed">已確認</option>
+                        <option value="pending">待確認</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">快速週別</label>
+                      <select
+                        value={filter.week || ''}
+                        onChange={(e) => {
+                          const w = e.target.value ? Number(e.target.value) : undefined;
+                          setFilter({ ...filter, week: w, year: w ? currentYear : undefined });
+                          if (w) {
+                            const targetWeek = weeks.find((item) => item.weekNumber === w);
+                            if (targetWeek) {
+                              setViewType('week');
+                              setCurrentWeek(targetWeek);
+                            }
+                          }
+                        }}
+                        className="w-full h-7.5 px-1.5 border border-slate-200 rounded-md bg-white text-xs text-slate-700 focus:ring-1 focus:ring-blue-500 truncate"
+                      >
+                        <option value="">不限週別</option>
+                        {weeks.map((w) => (
+                          <option key={w.weekNumber} value={w.weekNumber}>
+                            {w.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* ============================================================== */}
+        {/* 右側主內容區：最上方置頂檢視列 (含出差分析旁的搜尋/篩選) + 行事曆內容 */}
+        {/* ============================================================== */}
+        <div className="flex-1 min-w-0 w-full space-y-3">
+          {/* 置頂檢視與搜尋篩選合一工具列 (sticky 固定於頂部導覽列下方，不隨畫面捲動消失) */}
+          <div className="sticky top-[112px] z-30 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90 rounded-xl border border-slate-200 shadow-xs px-3 py-1.5 space-y-2 print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* 左側：月檢視、週檢視、列表檢視、待補件、未回報、出差分析 */}
+              <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setViewType('month')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition cursor-pointer ${
+                    viewType === 'month'
+                      ? 'bg-blue-50 text-blue-700 font-bold shadow-2xs border border-blue-200/80'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  月檢視
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewType('week')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition cursor-pointer ${
+                    viewType === 'week'
+                      ? 'bg-blue-50 text-blue-700 font-bold shadow-2xs border border-blue-200/80'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  週檢視
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewType('list')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition cursor-pointer ${
+                    viewType === 'list'
+                      ? 'bg-blue-50 text-blue-700 font-bold shadow-2xs border border-blue-200/80'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  列表檢視
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewType('overdue')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                    viewType === 'overdue'
+                      ? 'bg-red-50 text-red-700 font-bold shadow-2xs border border-red-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                  <span>待補件</span>
+                  {overdueCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-extrabold rounded-full">
+                      {overdueCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewType('unreported')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                    viewType === 'unreported'
+                      ? 'bg-orange-50 text-orange-700 font-bold shadow-2xs border border-orange-200'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  <span>📋</span>
+                  <span>未回報</span>
+                  {unreportedCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-orange-500 text-white text-[10px] font-extrabold rounded-full">
+                      {unreportedCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewType('analytics')}
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                    viewType === 'analytics'
+                      ? 'bg-blue-50 text-blue-700 font-bold shadow-2xs border border-blue-200/80'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>出差分析</span>
+                </button>
+              </div>
+
+              {/* 右側：緊鄰出差分析旁之搜尋框與篩選按鈕 */}
+              <div className="flex items-center gap-1.5 flex-1 sm:flex-initial justify-end min-w-[240px]">
+                <div className="relative flex-1 sm:w-60 md:w-72">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                  <Input
+                    value={filter.searchKeyword || ''}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    placeholder="搜尋人員 / 主題 / 專案 / 地點..."
+                    className="pl-8 pr-7 h-8 text-xs bg-slate-50/70 border-slate-200 focus:bg-white transition-colors"
+                  />
+                  {filter.searchKeyword && (
+                    <button
+                      type="button"
+                      onClick={() => handleSearchChange('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTopAdvancedFilter((prev) => !prev)}
+                  className={`h-8 px-2.5 text-xs gap-1 shrink-0 transition-colors ${
+                    showTopAdvancedFilter || activeAdvancedCount > 0
+                      ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold'
+                      : 'text-slate-600 hover:text-slate-900 border-slate-200'
+                  }`}
+                  title="展開或收合進階篩選下拉選單"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>篩選</span>
+                  {activeAdvancedCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
+                      {activeAdvancedCount}
+                    </span>
+                  )}
+                </Button>
+
+                {hasAnyFilter && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResetFilter}
+                    className="h-8 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 gap-1 shrink-0"
+                    title="清除所有搜尋與篩選條件"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="hidden xl:inline">重設</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* 若點擊頂部「篩選」按鈕，在置頂列內展開精簡橫向篩選列 */}
+            {showTopAdvancedFilter && (
+              <div className="pt-2 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">客戶單位</label>
+                  <select
+                    value={filter.customerId || ''}
+                    onChange={(e) => setFilter({ ...filter, customerId: e.target.value || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700"
+                  >
+                    <option value="">全部客戶</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">所屬專案</label>
+                  <select
+                    value={filter.projectId || ''}
+                    onChange={(e) => setFilter({ ...filter, projectId: e.target.value || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 truncate"
+                  >
+                    <option value="">全部專案</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">負責 PM</label>
+                  <select
+                    value={filter.pm || ''}
+                    onChange={(e) => setFilter({ ...filter, pm: e.target.value || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700 truncate"
+                  >
+                    <option value="">全部 PM</option>
+                    {allPMs.map((pm) => (
+                      <option key={pm} value={pm}>
+                        {pm}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">行程類別</label>
+                  <select
+                    value={filter.category || ''}
+                    onChange={(e) => setFilter({ ...filter, category: (e.target.value as TripCategory) || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700"
+                  >
+                    <option value="">全部類別</option>
+                    {TRIP_CATEGORIES.map((cat) => (
+                      <option key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">確認狀態</label>
+                  <select
+                    value={filter.status || ''}
+                    onChange={(e) => setFilter({ ...filter, status: (e.target.value as any) || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700"
+                  >
+                    <option value="">全部狀態</option>
+                    <option value="confirmed">已確認</option>
+                    <option value="pending">待確認</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">快速週別 (WK)</label>
+                  <select
+                    value={filter.week || ''}
+                    onChange={(e) => {
+                      const w = e.target.value ? Number(e.target.value) : undefined;
+                      setFilter({ ...filter, week: w, year: w ? currentYear : undefined });
+                      if (w) {
+                        const targetWeek = weeks.find((item) => item.weekNumber === w);
+                        if (targetWeek) {
+                          setViewType('week');
+                          setCurrentWeek(targetWeek);
+                        }
+                      }
+                    }}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700"
+                  >
+                    <option value="">不限週別</option>
+                    {weeks.map((w) => (
+                      <option key={w.weekNumber} value={w.weekNumber}>
+                        {w.label} ({w.startDate.getMonth() + 1}/{w.startDate.getDate()}~{w.endDate.getMonth() + 1}/{w.endDate.getDate()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">TPM 窗口 (燁輝)</label>
+                  <select
+                    value={filter.tpm || ''}
+                    onChange={(e) => setFilter({ ...filter, tpm: e.target.value || undefined })}
+                    className="w-full h-7.5 px-2 border border-slate-200 rounded-md bg-white text-xs text-slate-700"
+                  >
+                    <option value="">全部 TPM</option>
+                    {allTPMs.map((tpm) => (
+                      <option key={tpm} value={tpm}>
+                        {tpm}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
-          </Button>
+          </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportCSV}
-            className="text-xs h-9 gap-1.5 text-slate-700"
-            title="匯出為 CSV 報表"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>匯出 CSV</span>
-          </Button>
-
-          {permissions.schedules.canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowHolidayModal(true)}
-              className="text-xs h-9 gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-              title="假日管理 (放假類別與行事曆維護)"
-            >
-              <CalendarDays className="w-3.5 h-3.5 text-red-600" />
-              <span>假日管理</span>
-            </Button>
-          )}
-
-          {permissions.schedules.canManage && (
-            <Button
-              size="sm"
-              onClick={() => handleOpenCreateForm()}
-              className="text-xs h-9 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              <span>新增行程</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* 篩選面板 (搜尋、客戶、專案、類別、狀態、WK週別、TPM) - 在行事曆視圖中顯示 */}
-      {viewType !== 'analytics' && (
-        <div className="print:hidden">
-          <TripFilterPanel
-            trips={trips}
-            clients={clients}
-            projects={projects}
-            users={users}
-            currentYear={currentYear}
-            filter={filter}
-            onFilterChange={setFilter}
-            onWeekSelect={(wInfo) => {
-              setViewType('week');
-              setCurrentWeek(wInfo);
-            }}
-          />
-        </div>
-      )}
-
-      {/* 視圖切換標籤列 */}
-      <div className="flex items-center gap-1 border-b border-gray-200 bg-white rounded-t-xl px-3 pt-1 shadow-2xs print:hidden">
-        <button
-          type="button"
-          onClick={() => setViewType('month')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 cursor-pointer ${
-            viewType === 'month'
-              ? 'text-blue-600 border-blue-600'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          月檢視
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setViewType('week')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 cursor-pointer ${
-            viewType === 'week'
-              ? 'text-blue-600 border-blue-600'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          週檢視
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setViewType('list')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 cursor-pointer ${
-            viewType === 'list'
-              ? 'text-blue-600 border-blue-600'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          列表檢視
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setViewType('overdue')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
-            viewType === 'overdue'
-              ? 'text-red-600 border-red-600'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          <AlertTriangle className="w-3.5 h-3.5" />
-          <span>待補件</span>
-          {overdueCount > 0 && (
-            <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-extrabold rounded-full">
-              {overdueCount}
-            </span>
-          )}
-        </button>
-
-        {/* 🆕 未回報查詢分頁：行程已結束但尚未填寫出差紀錄 */}
-        <button
-          type="button"
-          onClick={() => setViewType('unreported')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
-            viewType === 'unreported'
-              ? 'text-orange-600 border-orange-500'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          <span>📋</span>
-          <span>未回報</span>
-          {unreportedCount > 0 && (
-            <span className="px-1.5 py-0.2 bg-orange-500 text-white text-[10px] font-extrabold rounded-full">
-              {unreportedCount}
-            </span>
-          )}
-        </button>
-
-        {/* 🆕 出差分析儀表板分頁 */}
-        <button
-          type="button"
-          onClick={() => setViewType('analytics')}
-          className={`px-4 py-2.5 text-sm font-semibold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
-            viewType === 'analytics'
-              ? 'text-blue-600 border-blue-600'
-              : 'text-gray-500 hover:text-gray-900 border-transparent'
-          }`}
-        >
-          <BarChart3 className="w-3.5 h-3.5" />
-          <span>出差分析</span>
-        </button>
-      </div>
-
-      {/* 視圖內容渲染 */}
+          {/* 視圖內容渲染 */}
       {viewType === 'month' ? (
         <MonthView
           year={currentYear}
@@ -914,6 +1563,8 @@ export function SchedulesClient({
           }}
         />
       )}
+        </div>
+      </div>
 
       {/* 新增 / 編輯行程彈跳對話框 */}
       {showTripForm && (

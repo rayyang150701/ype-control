@@ -72,7 +72,13 @@ import {
   saveUserCourseOrder,
   updateCourseHours,
 } from '@/lib/pm-learning-actions';
-import { isCourseManager, canUserEditCourse, expandChecklistToItems } from '@/lib/pm-learning-utils';
+import {
+  isCourseManager,
+  canUserEditCourse,
+  expandChecklistToItems,
+  checklistItemsToChapters,
+  isPlaceholderSubUnitTitle,
+} from '@/lib/pm-learning-utils';
 import { useToast } from '@/hooks/use-toast';
 import { uploadPMLearningFile, formatLearningFileName } from '@/lib/pm-learning-upload';
 import { MarkdownPreview } from './markdown-preview';
@@ -228,11 +234,12 @@ export function MyLearningView({
     setIsReaderOpen(true);
   };
 
-  // 篩選與搜尋狀態 (關鍵字查詢、課程領域、平台/講師、學習狀態、排序標準)
+  // 篩選與搜尋狀態 (關鍵字查詢、課程領域、主來源/平台/出版社、子主題/系列標籤、學習狀態、排序標準)
   // 正常預設：完成度最高放最下面 (進度: 低 → 高，0% ~ 100%，置頂項目優先排於最頂端)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
+  const [selectedSubSource, setSelectedSubSource] = useState<string>('全部');
   const [selectedStatus, setSelectedStatus] = useState<string>('全部');
   const [sortCriterion, setSortCriterion] = useState<
     'progress-asc' | 'custom' | 'progress-desc' | 'date-desc' | 'date-asc'
@@ -248,41 +255,82 @@ export function MyLearningView({
     return counts;
   }, [myCourses]);
 
-  // 所有可用出刊年月選項 (文章專用)
+  // 依據目前所選「載體類型」先過濾出該載體的專屬項目集合，確保知識文章、個人閱讀、線上課程、影音資源的篩選條件彼此獨立不混雜
+  const typeScopedCourses = useMemo(() => {
+    if (selectedContentType === 'all') return myCourses;
+    return myCourses.filter((c) => (c.type || 'course') === selectedContentType);
+  }, [myCourses, selectedContentType]);
+
+  // 切換載體類型時，自動重設不適用於新載體的進階篩選條件，避免不同載體條件互相干擾
+  const handleSelectContentType = (nextType: 'all' | PMLearningContentType) => {
+    setSelectedContentType(nextType);
+    setSelectedPlatform('全部');
+    setSelectedSubSource('全部');
+    setSelectedIssueDate('全部');
+    setSelectedTimeliness('全部');
+    if (nextType !== 'all' && selectedCategory !== '全部') {
+      const hasCatInNext = myCourses.some(
+        (c) => (c.type || 'course') === nextType && c.category?.trim() === selectedCategory
+      );
+      if (!hasCatInNext) {
+        setSelectedCategory('全部');
+      }
+    }
+  };
+
+  // 所有可用出刊/發布年月選項 (依目前載體類型動態過濾)
   const allIssueDates = useMemo(() => {
     const set = new Set<string>();
-    myCourses.forEach((c) => {
+    typeScopedCourses.forEach((c) => {
       if (c.issueDate?.trim()) {
         const ym = c.issueDate.trim().substring(0, 7);
         set.add(ym);
       }
     });
     return ['全部', ...Array.from(set).sort().reverse()];
-  }, [myCourses]);
+  }, [typeScopedCourses]);
 
-  // 所有可用領域選項
+  // 所有可用領域選項 (選擇特定載體如「知識文章」或「個人閱讀」時，僅顯示該載體實際擁有的領域，不混入其他載體領域)
   const allCategories = useMemo(() => {
-    const set = new Set<string>(categories || []);
-    myCourses.forEach((c) => {
+    const set = new Set<string>();
+    if (selectedContentType === 'all') {
+      (categories || []).forEach((cat) => {
+        if (cat?.trim()) set.add(cat.trim());
+      });
+    }
+    typeScopedCourses.forEach((c) => {
       if (c.category?.trim()) set.add(c.category.trim());
     });
     return ['全部', ...Array.from(set)];
-  }, [myCourses, categories]);
+  }, [typeScopedCourses, categories, selectedContentType]);
 
-  // 所有可用平台 / 專欄來源選項
+  // 主來源選項：專欄媒體 (文章) / 作者出版社 (個人閱讀) / 培訓平台講師 (線上課程) / 頻道講者 (影音) — 僅取主來源，絕不混入 subSource
   const allPlatforms = useMemo(() => {
     const set = new Set<string>();
-    myCourses.forEach((c) => {
-      const src = c.source || c.instructorOrPlatform;
-      if (src?.trim()) {
-        set.add(src.trim());
-      }
-      if (c.subSource?.trim()) {
-        set.add(c.subSource.trim());
+    typeScopedCourses.forEach((c) => {
+      const src = (c.source || c.instructorOrPlatform || '').trim();
+      if (src) {
+        set.add(src);
       }
     });
     return ['全部', ...Array.from(set)];
-  }, [myCourses]);
+  }, [typeScopedCourses]);
+
+  // 子主題 / 系列標籤選項：專欄子主題 (文章，如科技曼讀、商業解碼) / 書籍系列標籤 (個人閱讀，如商業投資) — 獨立分開過濾
+  const allSubSources = useMemo(() => {
+    const set = new Set<string>();
+    typeScopedCourses.forEach((c) => {
+      if (selectedPlatform !== '全部') {
+        const src = (c.source || c.instructorOrPlatform || '').trim();
+        if (src.toLowerCase() !== selectedPlatform.toLowerCase()) return;
+      }
+      const sub = (c.subSource || '').trim();
+      if (sub) {
+        set.add(sub);
+      }
+    });
+    return ['全部', ...Array.from(set)];
+  }, [typeScopedCourses, selectedPlatform]);
 
   const isFiltered =
     searchQuery.trim() !== '' ||
@@ -291,6 +339,7 @@ export function MyLearningView({
     selectedIssueDate !== '全部' ||
     selectedTimeliness !== '全部' ||
     selectedPlatform !== '全部' ||
+    selectedSubSource !== '全部' ||
     selectedStatus !== '全部';
 
   const handleResetFilters = () => {
@@ -300,6 +349,7 @@ export function MyLearningView({
     setSelectedIssueDate('全部');
     setSelectedTimeliness('全部');
     setSelectedPlatform('全部');
+    setSelectedSubSource('全部');
     setSelectedStatus('全部');
     setSortCriterion('progress-asc');
   };
@@ -349,13 +399,13 @@ export function MyLearningView({
         return false;
       }
 
-      // 3. 出刊年月篩選 (文章專屬)
+      // 3. 出刊/發布年月篩選
       if (selectedIssueDate !== '全部') {
         const ym = (course.issueDate || '').trim().substring(0, 7);
         if (ym !== selectedIssueDate) return false;
       }
 
-      // 4. 時效性篩選
+      // 4. 時效性篩選 (知識文章專屬)
       if (selectedTimeliness !== '全部') {
         if (selectedTimeliness === 'time_sensitive' && course.timelinessType !== 'time_sensitive') {
           return false;
@@ -365,14 +415,20 @@ export function MyLearningView({
         }
       }
 
-      // 5. 平台 / 專欄來源篩選
+      // 5A. 主來源篩選 (專欄媒體 / 作者出版社 / 培訓平台 / 頻道講者)
       if (selectedPlatform !== '全部') {
         const p = selectedPlatform.toLowerCase();
-        const matchP =
-          (course.instructorOrPlatform || '').toLowerCase() === p ||
-          (course.source || '').toLowerCase() === p ||
-          (course.subSource || '').toLowerCase() === p;
-        if (!matchP) {
+        const primarySrc = (course.source || course.instructorOrPlatform || '').trim().toLowerCase();
+        const fallbackPlatform = (course.instructorOrPlatform || '').trim().toLowerCase();
+        if (primarySrc !== p && fallbackPlatform !== p) {
+          return false;
+        }
+      }
+
+      // 5B. 子主題 / 系列標籤篩選 (專欄子主題 / 書籍系列 / 課程模組)
+      if (selectedSubSource !== '全部') {
+        const s = selectedSubSource.toLowerCase();
+        if ((course.subSource || '').trim().toLowerCase() !== s) {
           return false;
         }
       }
@@ -397,6 +453,7 @@ export function MyLearningView({
     selectedIssueDate,
     selectedTimeliness,
     selectedPlatform,
+    selectedSubSource,
     selectedStatus,
     activeMember?.uid,
   ]);
@@ -632,7 +689,7 @@ export function MyLearningView({
                 <div className="flex flex-col items-center gap-1.5 pt-1 w-full px-1.5">
                   <button
                     type="button"
-                    onClick={() => setSelectedContentType('all')}
+                    onClick={() => handleSelectContentType('all')}
                     className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs transition-all relative ${
                       selectedContentType === 'all'
                         ? 'bg-indigo-600 text-white shadow-xs font-bold ring-2 ring-indigo-300'
@@ -652,7 +709,7 @@ export function MyLearningView({
                       <button
                         key={type}
                         type="button"
-                        onClick={() => setSelectedContentType(type)}
+                        onClick={() => handleSelectContentType(type)}
                         className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs transition-all relative ${
                           isSelected
                             ? 'bg-indigo-600 text-white shadow-xs font-bold ring-2 ring-indigo-300'
@@ -782,7 +839,7 @@ export function MyLearningView({
                   <div className="space-y-1">
                     <button
                       type="button"
-                      onClick={() => setSelectedContentType('all')}
+                      onClick={() => handleSelectContentType('all')}
                       className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         selectedContentType === 'all'
                           ? 'bg-indigo-50 text-indigo-900 font-extrabold border border-indigo-200/80 shadow-2xs'
@@ -806,7 +863,7 @@ export function MyLearningView({
                         <button
                           key={type}
                           type="button"
-                          onClick={() => setSelectedContentType(type)}
+                          onClick={() => handleSelectContentType(type)}
                           className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                             isSelected
                               ? 'bg-indigo-50 text-indigo-900 font-extrabold border border-indigo-200/80 shadow-2xs'
@@ -854,11 +911,19 @@ export function MyLearningView({
                   </div>
                 </div>
 
-                {/* 4. 領域主題分類 */}
+                {/* 4. 領域主題分類 (依目前所選載體類型動態過濾顯示) */}
                 <div className="pt-3 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      領域主題
+                      {selectedContentType === 'article'
+                        ? '文章領域主題'
+                        : selectedContentType === 'book'
+                        ? '閱讀領域主題'
+                        : selectedContentType === 'course'
+                        ? '課程領域主題'
+                        : selectedContentType === 'video'
+                        ? '影音領域主題'
+                        : '領域主題'}
                     </span>
                     {onOpenCategoryManager && (
                       <button
@@ -890,59 +955,157 @@ export function MyLearningView({
                   </div>
                 </div>
 
-                {/* 5. 進階條件 (出刊月份、時效性、來源平台) */}
+                {/* 5. 依載體類型專屬分開之進階篩選條件 (知識文章 vs 個人閱讀 vs 線上課程 vs 影音資源) */}
                 <div className="pt-3 space-y-2">
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    進階條件
+                    {selectedContentType === 'article'
+                      ? '📄 知識文章篩選條件'
+                      : selectedContentType === 'book'
+                      ? '📖 個人閱讀篩選條件'
+                      : selectedContentType === 'course'
+                      ? '🎓 線上課程篩選條件'
+                      : selectedContentType === 'video'
+                      ? '🎥 影音資源篩選條件'
+                      : '進階篩選條件'}
                   </div>
-                  {/* 出刊月份 */}
-                  {(selectedContentType === 'all' || selectedContentType === 'article') &&
-                    allIssueDates.length > 1 && (
+
+                  {/* A. 主來源篩選：依載體區分為「專欄媒體 (文章)」、「作者/出版社 (閱讀)」、「培訓平台/講師 (課程)」、「頻道/講者 (影音)」 */}
+                  {allPlatforms.length > 1 && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-500">
+                        {selectedContentType === 'article'
+                          ? '專欄來源 / 出版媒體'
+                          : selectedContentType === 'book'
+                          ? '作者 / 出版社'
+                          : selectedContentType === 'course'
+                          ? '講師 / 培訓平台'
+                          : selectedContentType === 'video'
+                          ? '頻道 / 講者'
+                          : '主來源 / 平台 / 出版社'}
+                      </label>
                       <select
-                        value={selectedIssueDate}
-                        onChange={(e) => setSelectedIssueDate(e.target.value)}
-                        className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        value={selectedPlatform}
+                        onChange={(e) => {
+                          setSelectedPlatform(e.target.value);
+                          setSelectedSubSource('全部');
+                        }}
+                        className="w-full h-7.5 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       >
-                        <option value="全部">全部出刊月份</option>
-                        {allIssueDates
-                          .filter((d) => d !== '全部')
-                          .map((d) => (
-                            <option key={d} value={d}>
-                              📅 出刊: {d}
+                        <option value="全部">
+                          {selectedContentType === 'article'
+                            ? '全部專欄 / 媒體來源'
+                            : selectedContentType === 'book'
+                            ? '全部作者 / 出版社'
+                            : selectedContentType === 'course'
+                            ? '全部講師 / 培訓平台'
+                            : selectedContentType === 'video'
+                            ? '全部頻道 / 講者'
+                            : '全部來源 / 平台 / 出版社'}
+                        </option>
+                        {allPlatforms
+                          .filter((p) => p !== '全部')
+                          .map((p) => (
+                            <option key={p} value={p}>
+                              {selectedContentType === 'article'
+                                ? `📰 專欄: ${p}`
+                                : selectedContentType === 'book'
+                                ? `📚 出版社/作者: ${p}`
+                                : selectedContentType === 'course'
+                                ? `🎓 平台/講師: ${p}`
+                                : `來源: ${p}`}
                             </option>
                           ))}
                       </select>
-                    )}
-
-                  {/* 時效性質 */}
-                  {(selectedContentType === 'all' || selectedContentType === 'article') && (
-                    <select
-                      value={selectedTimeliness}
-                      onChange={(e) => setSelectedTimeliness(e.target.value)}
-                      className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="全部">全部時效性</option>
-                      <option value="time_sensitive">⚡ 時效趨勢</option>
-                      <option value="evergreen">🌱 常青知識</option>
-                    </select>
+                    </div>
                   )}
 
-                  {/* 來源平台 */}
-                  {allPlatforms.length > 1 && (
-                    <select
-                      value={selectedPlatform}
-                      onChange={(e) => setSelectedPlatform(e.target.value)}
-                      className="w-full h-7 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="全部">全部來源 / 平台</option>
-                      {allPlatforms
-                        .filter((p) => p !== '全部')
-                        .map((p) => (
-                          <option key={p} value={p}>
-                            來源: {p}
+                  {/* B. 子主題 / 系列標籤篩選：依載體區分為「專欄子主題 (文章，如科技曼讀、商業解碼)」與「書籍系列/專題標籤 (閱讀，如商業投資)」 */}
+                  {allSubSources.length > 1 && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-500">
+                        {selectedContentType === 'article'
+                          ? '專欄子主題 / 單元標籤'
+                          : selectedContentType === 'book'
+                          ? '書籍系列 / 專題標籤'
+                          : selectedContentType === 'course'
+                          ? '模組系列 / 課程標籤'
+                          : '子主題 / 系列標籤'}
+                      </label>
+                      <select
+                        value={selectedSubSource}
+                        onChange={(e) => setSelectedSubSource(e.target.value)}
+                        className="w-full h-7.5 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="全部">
+                          {selectedContentType === 'article'
+                            ? '全部專欄子主題'
+                            : selectedContentType === 'book'
+                            ? '全部書籍系列 / 專題'
+                            : selectedContentType === 'course'
+                            ? '全部課程系列標籤'
+                            : '全部子主題 / 系列標籤'}
+                        </option>
+                        {allSubSources
+                          .filter((s) => s !== '全部')
+                          .map((s) => (
+                            <option key={s} value={s}>
+                              📂 {s}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* C. 出刊 / 發布月份：依目前載體實際存在的月份動態顯示 */}
+                  {(selectedContentType === 'article' ||
+                    selectedContentType === 'book' ||
+                    selectedContentType === 'all') &&
+                    allIssueDates.length > 1 && (
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold text-slate-500">
+                          {selectedContentType === 'article'
+                            ? '文章出刊月份'
+                            : selectedContentType === 'book'
+                            ? '發布 / 出版月份'
+                            : '發布 / 出刊月份'}
+                        </label>
+                        <select
+                          value={selectedIssueDate}
+                          onChange={(e) => setSelectedIssueDate(e.target.value)}
+                          className="w-full h-7.5 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          <option value="全部">
+                            {selectedContentType === 'article'
+                              ? '全部出刊月份'
+                              : '全部發布月份'}
                           </option>
-                        ))}
-                    </select>
+                          {allIssueDates
+                            .filter((d) => d !== '全部')
+                            .map((d) => (
+                              <option key={d} value={d}>
+                                📅 {selectedContentType === 'article' ? `出刊: ${d}` : d}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+
+                  {/* D. 時效性質：僅「知識文章」專屬顯示，個人閱讀與線上課程不顯示此項 */}
+                  {selectedContentType === 'article' && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-500">
+                        文章時效性質
+                      </label>
+                      <select
+                        value={selectedTimeliness}
+                        onChange={(e) => setSelectedTimeliness(e.target.value)}
+                        className="w-full h-7.5 px-2 rounded-md border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="全部">全部時效性</option>
+                        <option value="time_sensitive">⚡ 時效趨勢</option>
+                        <option value="evergreen">🌱 常青知識</option>
+                      </select>
+                    </div>
                   )}
                 </div>
 
@@ -1393,6 +1556,21 @@ function PersonalCourseCard({
       }));
     }
 
+    // 清理舊版預設產生的單一 X.1 (如 1.1, 2.1, 3.1, 6.1) 佔位子單元，讓未設定子標題的大單元直接以大單元本身顯示
+    const chapCounts = new Map<string, number>();
+    for (const item of finalChecklist) {
+      const chap = (item?.chapterTitle || item?.title || '').trim();
+      if (chap) chapCounts.set(chap, (chapCounts.get(chap) || 0) + 1);
+    }
+    finalChecklist = finalChecklist.map((item) => {
+      const chap = (item?.chapterTitle || item?.title || '').trim();
+      const sub = (item?.title || '').trim();
+      if (chap && isPlaceholderSubUnitTitle(sub, chap, chapCounts.get(chap) || 1)) {
+        return { ...item, chapterTitle: chap, title: chap };
+      }
+      return item;
+    });
+
     // 確保個人歷程札記清單存在，若有舊 notes 則平滑遷移
     let finalReflections: PMLearningReflectionItem[] = Array.isArray(rawProgress.reflections)
       ? rawProgress.reflections
@@ -1430,11 +1608,11 @@ function PersonalCourseCard({
 
   const [progressVal, setProgressVal] = useState<number>(memberProgress.progressPercent || 0);
 
-  // 個人歷程札記 (支援時間戳記、單元標記與展開/收折)
+  // 個人歷程札記 (支援時間戳記、單元標記與展開/完全收折，預設收折)
   const [reflections, setReflections] = useState<PMLearningReflectionItem[]>(
     Array.isArray(memberProgress.reflections) ? memberProgress.reflections : []
   );
-  const [isReflectionsExpanded, setIsReflectionsExpanded] = useState<boolean>(true);
+  const [isReflectionsExpanded, setIsReflectionsExpanded] = useState<boolean>(false);
   const [isAddingReflection, setIsAddingReflection] = useState<boolean>(false);
   const [newReflectionContent, setNewReflectionContent] = useState<string>('');
   const [newReflectionUnit, setNewReflectionUnit] = useState<string>('');
@@ -1484,9 +1662,15 @@ function PersonalCourseCard({
   // 同步外部變更：只依賴純值/序列化字串，完全不放物件參考進依賴陣列
   // 這是 Error #185 的根源修復：rawProgress 是不穩定的物件參考，每次 course 變動都不同
   const currentProgressPercent = rawProgress?.progressPercent ?? 0;
-  const currentChecklistKey = JSON.stringify(rawProgress?.checklist || []);
+  const currentChecklistKey = JSON.stringify(memberProgress.checklist || []);
   const currentAttachmentsKey = JSON.stringify(rawProgress?.attachments || []);
   const currentReflectionsKey = JSON.stringify(memberProgress.reflections || []);
+
+  // 大單元與子單元標題線上編輯狀態
+  const [editingChapterOriginal, setEditingChapterOriginal] = useState<string | null>(null);
+  const [editingChapterInput, setEditingChapterInput] = useState<string>('');
+  const [editingSubUnitId, setEditingSubUnitId] = useState<string | null>(null);
+  const [editingSubUnitInput, setEditingSubUnitInput] = useState<string>('');
 
   // 供心得札記下拉選單引用的單元/章節清單
   const availableUnitOptions = useMemo(() => {
@@ -1494,12 +1678,13 @@ function PersonalCourseCard({
     const seen = new Set<string>(['全課總結 / 綜合心得']);
 
     checklist.forEach((item) => {
-      if (item.chapterTitle && !seen.has(item.chapterTitle.trim())) {
-        seen.add(item.chapterTitle.trim());
-        list.push(item.chapterTitle.trim());
+      const ct = (item.chapterTitle || '').trim();
+      if (ct && !seen.has(ct)) {
+        seen.add(ct);
+        list.push(ct);
       }
-      const title = item.title?.trim();
-      if (title && !seen.has(title)) {
+      const title = (item.title || '').trim();
+      if (title && !isPlaceholderSubUnitTitle(title, ct, 1) && !seen.has(title)) {
         seen.add(title);
         list.push(title);
       }
@@ -1561,6 +1746,10 @@ function PersonalCourseCard({
       if (res.success && res.data) {
         const updatedCourse = {
           ...course,
+          defaultChecklist:
+            patch.checklist !== undefined
+              ? checklistItemsToChapters(patch.checklist, course.defaultChecklist)
+              : course.defaultChecklist,
           memberProgress: {
             ...(course.memberProgress || {}),
             [userId]: res.data,
@@ -1661,22 +1850,42 @@ function PersonalCourseCard({
     return groups;
   }, [checklist]);
 
-  // 各大單元個別展開/縮回狀態 (預設為 true 展開)
-  const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
-
-  const isChapterExpanded = (chapterTitle: string) => {
-    return expandedChapters[chapterTitle] !== false;
+  // 判斷某個分組是否真正具備子單元（若僅有 1 筆且標題等同大單元標題或為舊版 2.1/3.1 預設值，視為「無子標題之大單元」）
+  const checkGroupHasSubUnits = (group: { chapterTitle: string; items: PMLearningChecklistItem[] }) => {
+    if (!group.chapterTitle) return true;
+    if (
+      group.items.length === 1 &&
+      isPlaceholderSubUnitTitle(group.items[0]?.title, group.chapterTitle, 1)
+    ) {
+      return false;
+    }
+    return group.items.length > 0;
   };
 
-  const handleToggleChapterExpand = (chapterTitle: string) => {
+  // 各大單元個別展開/縮回狀態 (有子單元者預設展開 true，無子單元者預設收起 false，點擊可展開新增子單元)
+  const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+
+  const isChapterExpanded = (chapterTitle: string, hasSubUnits: boolean = true) => {
+    if (expandedChapters[chapterTitle] !== undefined) {
+      return expandedChapters[chapterTitle];
+    }
+    return hasSubUnits;
+  };
+
+  const handleToggleChapterExpand = (chapterTitle: string, hasSubUnits: boolean = true) => {
+    const current = isChapterExpanded(chapterTitle, hasSubUnits);
     setExpandedChapters((prev) => ({
       ...prev,
-      [chapterTitle]: prev[chapterTitle] === false ? true : false,
+      [chapterTitle]: !current,
     }));
   };
 
   const areAllChaptersExpanded = useMemo(() => {
-    return groupedChapters.every((g) => !g.chapterTitle || isChapterExpanded(g.chapterTitle));
+    return groupedChapters.every((g) => {
+      if (!g.chapterTitle) return true;
+      const hasSubs = checkGroupHasSubUnits(g);
+      return isChapterExpanded(g.chapterTitle, hasSubs);
+    });
   }, [groupedChapters, expandedChapters]);
 
   const handleToggleAllChapters = () => {
@@ -1699,7 +1908,7 @@ function PersonalCourseCard({
     saveProgressPatch({ checklist: updated });
   };
 
-  // 全選或取消全選特定大單元底下的所有子單元
+  // 全選或取消全選特定大單元底下的所有子單元 (或直接勾選無子單元之大單元)
   const handleToggleChapterAll = (chapterTitle: string) => {
     const targetItems = checklist.filter(
       (c) => (c.chapterTitle || '').trim() === chapterTitle.trim()
@@ -1716,33 +1925,152 @@ function PersonalCourseCard({
     saveProgressPatch({ checklist: updated });
   };
 
+  // 上下移動大單元順序
+  const handleMoveChapter = (groupIdx: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? groupIdx - 1 : groupIdx + 1;
+    if (targetIdx < 0 || targetIdx >= groupedChapters.length) return;
+    const nextGroups = [...groupedChapters];
+    const temp = nextGroups[groupIdx];
+    nextGroups[groupIdx] = nextGroups[targetIdx];
+    nextGroups[targetIdx] = temp;
+
+    const updated = nextGroups.flatMap((g) => g.items);
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+  };
+
+  // 上下移動子單元順序
+  const handleMoveSubUnit = (chapterTitle: string, itemIdxInGroup: number, direction: 'up' | 'down') => {
+    const nextGroups = groupedChapters.map((g) => {
+      if (g.chapterTitle !== chapterTitle) return g;
+      const targetIdx = direction === 'up' ? itemIdxInGroup - 1 : itemIdxInGroup + 1;
+      if (targetIdx < 0 || targetIdx >= g.items.length) return g;
+      const nextItems = [...g.items];
+      const temp = nextItems[itemIdxInGroup];
+      nextItems[itemIdxInGroup] = nextItems[targetIdx];
+      nextItems[targetIdx] = temp;
+      return {
+        ...g,
+        items: nextItems,
+      };
+    });
+
+    const updated = nextGroups.flatMap((g) => g.items);
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+  };
+
+  // 修改並儲存大單元標題
+  const handleSaveChapterTitle = (oldChapterTitle: string) => {
+    const newTitle = editingChapterInput.trim();
+    if (!newTitle) {
+      toast({ title: '大單元標題不可為空', variant: 'destructive' });
+      return;
+    }
+    if (newTitle === oldChapterTitle) {
+      setEditingChapterOriginal(null);
+      return;
+    }
+
+    const groupItems = checklist.filter(
+      (c) => (c.chapterTitle || '').trim() === oldChapterTitle.trim()
+    );
+    const isSinglePlaceholder =
+      groupItems.length === 1 &&
+      isPlaceholderSubUnitTitle(groupItems[0]?.title, oldChapterTitle, 1);
+
+    const updated = checklist.map((c) => {
+      if ((c.chapterTitle || '').trim() === oldChapterTitle.trim()) {
+        return {
+          ...c,
+          chapterTitle: newTitle,
+          title: isSinglePlaceholder ? newTitle : c.title,
+        };
+      }
+      return c;
+    });
+
+    setExpandedChapters((prev) => {
+      const next = { ...prev };
+      if (next[oldChapterTitle] !== undefined) {
+        next[newTitle] = next[oldChapterTitle];
+        delete next[oldChapterTitle];
+      }
+      return next;
+    });
+    setEditingChapterOriginal(null);
+    setEditingChapterInput('');
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+    toast({ title: '已更新大單元標題', description: `已修改為「${newTitle}」` });
+  };
+
+  // 修改並儲存子單元標題
+  const handleSaveSubUnitTitle = (checkId: string) => {
+    const newTitle = editingSubUnitInput.trim();
+    if (!newTitle) {
+      toast({ title: '子單元標題不可為空', variant: 'destructive' });
+      return;
+    }
+    const updated = checklist.map((c) =>
+      c.id === checkId ? { ...c, title: newTitle } : c
+    );
+    setEditingSubUnitId(null);
+    setEditingSubUnitInput('');
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+    toast({ title: '已更新子單元標題', description: `已修改為「${newTitle}」` });
+  };
+
+  // 刪除整個大單元
+  const handleDeleteChapter = (chapterTitle: string) => {
+    const updated = checklist.filter(
+      (c) => (c.chapterTitle || '').trim() !== chapterTitle.trim()
+    );
+    setChecklist(updated);
+    saveProgressPatch({ checklist: updated });
+    toast({ title: '已刪除大單元', description: `已移除「${chapterTitle}」` });
+  };
+
   // 新增子單元至特定大單元
   const handleAddSubUnitToChecklist = (chapterTitle: string) => {
     const text = (newSubUnitTexts[chapterTitle] || '').trim();
     if (!text) return;
 
+    const targetChapter = chapterTitle.trim();
     const newItem: PMLearningChecklistItem = {
       id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: text,
-      chapterTitle: chapterTitle.trim(),
+      chapterTitle: targetChapter,
       completed: false,
     };
-    const updated = [...checklist, newItem];
+
+    const nextGroups = groupedChapters.map((g) => {
+      if (g.chapterTitle !== targetChapter) return g;
+      const isSinglePlaceholder =
+        g.items.length === 1 &&
+        isPlaceholderSubUnitTitle(g.items[0]?.title, targetChapter, 1);
+      return {
+        ...g,
+        items: isSinglePlaceholder ? [newItem] : [...g.items, newItem],
+      };
+    });
+
+    const updated = nextGroups.flatMap((g) => g.items);
     setChecklist(updated);
+    setExpandedChapters((prev) => ({ ...prev, [targetChapter]: true }));
     setNewSubUnitTexts((prev) => ({ ...prev, [chapterTitle]: '' }));
     saveProgressPatch({ checklist: updated });
   };
 
-  // 新增大單元
+  // 新增大單元 (不自動產生 1.1, 2.1, 3.1 子標題！直接以大單元本身作為檢核項)
   const handleAddChapterToChecklist = () => {
     const defaultName = `單元 ${groupedChapters.length + 1}`;
     const chapterName = newChapterText.trim() || defaultName;
 
-    // 建立新大單元時，預設帶入其第一個子單元序號 (例如 1.1 或 3.1)
-    const chapNum = groupedChapters.length + 1;
     const newItem: PMLearningChecklistItem = {
       id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      title: `${chapNum}.1`,
+      title: chapterName,
       chapterTitle: chapterName,
       completed: false,
     };
@@ -1770,8 +2098,29 @@ function PersonalCourseCard({
     saveProgressPatch({ checklist: updated });
   };
 
-  // 刪除檢核項
+  // 刪除子單元檢核項 (若為某大單元下最後一個子單元，保留大單元本身轉為無子標題狀態，避免誤刪整個大單元)
   const handleDeleteCheckItem = (checkId: string) => {
+    const target = checklist.find((c) => c.id === checkId);
+    if (!target) return;
+    const cTitle = (target.chapterTitle || '').trim();
+    if (cTitle) {
+      const sameChapterItems = checklist.filter(
+        (c) => (c.chapterTitle || '').trim() === cTitle
+      );
+      if (
+        sameChapterItems.length === 1 &&
+        !isPlaceholderSubUnitTitle(target.title, cTitle, 1)
+      ) {
+        const updated = checklist.map((c) =>
+          c.id === checkId ? { ...c, title: cTitle, completed: false } : c
+        );
+        setChecklist(updated);
+        setExpandedChapters((prev) => ({ ...prev, [cTitle]: false }));
+        saveProgressPatch({ checklist: updated });
+        return;
+      }
+    }
+
     const updated = checklist.filter((c) => c.id !== checkId);
     setChecklist(updated);
     saveProgressPatch({ checklist: updated });
@@ -1799,6 +2148,7 @@ function PersonalCourseCard({
     setNewReflectionContent('');
     setNewReflectionUnit('');
     setIsAddingReflection(false);
+    setIsReflectionsExpanded(true);
 
     // 同步更新 reflections 與 notes 欄位 (向下相容)
     const compiledNotes = updated
@@ -2879,22 +3229,56 @@ function PersonalCourseCard({
                       <div className="space-y-3">
                         {groupedChapters.map((group, gIdx) => {
                           const isStandalone = !group.chapterTitle;
+                          const hasSubUnits = checkGroupHasSubUnits(group);
                           const completedCount = group.items.filter((c) => c.completed).length;
                           const allDone = completedCount === group.items.length && group.items.length > 0;
-                          const isExpanded = isStandalone || isChapterExpanded(group.chapterTitle);
+                          const isExpanded = isStandalone || isChapterExpanded(group.chapterTitle, hasSubUnits);
+                          const isEditingThisChapter = editingChapterOriginal === group.chapterTitle;
 
                           return (
                             <div
                               key={group.chapterTitle || `group-${gIdx}`}
                               className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs space-y-0 hover:border-indigo-300 transition-all"
                             >
-                              {/* 第一階：大單元標題與展開/縮回控制列 */}
+                              {/* 第一階：大單元標題與排序、編輯、展開/縮回控制列 */}
                               {!isStandalone ? (
                                 <div
-                                  onClick={() => handleToggleChapterExpand(group.chapterTitle)}
-                                  className="flex items-center justify-between gap-2 p-3 bg-slate-50/70 hover:bg-slate-100/80 cursor-pointer select-none border-b border-slate-100 transition-colors"
+                                  onClick={() => handleToggleChapterExpand(group.chapterTitle, hasSubUnits)}
+                                  className={`flex flex-wrap items-center justify-between gap-2 p-3 cursor-pointer select-none transition-colors ${
+                                    isExpanded ? 'border-b border-slate-100' : ''
+                                  } ${
+                                    !hasSubUnits && allDone
+                                      ? 'bg-emerald-50/50 hover:bg-emerald-50/80'
+                                      : 'bg-slate-50/70 hover:bg-slate-100/80'
+                                  }`}
                                 >
                                   <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {/* 大單元上下排序按鈕 */}
+                                    <div
+                                      className="flex flex-col gap-0.5 shrink-0"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        disabled={gIdx === 0}
+                                        onClick={() => handleMoveChapter(gIdx, 'up')}
+                                        className="p-0.5 rounded hover:bg-slate-200 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                        title="向上移動此大單元"
+                                      >
+                                        <ArrowUp className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={gIdx === groupedChapters.length - 1}
+                                        onClick={() => handleMoveChapter(gIdx, 'down')}
+                                        className="p-0.5 rounded hover:bg-slate-200 text-slate-500 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                        title="向下移動此大單元"
+                                      >
+                                        <ArrowDown className="h-3 w-3" />
+                                      </button>
+                                    </div>
+
+                                    {/* 展開/縮回圖示 */}
                                     <div className="p-1 rounded-md bg-white border border-slate-200 text-slate-500 shadow-2xs shrink-0">
                                       {isExpanded ? (
                                         <ChevronUp className="h-3.5 w-3.5 text-indigo-600" />
@@ -2902,40 +3286,154 @@ function PersonalCourseCard({
                                         <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
                                       )}
                                     </div>
+
+                                    {/* 大單元直接勾選核取方格 */}
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex items-center shrink-0"
+                                      title={hasSubUnits ? '全選 / 取消全選此大單元所有子單元' : '標記此大單元為已完成'}
+                                    >
+                                      <Checkbox
+                                        checked={allDone}
+                                        onCheckedChange={() => handleToggleChapterAll(group.chapterTitle)}
+                                      />
+                                    </div>
+
                                     <span className="p-1 rounded bg-indigo-50 text-indigo-700 shrink-0">
                                       <BookOpen className="h-3.5 w-3.5" />
                                     </span>
-                                    <span className="text-xs font-bold text-slate-800 truncate">
-                                      {group.chapterTitle}
-                                    </span>
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-[10px] font-semibold shrink-0 ${
-                                        allDone
-                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                          : completedCount > 0
-                                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                          : 'bg-slate-100 text-slate-600 border-slate-200'
-                                      }`}
-                                    >
-                                      {completedCount} / {group.items.length} 子單元完成
-                                    </Badge>
+
+                                    {/* 大單元標題 或 標題編輯輸入框 */}
+                                    {isEditingThisChapter ? (
+                                      <div
+                                        className="flex items-center gap-1.5 flex-1 min-w-[180px]"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Input
+                                          value={editingChapterInput}
+                                          onChange={(e) => setEditingChapterInput(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              handleSaveChapterTitle(group.chapterTitle);
+                                            } else if (e.key === 'Escape') {
+                                              setEditingChapterOriginal(null);
+                                            }
+                                          }}
+                                          className="h-7 text-xs font-bold bg-white border-indigo-300 flex-1"
+                                          autoFocus
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSaveChapterTitle(group.chapterTitle)}
+                                          className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 shrink-0"
+                                          title="確認修改標題"
+                                        >
+                                          <Check className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingChapterOriginal(null)}
+                                          className="p-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 shrink-0"
+                                          title="取消"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <span
+                                          className={`text-xs font-bold truncate ${
+                                            !hasSubUnits && allDone
+                                              ? 'line-through text-slate-400'
+                                              : 'text-slate-800'
+                                          }`}
+                                        >
+                                          {group.chapterTitle}
+                                        </span>
+                                        {hasSubUnits ? (
+                                          <Badge
+                                            variant="outline"
+                                            className={`text-[10px] font-semibold shrink-0 ${
+                                              allDone
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                                : completedCount > 0
+                                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                            }`}
+                                          >
+                                            {completedCount} / {group.items.length} 子單元完成
+                                          </Badge>
+                                        ) : (
+                                          allDone && (
+                                            <Badge
+                                              variant="outline"
+                                              className="text-[10px] font-semibold shrink-0 bg-emerald-50 text-emerald-700 border-emerald-300"
+                                            >
+                                              已完成
+                                            </Badge>
+                                          )
+                                        )}
+                                      </>
+                                    )}
                                   </div>
 
-                                  <div className="flex items-center gap-2 shrink-0">
+                                  <div
+                                    className="flex items-center gap-1.5 shrink-0"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {hasSubUnits ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleChapterAll(group.chapterTitle)}
+                                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold hover:underline px-1 py-0.5"
+                                      >
+                                        {allDone ? '取消全選' : '全選此單元'}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleChapterExpand(group.chapterTitle, hasSubUnits)}
+                                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold hover:underline px-1.5 py-0.5 rounded hover:bg-indigo-50 flex items-center gap-0.5"
+                                        title="在此大單元下新增子單元 (選填)"
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                        <span>{isExpanded ? '收起子單元欄' : '新增子單元'}</span>
+                                      </button>
+                                    )}
+
+                                    {/* 修改大單元標題按鈕 */}
                                     <button
                                       type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleChapterAll(group.chapterTitle);
+                                      onClick={() => {
+                                        setEditingChapterOriginal(group.chapterTitle);
+                                        setEditingChapterInput(group.chapterTitle);
                                       }}
-                                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold hover:underline px-1 py-0.5"
+                                      className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                      title="修改此大單元標題"
                                     >
-                                      {allDone ? '取消全選' : '全選此單元'}
+                                      <Edit3 className="h-3.5 w-3.5" />
                                     </button>
-                                    <span className="text-xs font-medium text-slate-400">
-                                      {isExpanded ? '縮回' : '展開'}
-                                    </span>
+
+                                    {/* 刪除大單元按鈕 */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteChapter(group.chapterTitle)}
+                                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                      title="刪除此大單元"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+
+                                    {hasSubUnits && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleChapterExpand(group.chapterTitle, hasSubUnits)}
+                                        className="text-xs font-medium text-slate-400 hover:text-slate-600 pl-0.5"
+                                      >
+                                        {isExpanded ? '縮回' : '展開'}
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               ) : (
@@ -2944,7 +3442,7 @@ function PersonalCourseCard({
                                 </div>
                               )}
 
-                              {/* 第二階：子單元檢核清單 (展開時才呈現) */}
+                              {/* 第二階：子單元檢核清單與新增子單元列 (展開時才呈現) */}
                               {isExpanded && (
                                 <div className="p-3 space-y-2 bg-white">
                                   <div
@@ -2952,40 +3450,127 @@ function PersonalCourseCard({
                                       !isStandalone ? 'pl-2 border-l-2 border-indigo-100 ml-1' : ''
                                     }`}
                                   >
-                                    {group.items.map((item, idx) => (
-                                      <div
-                                        key={item?.id || `chk-idx-${idx}`}
-                                        className={`flex items-center justify-between p-2 rounded-lg border text-xs transition-colors ${
-                                          item?.completed
-                                            ? 'bg-emerald-50/60 border-emerald-200 text-slate-400'
-                                            : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
-                                        }`}
-                                      >
-                                        <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
-                                          <Checkbox
-                                            checked={Boolean(item?.completed)}
-                                            onCheckedChange={() => item?.id && handleToggleCheck(item.id)}
-                                          />
-                                          <span
-                                            className={
+                                    {hasSubUnits &&
+                                      group.items.map((item, idx) => {
+                                        const isEditingThisSub = editingSubUnitId === item?.id;
+                                        return (
+                                          <div
+                                            key={item?.id || `chk-idx-${idx}`}
+                                            className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
                                               item?.completed
-                                                ? 'line-through text-slate-400'
-                                                : 'font-semibold text-slate-800'
-                                            }
+                                                ? 'bg-emerald-50/60 border-emerald-200 text-slate-400'
+                                                : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
+                                            }`}
                                           >
-                                            {item?.title || '單元'}
-                                          </span>
-                                        </label>
-                                        <button
-                                          type="button"
-                                          onClick={() => item?.id && handleDeleteCheckItem(item.id)}
-                                          className="text-slate-300 hover:text-rose-500 transition-colors p-1"
-                                          title="刪除此單元"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                      </div>
-                                    ))}
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                              {/* 子單元上下移動排序按鈕 */}
+                                              {group.items.length > 1 && (
+                                                <div className="flex items-center gap-0.5 shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    disabled={idx === 0}
+                                                    onClick={() =>
+                                                      handleMoveSubUnit(group.chapterTitle, idx, 'up')
+                                                    }
+                                                    className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                                    title="向上移動此子單元"
+                                                  >
+                                                    <ArrowUp className="h-3 w-3" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    disabled={idx === group.items.length - 1}
+                                                    onClick={() =>
+                                                      handleMoveSubUnit(group.chapterTitle, idx, 'down')
+                                                    }
+                                                    className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-indigo-600 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                                                    title="向下移動此子單元"
+                                                  >
+                                                    <ArrowDown className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              )}
+
+                                              {isEditingThisSub ? (
+                                                <div className="flex items-center gap-1.5 flex-1">
+                                                  <Input
+                                                    value={editingSubUnitInput}
+                                                    onChange={(e) => setEditingSubUnitInput(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter' && item?.id) {
+                                                        e.preventDefault();
+                                                        handleSaveSubUnitTitle(item.id);
+                                                      } else if (e.key === 'Escape') {
+                                                        setEditingSubUnitId(null);
+                                                      }
+                                                    }}
+                                                    className="h-6.5 text-xs bg-white border-indigo-300 flex-1"
+                                                    autoFocus
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => item?.id && handleSaveSubUnitTitle(item.id)}
+                                                    className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 shrink-0"
+                                                    title="儲存子單元標題"
+                                                  >
+                                                    <Check className="h-3 w-3" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditingSubUnitId(null)}
+                                                    className="p-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 shrink-0"
+                                                    title="取消"
+                                                  >
+                                                    <X className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <label className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer select-none">
+                                                  <Checkbox
+                                                    checked={Boolean(item?.completed)}
+                                                    onCheckedChange={() =>
+                                                      item?.id && handleToggleCheck(item.id)
+                                                    }
+                                                  />
+                                                  <span
+                                                    className={
+                                                      item?.completed
+                                                        ? 'line-through text-slate-400 truncate'
+                                                        : 'font-semibold text-slate-800 truncate'
+                                                    }
+                                                  >
+                                                    {item?.title || '單元'}
+                                                  </span>
+                                                </label>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  if (item?.id) {
+                                                    setEditingSubUnitId(item.id);
+                                                    setEditingSubUnitInput(item.title || '');
+                                                  }
+                                                }}
+                                                className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors p-1"
+                                                title="修改此子單元標題"
+                                              >
+                                                <Edit3 className="h-3.5 w-3.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => item?.id && handleDeleteCheckItem(item.id)}
+                                                className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors p-1"
+                                                title="刪除此子單元"
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
 
                                     {/* 在此大單元下新增子單元 */}
                                     {!isStandalone && (
@@ -3004,7 +3589,7 @@ function PersonalCourseCard({
                                               handleAddSubUnitToChecklist(group.chapterTitle);
                                             }
                                           }}
-                                          placeholder={`在此單元新增子單元 (例如：${gIdx + 1}.${group.items.length + 1})...`}
+                                          placeholder="在此單元新增子單元標題 (選填，若無子標題可不填)..."
                                           className="h-7 text-xs bg-slate-50 flex-1 focus:bg-white"
                                         />
                                         <Button
@@ -3059,10 +3644,26 @@ function PersonalCourseCard({
             </>
           )}
 
-          {/* 3. 個人研習歷程與心得札記 (支援時間軸、單元關聯與折疊展開) */}
+          {/* 3. 個人研習歷程與心得札記 (支援時間軸、單元關聯與完全折疊/展開) */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div
+                onClick={() => {
+                  if (reflections.length > 0) {
+                    setIsReflectionsExpanded((prev) => !prev);
+                  }
+                }}
+                className={`flex items-center gap-2 ${
+                  reflections.length > 0 ? 'cursor-pointer select-none hover:opacity-80 transition-opacity' : ''
+                }`}
+                title={
+                  reflections.length > 0
+                    ? isReflectionsExpanded
+                      ? '點擊收合全部研習歷程'
+                      : '點擊展開研習歷程'
+                    : undefined
+                }
+              >
                 <MessageSquare className="h-4 w-4 text-indigo-600" />
                 <span className="text-sm font-bold text-slate-800">
                   個人研習歷程與心得札記
@@ -3076,19 +3677,19 @@ function PersonalCourseCard({
               </div>
 
               <div className="flex items-center gap-2">
-                {reflections.length > 1 && (
+                {reflections.length > 0 && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => setIsReflectionsExpanded(!isReflectionsExpanded)}
                     className="h-7 text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/60 gap-1 font-medium"
-                    title={isReflectionsExpanded ? '縮回僅顯示最新 1 則' : '展開完整歷史歷程'}
+                    title={isReflectionsExpanded ? '完全收合研習歷程' : '展開全部研習歷程'}
                   >
                     {isReflectionsExpanded ? (
                       <>
                         <ChevronUp className="h-3.5 w-3.5 text-indigo-500" />
-                        <span>縮回僅顯示最新 (1 則)</span>
+                        <span>收合全部歷程</span>
                       </>
                     ) : (
                       <>
@@ -3242,18 +3843,20 @@ function PersonalCourseCard({
               </div>
             )}
 
-            {/* 札記時間軸展示區 */}
+            {/* 札記時間軸展示區 (收合時完全隱藏，不留單則) */}
             {reflections.length === 0 ? (
-              <div className="text-center py-6 px-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl">
-                <MessageSquare className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
-                <p className="text-xs text-slate-600 font-medium">尚無研習歷程與心得札記</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  線上研習跨越不同時間點，點擊上方「記錄新想法」記錄您在不同階段的心得與思考！
-                </p>
-              </div>
-            ) : (
+              isAddingReflection ? null : (
+                <div className="text-center py-6 px-4 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl">
+                  <MessageSquare className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
+                  <p className="text-xs text-slate-600 font-medium">尚無研習歷程與心得札記</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    線上研習跨越不同時間點，點擊上方「記錄新想法」記錄您在不同階段的心得與思考！
+                  </p>
+                </div>
+              )
+            ) : isReflectionsExpanded ? (
               <div className="space-y-2.5">
-                {(isReflectionsExpanded ? reflections : reflections.slice(0, 1)).map((ref) => {
+                {reflections.map((ref) => {
                   const isEditingThis = editingReflectionId === ref.id;
 
                   if (isEditingThis) {
@@ -3427,22 +4030,8 @@ function PersonalCourseCard({
                     </div>
                   );
                 })}
-
-                {/* 收折時的展開提示按鈕 */}
-                {!isReflectionsExpanded && reflections.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setIsReflectionsExpanded(true)}
-                    className="w-full py-2 bg-indigo-50/40 hover:bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100/70 flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                    <span>
-                      展開其餘 {reflections.length - 1} 則歷史心得札記（共 {reflections.length} 則）
-                    </span>
-                  </button>
-                )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* 4. 相關附件 / 雲端連結 (串聯個人整理的重點簡報或實作成果) */}

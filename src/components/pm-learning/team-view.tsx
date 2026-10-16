@@ -78,6 +78,8 @@ export function TeamView({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContentType, setSelectedContentType] = useState<'all' | PMLearningContentType>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('全部');
+  const [selectedSubSource, setSelectedSubSource] = useState<string>('全部');
   const [selectedIssueDate, setSelectedIssueDate] = useState<string>('全部');
   const [selectedTimeliness, setSelectedTimeliness] = useState<string>('全部');
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
@@ -156,32 +158,83 @@ export function TeamView({
     return counts;
   }, [courses]);
 
-  // 所有可用出刊年月選項 (文章專用)
+  // 依目前選取之載體類型先過濾出專屬項目集合
+  const typeScopedCourses = useMemo(() => {
+    if (selectedContentType === 'all') return courses;
+    return courses.filter((c) => (c.type || 'course') === selectedContentType);
+  }, [courses, selectedContentType]);
+
+  const handleSelectContentType = (nextType: 'all' | PMLearningContentType) => {
+    setSelectedContentType(nextType);
+    setSelectedPlatform('全部');
+    setSelectedSubSource('全部');
+    setSelectedIssueDate('全部');
+    setSelectedTimeliness('全部');
+    if (nextType !== 'all' && selectedCategory !== '全部') {
+      const hasCat = courses.some(
+        (c) => (c.type || 'course') === nextType && c.category?.trim() === selectedCategory
+      );
+      if (!hasCat) setSelectedCategory('全部');
+    }
+  };
+
+  // 所有可用出刊/發布年月選項 (依目前載體動態過濾)
   const allIssueDates = useMemo(() => {
     const set = new Set<string>();
-    courses.forEach((c) => {
+    typeScopedCourses.forEach((c) => {
       if (c.issueDate?.trim()) {
         const ym = c.issueDate.trim().substring(0, 7);
         set.add(ym);
       }
     });
     return ['全部', ...Array.from(set).sort().reverse()];
-  }, [courses]);
+  }, [typeScopedCourses]);
 
-  // 所有分類選項
+  // 所有分類選項 (選擇特定載體時僅顯示該載體擁有的領域)
   const allCategories = useMemo(() => {
-    const set = new Set<string>(categories || []);
-    courses.forEach((c) => {
+    const set = new Set<string>();
+    if (selectedContentType === 'all') {
+      (categories || []).forEach((cat) => {
+        if (cat?.trim()) set.add(cat.trim());
+      });
+    }
+    typeScopedCourses.forEach((c) => {
       if (c.category?.trim()) set.add(c.category.trim());
     });
     return ['全部', ...Array.from(set)];
-  }, [courses, categories]);
+  }, [typeScopedCourses, categories, selectedContentType]);
+
+  // 主來源選項 (專欄媒體 / 作者出版社 / 培訓平台 / 頻道講者)
+  const allPlatforms = useMemo(() => {
+    const set = new Set<string>();
+    typeScopedCourses.forEach((c) => {
+      const src = (c.source || c.instructorOrPlatform || '').trim();
+      if (src) set.add(src);
+    });
+    return ['全部', ...Array.from(set)];
+  }, [typeScopedCourses]);
+
+  // 子主題 / 系列標籤選項 (專欄子主題 / 書籍系列 / 課程模組)
+  const allSubSources = useMemo(() => {
+    const set = new Set<string>();
+    typeScopedCourses.forEach((c) => {
+      if (selectedPlatform !== '全部') {
+        const src = (c.source || c.instructorOrPlatform || '').trim();
+        if (src.toLowerCase() !== selectedPlatform.toLowerCase()) return;
+      }
+      const sub = (c.subSource || '').trim();
+      if (sub) set.add(sub);
+    });
+    return ['全部', ...Array.from(set)];
+  }, [typeScopedCourses, selectedPlatform]);
 
   // 篩選啟用判定
   const isFiltered =
     searchQuery.trim() !== '' ||
     selectedContentType !== 'all' ||
     selectedCategory !== '全部' ||
+    selectedPlatform !== '全部' ||
+    selectedSubSource !== '全部' ||
     selectedIssueDate !== '全部' ||
     selectedTimeliness !== '全部' ||
     selectedMemberFilter !== 'all';
@@ -190,6 +243,8 @@ export function TeamView({
     setSearchQuery('');
     setSelectedContentType('all');
     setSelectedCategory('全部');
+    setSelectedPlatform('全部');
+    setSelectedSubSource('全部');
     setSelectedIssueDate('全部');
     setSelectedTimeliness('全部');
     setSelectedMemberFilter('all');
@@ -235,7 +290,7 @@ export function TeamView({
         return false;
       }
 
-      // 3. 出刊年月比對 (文章專屬)
+      // 3. 出刊/發布年月比對
       if (selectedIssueDate !== '全部') {
         const ym = (course.issueDate || '').trim().substring(0, 7);
         if (ym !== selectedIssueDate) return false;
@@ -251,7 +306,24 @@ export function TeamView({
         }
       }
 
-      // 5. 成員篩選比對
+      // 5A. 主來源比對
+      if (selectedPlatform !== '全部') {
+        const p = selectedPlatform.toLowerCase();
+        const primarySrc = (course.source || course.instructorOrPlatform || '').trim().toLowerCase();
+        const fallbackPlatform = (course.instructorOrPlatform || '').trim().toLowerCase();
+        if (primarySrc !== p && fallbackPlatform !== p) {
+          return false;
+        }
+      }
+
+      // 5B. 子主題 / 系列標籤比對
+      if (selectedSubSource !== '全部') {
+        if ((course.subSource || '').trim().toLowerCase() !== selectedSubSource.toLowerCase()) {
+          return false;
+        }
+      }
+
+      // 6. 成員篩選比對
       if (selectedMemberFilter !== 'all' && !(course.assignedUserIds || []).includes(selectedMemberFilter)) {
         return false;
       }
@@ -263,6 +335,8 @@ export function TeamView({
     searchQuery,
     selectedContentType,
     selectedCategory,
+    selectedPlatform,
+    selectedSubSource,
     selectedIssueDate,
     selectedTimeliness,
     selectedMemberFilter,
@@ -380,7 +454,7 @@ export function TeamView({
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
           <button
             type="button"
-            onClick={() => setSelectedContentType('all')}
+            onClick={() => handleSelectContentType('all')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               selectedContentType === 'all'
                 ? 'bg-white text-indigo-900 shadow-xs'
@@ -401,7 +475,7 @@ export function TeamView({
               <button
                 key={type}
                 type="button"
-                onClick={() => setSelectedContentType(type)}
+                onClick={() => handleSelectContentType(type)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   isSelected
                     ? 'bg-white text-indigo-900 shadow-xs'
@@ -459,11 +533,19 @@ export function TeamView({
         </div>
       </div>
 
-      {/* 隨選領域快速標籤列 (Category Quick Pills - 跨月份跨出刊隨點即查) */}
+      {/* 隨選領域快速標籤列 (依目前載體動態過濾) */}
       <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-2 overflow-x-auto text-xs">
         <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
           <Tag className="w-3.5 h-3.5 text-indigo-600" />
-          主題領域隨選:
+          {selectedContentType === 'article'
+            ? '文章領域:'
+            : selectedContentType === 'book'
+            ? '書籍領域:'
+            : selectedContentType === 'course'
+            ? '課程領域:'
+            : selectedContentType === 'video'
+            ? '影音領域:'
+            : '主題領域隨選:'}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {allCategories.map((cat) => (
@@ -507,36 +589,89 @@ export function TeamView({
             )}
           </div>
 
-          {/* 出刊月份/期別下拉 (文章專用) */}
-          {(selectedContentType === 'all' || selectedContentType === 'article') &&
-            allIssueDates.length > 1 && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-indigo-500 hidden sm:inline" />
-                <select
-                  value={selectedIssueDate}
-                  onChange={(e) => setSelectedIssueDate(e.target.value)}
-                  className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="全部">全部出刊月份</option>
-                  {allIssueDates
-                    .filter((d) => d !== '全部')
-                    .map((d) => (
-                      <option key={d} value={d}>
-                        📅 出刊: {d}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
+          {/* 主來源下拉 (依載體區分：專欄媒體 / 作者出版社 / 講師平台 / 頻道講者) */}
+          {allPlatforms.length > 1 && (
+            <select
+              value={selectedPlatform}
+              onChange={(e) => setSelectedPlatform(e.target.value)}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="全部">
+                {selectedContentType === 'article'
+                  ? '全部專欄/媒體'
+                  : selectedContentType === 'book'
+                  ? '全部作者/出版社'
+                  : selectedContentType === 'course'
+                  ? '全部講師/平台'
+                  : selectedContentType === 'video'
+                  ? '全部頻道/講者'
+                  : '全部來源/平台'}
+              </option>
+              {allPlatforms
+                .filter((p) => p !== '全部')
+                .map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+            </select>
+          )}
 
-          {/* 時效性質下拉 */}
-          {(selectedContentType === 'all' || selectedContentType === 'article') && (
+          {/* 子主題 / 系列標籤下拉 (與主來源分開，依載體動態過濾) */}
+          {allSubSources.length > 1 && (
+            <select
+              value={selectedSubSource}
+              onChange={(e) => setSelectedSubSource(e.target.value)}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="全部">
+                {selectedContentType === 'article'
+                  ? '全部專欄子主題'
+                  : selectedContentType === 'book'
+                  ? '全部書籍系列/標籤'
+                  : selectedContentType === 'course'
+                  ? '全部模組系列'
+                  : '全部子主題/系列'}
+              </option>
+              {allSubSources
+                .filter((s) => s !== '全部')
+                .map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+            </select>
+          )}
+
+          {/* 出刊月份/期別下拉 (知識文章專用) */}
+          {selectedContentType === 'article' && allIssueDates.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-indigo-500 hidden sm:inline" />
+              <select
+                value={selectedIssueDate}
+                onChange={(e) => setSelectedIssueDate(e.target.value)}
+                className="h-9 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50/40 text-xs font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="全部">全部出刊月份</option>
+                {allIssueDates
+                  .filter((d) => d !== '全部')
+                  .map((d) => (
+                    <option key={d} value={d}>
+                      📅 出刊: {d}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {/* 時效性質下拉 (知識文章專用) */}
+          {selectedContentType === 'article' && (
             <select
               value={selectedTimeliness}
               onChange={(e) => setSelectedTimeliness(e.target.value)}
               className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              <option value="全部">全部時效性</option>
+              <option value="全部">全部文章時效</option>
               <option value="time_sensitive">⚡ 時效趨勢 (近期關鍵)</option>
               <option value="evergreen">🌱 常青知識 (長期適用)</option>
             </select>

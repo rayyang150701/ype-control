@@ -4,6 +4,21 @@ import { PMLearningChapterUnit, PMLearningChecklistItem } from '@/types/pm-learn
 export { type PMLearningChapterUnit };
 
 /**
+ * 判斷子單元標題是否為系統舊版自動產生的預設佔位序號 (如 "1.1", "2.1", "3.1") 或與大單元同名之佔位項
+ */
+export function isPlaceholderSubUnitTitle(
+  subTitle: string | undefined,
+  chapterTitle: string | undefined,
+  totalSubsInChapter: number
+): boolean {
+  const t = (subTitle || '').trim();
+  const ct = (chapterTitle || '').trim();
+  if (!t || t === ct) return true;
+  if (totalSubsInChapter === 1 && /^\d+\.1$/.test(t)) return true;
+  return false;
+}
+
+/**
  * 將各種格式的 defaultChecklist 正規化為統一的兩階 PMLearningChapterUnit[]
  */
 export function normalizeChecklistToChapters(raw: any[]): PMLearningChapterUnit[] {
@@ -24,11 +39,15 @@ export function normalizeChecklistToChapters(raw: any[]): PMLearningChapterUnit[
         };
       }
       const title = item.title || `單元 ${idx + 1}`;
-      const subUnits = Array.isArray(item.subUnits)
+      const rawSubs = Array.isArray(item.subUnits)
         ? item.subUnits
-            .map((s: any) => (typeof s === 'string' ? s : s?.title || ''))
+            .map((s: any) => (typeof s === 'string' ? s : s?.title || '').trim())
             .filter(Boolean)
         : [];
+      const subUnits =
+        rawSubs.length === 1 && isPlaceholderSubUnitTitle(rawSubs[0], title, 1)
+          ? []
+          : rawSubs;
       return {
         id: item.id || `chap-${Date.now()}-${idx}`,
         title,
@@ -44,6 +63,72 @@ export function normalizeChecklistToChapters(raw: any[]): PMLearningChapterUnit[
   // 透過智慧解析器轉換為兩階章節單元
   const text = raw.filter((s) => typeof s === 'string' && s.trim()).join('\n');
   return parseTextToChecklistChapters(text);
+}
+
+/**
+ * 將個人的 PMLearningChecklistItem[] 反轉回兩階 PMLearningChapterUnit[]
+ * 保留大單元與子單元的順序與結構，並自動過濾舊版預設的 2.1, 3.1 單一佔位子標題
+ */
+export function checklistItemsToChapters(
+  checklist: PMLearningChecklistItem[],
+  existingDefaultChecklist?: (string | PMLearningChapterUnit)[]
+): PMLearningChapterUnit[] {
+  if (!Array.isArray(checklist) || checklist.length === 0) return [];
+
+  const existingMetaMap = new Map<string, Partial<PMLearningChapterUnit>>();
+  if (Array.isArray(existingDefaultChecklist)) {
+    existingDefaultChecklist.forEach((entry) => {
+      if (entry && typeof entry === 'object' && entry.title) {
+        existingMetaMap.set(entry.title.trim(), {
+          id: entry.id,
+          content: entry.content,
+          url: entry.url,
+          description: entry.description,
+        });
+      }
+    });
+  }
+
+  const groups: { chapterTitle: string; items: PMLearningChecklistItem[] }[] = [];
+  const map = new Map<string, PMLearningChecklistItem[]>();
+
+  checklist.forEach((item) => {
+    if (!item) return;
+    const cTitle = (item.chapterTitle || '').trim();
+    if (cTitle) {
+      if (!map.has(cTitle)) {
+        const list: PMLearningChecklistItem[] = [];
+        map.set(cTitle, list);
+        groups.push({ chapterTitle: cTitle, items: list });
+      }
+      map.get(cTitle)!.push(item);
+    } else {
+      const standaloneTitle = (item.title || '').trim();
+      if (standaloneTitle) {
+        groups.push({ chapterTitle: standaloneTitle, items: [item] });
+      }
+    }
+  });
+
+  return groups.map((g, idx) => {
+    const meta = existingMetaMap.get(g.chapterTitle) || {};
+    const isSinglePlaceholder =
+      g.items.length === 1 &&
+      isPlaceholderSubUnitTitle(g.items[0]?.title, g.chapterTitle, 1);
+
+    const subUnits = isSinglePlaceholder
+      ? []
+      : g.items.map((it) => (it.title || '').trim()).filter(Boolean);
+
+    return {
+      id: meta.id || `chap-${Date.now()}-${idx}`,
+      title: g.chapterTitle,
+      subUnits,
+      content: meta.content,
+      url: meta.url,
+      description: meta.description,
+    };
+  });
 }
 
 /**
@@ -79,8 +164,8 @@ export function parseTextToChecklistChapters(text: string): PMLearningChapterUni
     if (/^第\s*[0-9一二三四五六七八九十百]+\s*[篇章單元節部集回講期]/i.test(line)) return true;
     // 單元1, 單元 1, 單元1., 單元一, 篇目1, 篇目一
     if (/^(單元|篇目|章節|主題)\s*[0-9一二三四五六七八九十]+/i.test(line)) return true;
-    // Chapter 1, Section 1, Module 1, Unit 1, Part 1, Part I, Part A, Episode 1
-    if (/^(Chapter|Module|Section|Unit|Part|Episode)\s*([0-9一二三四五六七八九十]+|[ivxlcdm]+|[a-z])/i.test(line)) return true;
+    // Chapter 1, Section 1, Module 1, Unit 1, Part 1, Part I, Part A, Episode 1, Week 1
+    if (/^(Chapter|Module|Section|Unit|Part|Episode|Week)\s*([0-9一二三四五六七八九十]+|[ivxlcdm]+|[a-z])/i.test(line)) return true;
     // 前言, 導讀, 序章, 總結, 結語, 附錄
     if (/^(前言|序言|序章|導讀|引言|總結|結語|附錄|後記)[\s：:]/i.test(line)) return true;
     // 1. 或 1、 或 (一) 或 一、後面接非數字且不是小數點 (例如 "1. 別人出錢出力的高利潤生意", "一、商業模式地圖")
@@ -127,7 +212,7 @@ export function parseTextToChecklistChapters(text: string): PMLearningChapterUni
 
 /**
  * 將 defaultChecklist 展開為每位成員個人的 PMLearningChecklistItem[]
- * 確保保留 chapterTitle 兩階關聯
+ * 確保保留 chapterTitle 兩階關聯；若大單元無子單元，則以大單元本身作為單一檢核項（不產生 2.1, 3.1）
  */
 export function expandChecklistToItems(
   defaultChecklist: (string | PMLearningChapterUnit)[]
@@ -143,12 +228,22 @@ export function expandChecklistToItems(
         items.push({
           id: `chk-${Date.now()}-${counter++}`,
           title: trimmed,
+          chapterTitle: trimmed,
           completed: false,
         });
       }
     } else if (entry && typeof entry === 'object') {
       const chapterTitle = entry.title?.trim() || `單元 ${cIdx + 1}`;
-      const subUnits = Array.isArray(entry.subUnits) ? entry.subUnits : [];
+      const rawSubs = Array.isArray(entry.subUnits)
+        ? entry.subUnits
+            .map((s: any) => (typeof s === 'string' ? s : s?.title || '').trim())
+            .filter(Boolean)
+        : [];
+      const subUnits =
+        rawSubs.length === 1 && isPlaceholderSubUnitTitle(rawSubs[0], chapterTitle, 1)
+          ? []
+          : rawSubs;
+
       if (subUnits.length === 0) {
         items.push({
           id: `chk-${Date.now()}-${counter++}`,
@@ -158,8 +253,7 @@ export function expandChecklistToItems(
         });
       } else {
         for (let sIdx = 0; sIdx < subUnits.length; sIdx++) {
-          const sub = subUnits[sIdx];
-          const subTitle = (typeof sub === 'string' ? sub : (sub as any)?.title || '').trim();
+          const subTitle = subUnits[sIdx];
           if (subTitle) {
             items.push({
               id: `chk-${Date.now()}-${counter++}`,

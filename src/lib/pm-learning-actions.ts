@@ -7,7 +7,12 @@ import { PMLearningCourse, PMLearningMemberProgress, DEFAULT_PM_CATEGORIES, PMLe
 
 const SYSTEM_RECORD_KEY = '__SYSTEM_PM_LEARNING__';
 
-import { isCourseManager, expandChecklistToItems } from '@/lib/pm-learning-utils';
+import {
+  isCourseManager,
+  expandChecklistToItems,
+  checklistItemsToChapters,
+  isPlaceholderSubUnitTitle,
+} from '@/lib/pm-learning-utils';
 
 /**
  * 篩選符合條件的億威電子 PMO / PM 部門人員
@@ -397,7 +402,7 @@ function fromDbRecord(c: any): PMLearningCourse {
 
   const meta = (typeof rawObj._itemMetadata === 'object' && rawObj._itemMetadata) || {};
 
-  const defaultChecklist = Array.isArray(c.default_checklist)
+  let defaultChecklist = Array.isArray(c.default_checklist)
     ? c.default_checklist
     : Array.isArray(c.defaultChecklist)
     ? c.defaultChecklist
@@ -433,6 +438,33 @@ function fromDbRecord(c: any): PMLearningCourse {
           ...item,
           completed: completedTitles.has(item.title.trim()),
         }));
+      }
+
+      // 清理舊版預設產生的單一佔位子標題 (例如大單元下僅有唯一的 "2.1", "3.1", "6.1")
+      if (finalChecklist.length > 0) {
+        const chapterCounts = new Map<string, number>();
+        finalChecklist.forEach((item: any) => {
+          const ct = (item?.chapterTitle || '').trim();
+          if (ct) {
+            chapterCounts.set(ct, (chapterCounts.get(ct) || 0) + 1);
+          }
+        });
+        finalChecklist = finalChecklist.map((item: any) => {
+          const ct = (item?.chapterTitle || '').trim();
+          const count = ct ? chapterCounts.get(ct) || 0 : 0;
+          if (ct && count === 1 && isPlaceholderSubUnitTitle(item?.title, ct, 1)) {
+            return {
+              ...item,
+              title: ct,
+            };
+          }
+          return item;
+        });
+      }
+
+      // 若課程本身 defaultChecklist 為空，但成員已有建立章節清單，自動同步回填至 defaultChecklist
+      if (defaultChecklist.length === 0 && finalChecklist.length > 0) {
+        defaultChecklist = checklistItemsToChapters(finalChecklist);
       }
 
       // 確保個人歷程札記清單存在，若有既有 notes 且無 reflections 則平滑遷移為第一筆歷程
@@ -484,11 +516,7 @@ function fromDbRecord(c: any): PMLearningCourse {
       : Array.isArray(c.assignedUserNames)
       ? c.assignedUserNames
       : [],
-    defaultChecklist: Array.isArray(c.default_checklist)
-      ? c.default_checklist
-      : Array.isArray(c.defaultChecklist)
-      ? c.defaultChecklist
-      : [],
+    defaultChecklist,
     memberProgress: cleanMemberProgress,
     isPinned: Boolean(c.is_pinned ?? c.isPinned ?? meta.isPinned ?? false),
     content: c.content || meta.content || '',
@@ -1092,15 +1120,27 @@ export async function updatePMLearningCourse(
         const existingProg = updatedMemberProgress[uid];
         if (existingProg) {
           const oldChecklist = Array.isArray(existingProg.checklist) ? existingProg.checklist : [];
-          const completedTitles = new Set(
-            oldChecklist
-              .filter((c) => c.completed)
-              .map((c) => (c.title || '').trim())
-          );
-          const updatedChecklist = newItems.map((item) => ({
-            ...item,
-            completed: completedTitles.has(item.title.trim()),
-          }));
+          const completedKeys = new Set<string>();
+          oldChecklist.forEach((c) => {
+            if (c?.completed) {
+              const t = (c.title || '').trim();
+              const ct = (c.chapterTitle || '').trim();
+              if (t) completedKeys.add(t);
+              if (ct && t) completedKeys.add(`${ct}::${t}`);
+              if (ct && isPlaceholderSubUnitTitle(t, ct, 1)) {
+                completedKeys.add(ct);
+                completedKeys.add(`${ct}::${ct}`);
+              }
+            }
+          });
+          const updatedChecklist = newItems.map((item) => {
+            const t = (item.title || '').trim();
+            const ct = (item.chapterTitle || '').trim();
+            return {
+              ...item,
+              completed: completedKeys.has(`${ct}::${t}`) || completedKeys.has(t),
+            };
+          });
           updatedMemberProgress[uid] = {
             ...existingProg,
             checklist: updatedChecklist,
@@ -1234,13 +1274,21 @@ export async function updatePMMemberProgress(
 
     targetMemberProgress[userId] = updatedProgress;
     targetCourse.memberProgress = targetMemberProgress;
+    if (progressPatch.checklist !== undefined) {
+      targetCourse.defaultChecklist = checklistItemsToChapters(
+        progressPatch.checklist,
+        targetCourse.defaultChecklist
+      );
+    }
     targetCourse.updatedAt = nowIso;
 
-    // 1. 同步更新 pm_learning_courses 資料表中的 member_progress 欄位（以 toDbPayload 確保 _itemMetadata 與 _courseHours 完整保留）
+    // 1. 同步更新 pm_learning_courses 資料表中的 member_progress 與 default_checklist 欄位
+    const payload = toDbPayload(targetCourse);
     await supabase
       .from('pm_learning_courses')
       .update({
-        member_progress: toDbPayload(targetCourse).member_progress,
+        default_checklist: payload.default_checklist,
+        member_progress: payload.member_progress,
         updated_at: nowIso,
       })
       .eq('id', courseId);
