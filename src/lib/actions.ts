@@ -1996,6 +1996,7 @@ export async function createActionItem(data: {
     status: string;
     owner: string;
     waitingOn?: string;
+    startedAt?: string | null;
     dueDate?: string | null;
     completedAt?: string | null;
     notes?: string;
@@ -2036,7 +2037,7 @@ export async function createActionItem(data: {
             waiting_on: data.waitingOn || '',
             due_date: data.dueDate || null,
             original_due_date: data.dueDate || null,
-            started_at: isStarting ? nowIso : null,
+            started_at: data.startedAt ? new Date(data.startedAt).toISOString() : (isStarting ? nowIso : null),
             completed_at: initialStatus === 'completed' ? (data.completedAt || nowIso) : null,
             due_date_history: JSON.stringify([]),
             status_history: JSON.stringify(initialStatusHistory),
@@ -2157,6 +2158,7 @@ export async function updateActionItem(id: string, data: Partial<{
     status: string;
     owner: string;
     waitingOn: string;
+    startedAt: string | null;
     dueDate: string | null;
     completedAt: string | null;
     notes: string;
@@ -2272,7 +2274,10 @@ export async function updateActionItem(id: string, data: Partial<{
             }
         }
 
-        // ─── 自動追蹤：completed_at ───
+        // ─── 自動追蹤：started_at 與 completed_at ───
+        if (data.startedAt !== undefined) {
+            updatePayload.started_at = data.startedAt ? new Date(data.startedAt).toISOString() : null;
+        }
         if (data.status === 'completed') {
             // 若前端有傳入手動修正的完成日期，優先使用；否則用系統當下時間
             updatePayload.completed_at = data.completedAt || nowIso;

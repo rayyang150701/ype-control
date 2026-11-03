@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useMemo, useEffect } from 'react';
 import {
   format,
   parseISO,
@@ -10,25 +9,14 @@ import {
   startOfMonth,
   endOfMonth,
   addMonths,
-  subMonths,
   isAfter,
-  isBefore,
 } from 'date-fns';
 import {
-  Calendar,
   ChevronDown,
   ChevronRight,
   Plus,
   Settings,
-  Filter,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  ArrowRight,
-  TrendingUp,
   BarChart2,
-  Layers,
-  Sparkles,
   Info,
   Lock,
 } from 'lucide-react';
@@ -57,13 +45,11 @@ import {
   MAJOR_PHASES,
   MajorPhaseKey,
   getMajorPhaseKey,
-  getMajorPhaseName,
 } from '@/lib/phase-constants';
 import type {
   FullProject,
   ProjectActionItem,
   ProjectPhaseSchedules,
-  PhaseSchedule,
   User,
   Client,
 } from '@/types';
@@ -75,7 +61,13 @@ interface ProjectVarianceClientProps {
   clients?: Client[];
 }
 
-const MONTH_WIDTH = 110; // 每個月份欄寬度 (px)
+export interface ResolvedActionItem extends ProjectActionItem {
+  resolvedStart: string;
+  resolvedEnd: string;
+  durationDays: number;
+  elapsedDays: number;
+  isItemDelayed: boolean;
+}
 
 export function ProjectVarianceClient({
   initialProjects,
@@ -85,7 +77,7 @@ export function ProjectVarianceClient({
 }: ProjectVarianceClientProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { isEditor, isAdmin, permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
+  const { permissions, isLoaded, setIsLoginDialogOpen } = useAdmin();
 
   const [projects, setProjects] = useState<FullProject[]>(initialProjects);
   const [actionItems, setActionItems] = useState<ProjectActionItem[]>(initialActionItems);
@@ -93,9 +85,18 @@ export function ProjectVarianceClient({
   // 專案篩選與選中專案
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     if (initialProjects.length === 0) return '';
-    // 預設選中烤一線或第一個專案
+    // 優先選中有設定自訂階段時程的專案（如 [33] 屏東廠空氣品質即時監測系統）或第一個專案
+    const withSchedule = initialProjects.find(
+      (p) =>
+        p.phaseSchedules &&
+        (p.phaseSchedules.design?.startDate ||
+          p.phaseSchedules.construction?.startDate ||
+          p.phaseSchedules.verification?.startDate ||
+          p.phaseSchedules.acceptance?.startDate)
+    );
+    if (withSchedule) return withSchedule.id;
     const found = initialProjects.find(
-      (p) => p.name.includes('烤一線') || p.name.includes('顯性缺陷')
+      (p) => p.name.includes('屏東廠空氣品質') || p.name.includes('烤一線') || p.name.includes('顯性缺陷')
     );
     return found ? found.id : initialProjects[0].id;
   });
@@ -110,13 +111,25 @@ export function ProjectVarianceClient({
   const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({
     [`${selectedProjectId}-design`]: false,
     [`${selectedProjectId}-construction`]: false,
-    [`${selectedProjectId}-verification`]: false,
+    [`${selectedProjectId}-verification`]: true,
     [`${selectedProjectId}-acceptance`]: false,
   });
+
+  // 當切換專案時，預設展開含有待辦事項之驗證階段，方便直接檢視細項與天數
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    setExpandedProjects((prev) => ({ ...prev, [selectedProjectId]: true }));
+    setExpandedPhases((prev) => ({
+      ...prev,
+      [`${selectedProjectId}-verification`]:
+        prev[`${selectedProjectId}-verification`] ?? true,
+    }));
+  }, [selectedProjectId]);
 
   // Dialog 控制
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddActionItemOpen, setIsAddActionItemOpen] = useState(false);
+  const [editingActionItem, setEditingActionItem] = useState<ProjectActionItem | null>(null);
 
   // 篩選後的主專案列表
   const filteredProjects = useMemo(() => {
@@ -137,49 +150,6 @@ export function ProjectVarianceClient({
   // 今日基準日期
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => format(today, 'yyyy-MM-dd'), [today]);
-
-  // 自動依專案起訖或今年產生時間軸月份列表 (預設含前後緩衝月份，共 10-12 個月)
-  const timelineMonths = useMemo(() => {
-    const curYear = today.getFullYear();
-    // 預設從今年 5 月至 12 月 + 明年 1 月
-    const start = new Date(curYear, 4, 1); // 5月
-    const months: Date[] = [];
-    for (let i = 0; i < 9; i++) {
-      months.push(addMonths(start, i));
-    }
-    return months;
-  }, [today]);
-
-  const timelineStart = useMemo(
-    () => startOfMonth(timelineMonths[0]),
-    [timelineMonths]
-  );
-  const timelineEnd = useMemo(
-    () => endOfMonth(timelineMonths[timelineMonths.length - 1]),
-    [timelineMonths]
-  );
-  const totalTimelineDays = useMemo(
-    () => Math.max(1, differenceInDays(timelineEnd, timelineStart) + 1),
-    [timelineStart, timelineEnd]
-  );
-
-  const totalTimelineWidth = timelineMonths.length * MONTH_WIDTH;
-
-  // 計算任何日期在時間軸上的像素位置
-  const getXForDate = (dateVal: string | Date | null | undefined): number | null => {
-    if (!dateVal) return null;
-    const d = typeof dateVal === 'string' ? parseISO(dateVal) : dateVal;
-    if (!isValid(d)) return null;
-
-    const diff = differenceInDays(d, timelineStart);
-    const ratio = diff / totalTimelineDays;
-    return Math.max(0, Math.min(totalTimelineWidth, ratio * totalTimelineWidth));
-  };
-
-  // 計算今日線位置
-  const todayX = useMemo(() => {
-    return getXForDate(today);
-  }, [today, timelineStart, totalTimelineDays, totalTimelineWidth]);
 
   // 取得專案的四大階段規劃時程 (若無，提供合理預設排程)
   const getProjectPhaseSchedules = (
@@ -203,11 +173,11 @@ export function ProjectVarianceClient({
         endDate: ps.design?.endDate || `${curYear}-07-31`,
       },
       construction: {
-        startDate: ps.construction?.startDate || `${curYear}-07-15`,
-        endDate: ps.construction?.endDate || `${curYear}-10-15`,
+        startDate: ps.construction?.startDate || `${curYear}-08-01`,
+        endDate: ps.construction?.endDate || `${curYear}-09-30`,
       },
       verification: {
-        startDate: ps.verification?.startDate || `${curYear}-10-16`,
+        startDate: ps.verification?.startDate || `${curYear}-10-01`,
         endDate: ps.verification?.endDate || `${curYear}-11-15`,
       },
       acceptance: {
@@ -219,66 +189,153 @@ export function ProjectVarianceClient({
     return { schedules, isDefault: !hasCustom };
   };
 
-  // 取得專案某一階段的實際執行起訖 (依據待辦事項)
+  /**
+   * 智慧解析單一待辦事項的實質起訖日期與完成天數：
+   * 解決歷史追補建檔 (createdAt 晚於 completedAt 或 originalDueDate) 導致所有 Bar 擠在同一天或寬度異常的問題，
+   * 確保原始規劃項目與後續新增執行方案依真實時間前後順序排列。
+   */
+  const resolveActionItemTimeline = (
+    item: ProjectActionItem,
+    phasePlan: { startDate: string; endDate: string }
+  ): ResolvedActionItem => {
+    const compStr = item.completedAt ? item.completedAt.slice(0, 10) : null;
+    const dueStr = item.dueDate ? item.dueDate.slice(0, 10) : null;
+    const origDueStr = item.originalDueDate ? item.originalDueDate.slice(0, 10) : dueStr;
+    const startedStr = item.startedAt ? item.startedAt.slice(0, 10) : null;
+    const createdStr = item.createdAt ? item.createdAt.slice(0, 10) : todayStr;
+    const updatedStr = item.updatedAt ? item.updatedAt.slice(0, 10) : todayStr;
+
+    // 1. 決定結束日期 (resolvedEnd)
+    let resolvedEnd = todayStr;
+    if (item.status === 'completed') {
+      resolvedEnd = compStr || dueStr || updatedStr || todayStr;
+    } else {
+      // 未完成項目：若有預計完成日且晚於今日，延伸至預計完成日；若已逾期則延伸至今日或預計完成日較晚者
+      if (dueStr) {
+        resolvedEnd = dueStr > todayStr ? dueStr : todayStr;
+      } else {
+        resolvedEnd = todayStr;
+      }
+    }
+
+    // 2. 決定開始日期 (resolvedStart)
+    let resolvedStart = createdStr;
+    if (startedStr && startedStr <= resolvedEnd) {
+      resolvedStart = startedStr;
+    } else {
+      // 若無明確 startedAt，檢查是否為事後補登之歷史項目 (createdStr 晚於完成日或最初到期基準日)
+      const isRetroactiveEntry =
+        createdStr > resolvedEnd || (origDueStr !== null && createdStr > origDueStr);
+
+      if (isRetroactiveEntry) {
+        if (origDueStr && origDueStr < resolvedEnd && origDueStr > phasePlan.endDate) {
+          // 例如：驗證階段後續新增的早期執行方案 (origDue: 2026-01-30, completed: 2026-07-02)
+          resolvedStart = origDueStr;
+        } else if (phasePlan.startDate && phasePlan.startDate <= resolvedEnd) {
+          // 例如：於原規劃階段內完成的項目 (施工階段 2025-08-04 ~ 2025-09-10)
+          resolvedStart = phasePlan.startDate;
+        } else if (origDueStr && origDueStr <= resolvedEnd) {
+          resolvedStart = origDueStr;
+        } else {
+          resolvedStart = resolvedEnd;
+        }
+      } else {
+        resolvedStart = createdStr <= resolvedEnd ? createdStr : resolvedEnd;
+      }
+    }
+
+    const startObj = parseISO(resolvedStart);
+    const endObj = parseISO(resolvedEnd);
+    const durationDays =
+      isValid(startObj) && isValid(endObj)
+        ? Math.max(1, differenceInDays(endObj, startObj) + 1)
+        : 1;
+
+    const elapsedDays =
+      isValid(startObj)
+        ? Math.max(1, differenceInDays(today, startObj) + 1)
+        : durationDays;
+
+    const isItemDelayed = Boolean(
+      (item.status !== 'completed' && dueStr && isAfter(today, parseISO(dueStr))) ||
+        (phasePlan.endDate && resolvedEnd && isAfter(parseISO(resolvedEnd), parseISO(phasePlan.endDate)))
+    );
+
+    return {
+      ...item,
+      resolvedStart,
+      resolvedEnd,
+      durationDays,
+      elapsedDays,
+      isItemDelayed,
+    };
+  };
+
+  // 取得專案某一階段的實際執行起訖 (依據待辦事項，並按時間前後順序排列)
   const getActualPhaseProgress = (
     projectId: string,
-    phaseKey: MajorPhaseKey
+    phaseKey: MajorPhaseKey,
+    phasePlan: { startDate: string; endDate: string }
   ) => {
-    const items = actionItems.filter(
+    const rawItems = actionItems.filter(
       (item) => item.projectId === projectId && getMajorPhaseKey(item.phase) === phaseKey
     );
 
-    if (items.length === 0) {
+    if (rawItems.length === 0) {
       return {
         hasItems: false,
-        items: [],
-        actualStart: null,
-        actualEnd: null,
+        items: [] as ResolvedActionItem[],
+        actualStart: null as string | null,
+        actualEnd: null as string | null,
+        actualDays: null as number | null,
         isCompleted: false,
         completedCount: 0,
         totalCount: 0,
       };
     }
 
-    const completedCount = items.filter((i) => i.status === 'completed').length;
-    const isCompleted = completedCount === items.length && items.length > 0;
+    // 解析每個待辦的實質起訖與天數，並依完成/結束時間與起始時間先後順序 (前後順序) 排序
+    const resolvedItems = rawItems
+      .map((item) => resolveActionItemTimeline(item, phasePlan))
+      .sort((a, b) => {
+        if (a.resolvedEnd !== b.resolvedEnd) {
+          return a.resolvedEnd.localeCompare(b.resolvedEnd);
+        }
+        if (a.resolvedStart !== b.resolvedStart) {
+          return a.resolvedStart.localeCompare(b.resolvedStart);
+        }
+        const dueA = a.dueDate || '';
+        const dueB = b.dueDate || '';
+        return dueA.localeCompare(dueB);
+      });
 
-    // 起始日：最早的 startedAt 或 createdAt
-    const startTimestamps = items
-      .map((i) => (i.startedAt ? new Date(i.startedAt).getTime() : new Date(i.createdAt).getTime()))
-      .filter((t) => !isNaN(t));
+    const completedCount = resolvedItems.filter((i) => i.status === 'completed').length;
+    const isCompleted = completedCount === resolvedItems.length && resolvedItems.length > 0;
 
-    const minStartTime =
-      startTimestamps.length > 0 ? Math.min(...startTimestamps) : null;
-    const actualStart = minStartTime ? new Date(minStartTime) : null;
+    const allStarts = resolvedItems.map((i) => i.resolvedStart).sort();
+    const allEnds = resolvedItems.map((i) => i.resolvedEnd).sort();
 
-    // 結束日：
-    // 若全數完成，取最晚的 completedAt 或 updatedAt
-    // 若尚未全數完成且已啟動，則持續至今日！
-    let actualEnd: Date | null = null;
-    if (isCompleted) {
-      const endTimestamps = items
-        .map((i) => (i.completedAt ? new Date(i.completedAt).getTime() : (i.dueDate ? new Date(i.dueDate).getTime() : new Date(i.updatedAt).getTime())))
-        .filter((t) => !isNaN(t));
-      actualEnd = endTimestamps.length > 0 ? new Date(Math.max(...endTimestamps)) : today;
-    } else if (actualStart) {
-      // 進行中：延伸至今日或最晚完成項目
-      const completedTimestamps = items
-        .filter((i) => i.completedAt)
-        .map((i) => new Date(i.completedAt!).getTime());
-      const maxCompleted =
-        completedTimestamps.length > 0 ? Math.max(...completedTimestamps) : today.getTime();
-      actualEnd = new Date(Math.max(today.getTime(), maxCompleted));
+    const actualStart = allStarts[0] || null;
+    let actualEnd = allEnds[allEnds.length - 1] || null;
+
+    if (!isCompleted && actualEnd && actualEnd < todayStr) {
+      actualEnd = todayStr;
     }
+
+    const actualDays =
+      actualStart && actualEnd
+        ? Math.max(1, differenceInDays(parseISO(actualEnd), parseISO(actualStart)) + 1)
+        : null;
 
     return {
       hasItems: true,
-      items,
-      actualStart: actualStart ? format(actualStart, 'yyyy-MM-dd') : null,
-      actualEnd: actualEnd ? format(actualEnd, 'yyyy-MM-dd') : null,
+      items: resolvedItems,
+      actualStart,
+      actualEnd,
+      actualDays,
       isCompleted,
       completedCount,
-      totalCount: items.length,
+      totalCount: resolvedItems.length,
     };
   };
 
@@ -290,7 +347,12 @@ export function ProjectVarianceClient({
 
     const phasesData = MAJOR_PHASES.map((p) => {
       const plan = schedules[p.key];
-      const actual = getActualPhaseProgress(currentProject.id, p.key);
+      const actual = getActualPhaseProgress(currentProject.id, p.key, plan);
+
+      const planDays =
+        plan.startDate && plan.endDate
+          ? Math.max(1, differenceInDays(parseISO(plan.endDate), parseISO(plan.startDate)) + 1)
+          : 0;
 
       // 計算差異 (天數)：正數代表延誤，負數代表提前
       let varianceDays: number | null = null;
@@ -312,12 +374,14 @@ export function ProjectVarianceClient({
         } else {
           // 進行中
           const planEnd = parseISO(plan.endDate);
-          const isOverdue = isAfter(today, planEnd);
+          const refEnd = actual.actualEnd ? parseISO(actual.actualEnd) : today;
+          const checkDate = isAfter(today, refEnd) ? today : refEnd;
+          const isOverdue = isAfter(checkDate, planEnd);
           if (isOverdue) {
             const overdueDays = differenceInDays(today, planEnd);
-            statusText = `逾期進行中 (+${overdueDays}天)`;
+            statusText = `逾期進行中 (+${Math.max(1, overdueDays)}天)`;
             statusVariant = 'destructive';
-            varianceDays = overdueDays;
+            varianceDays = Math.max(1, overdueDays);
           } else {
             statusText = `正常進行中 (${actual.completedCount}/${actual.totalCount}完成)`;
             statusVariant = 'warning';
@@ -329,6 +393,7 @@ export function ProjectVarianceClient({
       return {
         ...p,
         plan,
+        planDays,
         actual,
         varianceDays,
         statusText,
@@ -336,7 +401,7 @@ export function ProjectVarianceClient({
       };
     });
 
-    // 專案整體總起訖
+    // 專案整體總起訖 (依原始規劃日期)
     const allPlanStarts = phasesData
       .map((p) => p.plan.startDate)
       .filter(Boolean)
@@ -348,15 +413,120 @@ export function ProjectVarianceClient({
 
     const projectPlanStart = allPlanStarts[0] || null;
     const projectPlanEnd = allPlanEnds[allPlanEnds.length - 1] || null;
+    const projectPlanDays =
+      projectPlanStart && projectPlanEnd
+        ? Math.max(1, differenceInDays(parseISO(projectPlanEnd), parseISO(projectPlanStart)) + 1)
+        : 0;
 
     return {
       project: currentProject,
       isDefault,
       projectPlanStart,
       projectPlanEnd,
+      projectPlanDays,
       phasesData,
     };
-  }, [currentProject, actionItems, today]);
+  }, [currentProject, actionItems, today, todayStr]);
+
+  /**
+   * 動態依專案「原始規劃起始日」至「最新實際執行方案 / 今日」產生時間軸月份列表
+   * 確保原始四大階段呈現階梯式前後順序，且後續新的執行方案完整顯示在後面！
+   */
+  const timelineMonths = useMemo(() => {
+    const curYear = today.getFullYear();
+    const dateCandidates: Date[] = [today];
+
+    if (currentAnalysis) {
+      currentAnalysis.phasesData.forEach((p) => {
+        if (p.plan.startDate) {
+          const d = parseISO(p.plan.startDate);
+          if (isValid(d)) dateCandidates.push(d);
+        }
+        if (p.plan.endDate) {
+          const d = parseISO(p.plan.endDate);
+          if (isValid(d)) dateCandidates.push(d);
+        }
+        if (p.actual.actualStart) {
+          const d = parseISO(p.actual.actualStart);
+          if (isValid(d)) dateCandidates.push(d);
+        }
+        if (p.actual.actualEnd) {
+          const d = parseISO(p.actual.actualEnd);
+          if (isValid(d)) dateCandidates.push(d);
+        }
+        p.actual.items.forEach((item) => {
+          const ds = parseISO(item.resolvedStart);
+          const de = parseISO(item.resolvedEnd);
+          if (isValid(ds)) dateCandidates.push(ds);
+          if (isValid(de)) dateCandidates.push(de);
+        });
+      });
+    }
+
+    if (dateCandidates.length === 0) {
+      const start = new Date(curYear, 4, 1);
+      return Array.from({ length: 9 }, (_, i) => addMonths(start, i));
+    }
+
+    const timestamps = dateCandidates.map((d) => d.getTime());
+    const minDate = new Date(Math.min(...timestamps));
+    const maxDate = new Date(Math.max(...timestamps));
+
+    const startMonth = startOfMonth(minDate);
+    // 結尾預留 1 個月緩衝，讓 Bar 後方的「完成天數」標籤有充裕空間顯示
+    const targetEndMonth = startOfMonth(addMonths(maxDate, 1));
+
+    const months: Date[] = [];
+    let cursor = startMonth;
+    while (cursor.getTime() <= targetEndMonth.getTime() && months.length < 36) {
+      months.push(cursor);
+      cursor = addMonths(cursor, 1);
+    }
+
+    while (months.length < 9) {
+      months.push(addMonths(months[months.length - 1], 1));
+    }
+
+    return months;
+  }, [currentAnalysis, today]);
+
+  // 依據總月數自動調整單月欄寬，兼顧跨年度全貌與日期比例清晰度
+  const monthWidth = useMemo(() => {
+    if (timelineMonths.length > 16) return 86;
+    if (timelineMonths.length > 12) return 96;
+    return 110;
+  }, [timelineMonths.length]);
+
+  const timelineStart = useMemo(
+    () => startOfMonth(timelineMonths[0]),
+    [timelineMonths]
+  );
+  const timelineEnd = useMemo(
+    () => endOfMonth(timelineMonths[timelineMonths.length - 1]),
+    [timelineMonths]
+  );
+  const totalTimelineDays = useMemo(
+    () => Math.max(1, differenceInDays(timelineEnd, timelineStart) + 1),
+    [timelineStart, timelineEnd]
+  );
+
+  const totalTimelineWidth = timelineMonths.length * monthWidth;
+
+  // 計算任何日期在時間軸上的像素位置
+  const getXForDate = (dateVal: string | Date | null | undefined): number | null => {
+    if (!dateVal) return null;
+    const d = typeof dateVal === 'string' ? parseISO(dateVal) : dateVal;
+    if (!isValid(d)) return null;
+
+    const diff = differenceInDays(d, timelineStart);
+    const ratio = diff / totalTimelineDays;
+    return Math.max(0, Math.min(totalTimelineWidth, ratio * totalTimelineWidth));
+  };
+
+  // 計算今日線位置
+  const todayX = useMemo(() => {
+    return getXForDate(today);
+  }, [today, timelineStart, totalTimelineDays, totalTimelineWidth]);
 
   // 儲存規劃時程回調
   const handleScheduleSaved = (updatedSchedules: ProjectPhaseSchedules) => {
@@ -384,9 +554,9 @@ export function ProjectVarianceClient({
     });
   };
 
-  // 季度分組輔助
+  // 季度分組輔助 (區分年份避免跨年同季度合併)
   const quarterGroups = useMemo(() => {
-    const groups: { label: string; colSpan: number }[] = [];
+    const groups: { key: string; label: string; colSpan: number }[] = [];
     timelineMonths.forEach((m) => {
       const monthNum = m.getMonth() + 1; // 1-12
       let qName = '';
@@ -396,12 +566,13 @@ export function ProjectVarianceClient({
       else qName = '第四季';
 
       const year = m.getFullYear();
-      const label = `${qName}`;
+      const key = `${year}-${qName}`;
+      const label = `${year}年 ${qName}`;
 
-      if (groups.length > 0 && groups[groups.length - 1].label === label) {
+      if (groups.length > 0 && groups[groups.length - 1].key === key) {
         groups[groups.length - 1].colSpan += 1;
       } else {
-        groups.push({ label, colSpan: 1 });
+        groups.push({ key, label, colSpan: 1 });
       }
     });
     return groups;
@@ -438,11 +609,11 @@ export function ProjectVarianceClient({
               專案-Gap Analysis
             </h1>
             <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-              四大階段規劃 vs 待辦事項實際
+              原始規劃時程 vs 後續執行方案進度
             </Badge>
           </div>
           <p className="text-xs text-slate-500">
-            針對設計、施工、驗證、驗收四大階段，比對預定規劃時程與待辦事項實際執行進程。
+            以四大階段原始日期規劃呈現前後順序，並將後續新的執行方案與實際完成天數往後展開比對。
           </p>
         </div>
 
@@ -486,7 +657,10 @@ export function ProjectVarianceClient({
           {permissions.gapAnalysis.canManage && currentProject && (
             <Button
               size="sm"
-              onClick={() => setIsAddActionItemOpen(true)}
+              onClick={() => {
+                setEditingActionItem(null);
+                setIsAddActionItemOpen(true);
+              }}
               className="h-9 text-xs bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 font-medium shadow-2xs"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -502,15 +676,15 @@ export function ProjectVarianceClient({
           <span className="font-semibold text-slate-700">圖例說明：</span>
           <div className="flex items-center gap-1.5">
             <span className="w-5 h-2.5 bg-slate-900 rounded-xs inline-block" />
-            <span className="font-medium text-slate-800">上方黑 Bar：預定規劃時程 (Planned)</span>
+            <span className="font-medium text-slate-800">上方黑 Bar：原始預定規劃時程 (依階段前後順序)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-5 h-2.5 bg-blue-600 rounded-xs inline-block" />
-            <span className="font-medium text-blue-800">下方藍 Bar：實際期程 (正常 / 如期進行)</span>
+            <span className="font-medium text-blue-800">下方藍 Bar：如期完成 / 正常執行</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-5 h-2.5 bg-red-600 rounded-xs inline-block" />
-            <span className="font-medium text-red-700 font-bold">下方紅 Bar：實際超過原規劃 (延誤 / 逾期)</span>
+            <span className="font-medium text-red-700 font-bold">下方紅 Bar：超過原規劃 / 新執行方案往後展延</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3.5 h-0.5 bg-emerald-500 inline-block border-t-2 border-emerald-500" />
@@ -526,17 +700,17 @@ export function ProjectVarianceClient({
         )}
       </div>
 
-      {/* 甘特圖主容器 (仿 Media 1 佈局) */}
+      {/* 甘特圖主容器 (仿人工製作甘特圖的前後階梯順序佈局) */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
         <div className="flex flex-col xl:flex-row">
-          {/* 左欄：任務名稱樹狀結構 */}
-          <div className="w-full xl:w-80 shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white select-none">
+          {/* 左欄：任務名稱、原始規劃日期與工期樹狀結構 */}
+          <div className="w-full xl:w-[370px] shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white select-none">
             {/* 左欄表頭 */}
-            <div className="h-[73px] border-b border-slate-200 px-4 bg-slate-50/90 flex items-center justify-between">
+            <div className="h-[72px] border-b border-slate-200 px-3.5 bg-slate-50/90 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-slate-800">任務名稱</span>
                 <span className="text-[11px] text-slate-500 font-medium">
-                  (四大階段進程)
+                  (原始規劃期程 / 執行方案)
                 </span>
               </div>
               <Badge variant="secondary" className="text-[11px]">
@@ -568,16 +742,27 @@ export function ProjectVarianceClient({
                         <ChevronRight className="h-4 w-4" />
                       )}
                     </button>
-                    <span className="font-bold text-xs text-slate-900 truncate" title={currentAnalysis.project.name}>
-                      [{currentAnalysis.project.caseNumber || '未編號'}] {currentAnalysis.project.name}
-                    </span>
+                    <div className="min-w-0">
+                      <div
+                        className="font-bold text-xs text-slate-900 truncate"
+                        title={currentAnalysis.project.name}
+                      >
+                        [{currentAnalysis.project.caseNumber || '未編號'}] {currentAnalysis.project.name}
+                      </div>
+                      {currentAnalysis.projectPlanStart && currentAnalysis.projectPlanEnd && (
+                        <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                          原規劃：{currentAnalysis.projectPlanStart.replace(/-/g, '/')} ~{' '}
+                          {currentAnalysis.projectPlanEnd.replace(/-/g, '/')} ({currentAnalysis.projectPlanDays}天)
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <Badge variant="outline" className="text-[10px] shrink-0 bg-white">
                     {currentAnalysis.project.projectCategory || '已開案'}
                   </Badge>
                 </div>
 
-                {/* 2. 四大階段列 (可展開查看待辦) */}
+                {/* 2. 四大階段列 (可展開查看待辦細項) */}
                 {expandedProjects[currentAnalysis.project.id] &&
                   currentAnalysis.phasesData.map((phase) => {
                     const phaseKeyId = `${currentAnalysis.project.id}-${phase.key}`;
@@ -588,7 +773,7 @@ export function ProjectVarianceClient({
                       <div key={phase.key} className="bg-white">
                         {/* 階段列 */}
                         <div
-                          className="h-16 px-4 pl-7 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-100"
+                          className="h-16 px-3.5 pl-6 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-100"
                           onClick={() => {
                             if (hasItems) {
                               setExpandedPhases((prev) => ({
@@ -598,11 +783,11 @@ export function ProjectVarianceClient({
                             }
                           }}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
                             {hasItems ? (
                               <button
                                 type="button"
-                                className="p-0.5 hover:bg-slate-200 rounded text-slate-500"
+                                className="p-0.5 hover:bg-slate-200 rounded text-slate-500 shrink-0"
                               >
                                 {isPhaseExpanded ? (
                                   <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
@@ -611,18 +796,24 @@ export function ProjectVarianceClient({
                                 )}
                               </button>
                             ) : (
-                              <span className="w-3.5 h-3.5 inline-block text-slate-300 text-center text-xs">
+                              <span className="w-3.5 h-3.5 inline-block text-slate-300 text-center text-xs shrink-0">
                                 ▷
                               </span>
                             )}
-                            <div>
+                            <div className="min-w-0">
                               <div className="font-semibold text-xs text-slate-800 flex items-center gap-1.5">
                                 <span>{phase.fullName}</span>
+                                <span className="text-[10px] font-normal text-slate-500">
+                                  ({phase.planDays}天)
+                                </span>
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">
+                              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                                規劃：{phase.plan.startDate.slice(5).replace('-', '/')} ~{' '}
+                                {phase.plan.endDate.slice(5).replace('-', '/')}
+                                {' ｜ '}
                                 {hasItems
-                                  ? `${phase.actual.completedCount}/${phase.actual.totalCount} 項待辦完成`
-                                  : '尚無此階段待辦事項'}
+                                  ? `${phase.actual.completedCount}/${phase.actual.totalCount} 項完成`
+                                  : '尚無待辦'}
                               </div>
                             </div>
                           </div>
@@ -644,12 +835,18 @@ export function ProjectVarianceClient({
                           </div>
                         </div>
 
-                        {/* 展開之待辦事項明細 */}
+                        {/* 展開之細項規劃 / 待辦事項明細 (依時間先後順序排列) */}
                         {isPhaseExpanded &&
                           phase.actual.items.map((item) => (
                             <div
                               key={item.id}
-                              className="h-10 px-4 pl-12 flex items-center justify-between text-[11px] bg-slate-50/50 hover:bg-blue-50/40 border-b border-slate-100/80 transition-colors"
+                              onClick={() => {
+                                if (permissions.gapAnalysis.canManage) {
+                                  setEditingActionItem(item);
+                                  setIsAddActionItemOpen(true);
+                                }
+                              }}
+                              className="h-10 px-3.5 pl-10 flex items-center justify-between text-[11px] bg-slate-50/50 hover:bg-blue-50/40 border-b border-slate-100/80 transition-colors cursor-pointer"
                             >
                               <div className="flex items-center gap-1.5 min-w-0 pr-2">
                                 <span
@@ -661,13 +858,16 @@ export function ProjectVarianceClient({
                                       : 'bg-blue-500'
                                   }`}
                                 />
-                                <span className="text-slate-700 truncate" title={item.title}>
+                                <span className="text-slate-700 truncate font-medium" title={item.title}>
                                   {item.title}
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-400 shrink-0">
-                                {item.dueDate ? item.dueDate.slice(5) : '無到期日'}
-                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {item.resolvedStart.slice(5).replace('-', '/')}~
+                                  {item.resolvedEnd.slice(5).replace('-', '/')}
+                                </span>
+                              </div>
                             </div>
                           ))}
                       </div>
@@ -677,7 +877,7 @@ export function ProjectVarianceClient({
             )}
           </div>
 
-          {/* 右欄：甘特圖時間軸 (雙 Bar: 上方規劃黑 Bar、下方實際藍 Bar) */}
+          {/* 右欄：甘特圖時間軸 (原始規劃階梯黑 Bar + 後續執行方案藍/紅 Bar + 細項完成天數) */}
           <div className="flex-1 overflow-x-auto relative bg-slate-50/30 min-w-0">
             <div
               style={{ width: `${totalTimelineWidth}px` }}
@@ -688,8 +888,8 @@ export function ProjectVarianceClient({
                 {quarterGroups.map((q, idx) => (
                   <div
                     key={idx}
-                    style={{ width: `${q.colSpan * MONTH_WIDTH}px` }}
-                    className="border-r border-slate-200/80 flex items-center justify-center tracking-wide"
+                    style={{ width: `${q.colSpan * monthWidth}px` }}
+                    className="border-r border-slate-200/80 flex items-center justify-center tracking-wide truncate px-1"
                   >
                     {q.label}
                   </div>
@@ -701,7 +901,7 @@ export function ProjectVarianceClient({
                 {timelineMonths.map((m, idx) => (
                   <div
                     key={idx}
-                    style={{ width: `${MONTH_WIDTH}px` }}
+                    style={{ width: `${monthWidth}px` }}
                     className="border-r border-slate-200/80 flex items-center justify-center text-[11px]"
                   >
                     {format(m, 'yyyy年M月')}
@@ -729,19 +929,19 @@ export function ProjectVarianceClient({
                     {timelineMonths.map((_, idx) => (
                       <div
                         key={idx}
-                        style={{ width: `${MONTH_WIDTH}px` }}
+                        style={{ width: `${monthWidth}px` }}
                         className="h-full border-r border-slate-200/50"
                       />
                     ))}
                   </div>
 
-                  {/* 1. 主專案總進程列 (黑色頂層總長 Bar) */}
+                  {/* 1. 主專案總進程列 (黑色頂層總長 Bar，仿人工圖示帶端點括號與起訖日期) */}
                   <div className="h-14 relative flex items-center">
                     {(() => {
                       const startX = getXForDate(currentAnalysis.projectPlanStart);
                       const endX = getXForDate(currentAnalysis.projectPlanEnd);
                       if (startX === null || endX === null) return null;
-                      const width = Math.max(endX - startX, 12);
+                      const width = Math.max(endX - startX, 16);
 
                       return (
                         <TooltipProvider>
@@ -752,21 +952,21 @@ export function ProjectVarianceClient({
                                   left: `${startX}px`,
                                   width: `${width}px`,
                                 }}
-                                className="absolute h-5 bg-slate-900 rounded-sm shadow-xs flex items-center justify-between px-1 cursor-pointer transition-all hover:bg-black group"
+                                className="absolute h-4 bg-slate-900 rounded-xs shadow-xs flex items-center justify-between px-1 cursor-pointer transition-all hover:bg-black group z-10"
                               >
-                                {/* 左端點標記 (仿 Media 1 三角/括號端點) */}
-                                <div className="w-1.5 h-2.5 border-l-2 border-white/80" />
-                                <span className="text-[10px] font-bold text-white/90 truncate px-1">
-                                  全案預定進程：{currentAnalysis.projectPlanStart} ~ {currentAnalysis.projectPlanEnd}
+                                {/* 左下三角端點 (仿人工製作圖示) */}
+                                <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-slate-900 absolute -bottom-1 left-0" />
+                                <span className="text-[10px] font-bold text-white/95 truncate px-1.5">
+                                  全案原始規劃：{currentAnalysis.projectPlanStart} ~ {currentAnalysis.projectPlanEnd} ({currentAnalysis.projectPlanDays}天)
                                 </span>
-                                {/* 右端點標記 */}
-                                <div className="w-1.5 h-2.5 border-r-2 border-white/80" />
+                                {/* 右下三角端點 */}
+                                <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-slate-900 absolute -bottom-1 right-0" />
                               </div>
                             </TooltipTrigger>
                             <TooltipContent className="bg-slate-900 text-white text-xs p-2.5">
                               <p className="font-bold">{currentAnalysis.project.name}</p>
-                              <p>規劃區間：{currentAnalysis.projectPlanStart} ~ {currentAnalysis.projectPlanEnd}</p>
-                              <p>四大階段全週期時程</p>
+                              <p>原始規劃區間：{currentAnalysis.projectPlanStart} ~ {currentAnalysis.projectPlanEnd}</p>
+                              <p>原規劃總天數：{currentAnalysis.projectPlanDays} 天</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -774,186 +974,303 @@ export function ProjectVarianceClient({
                     })()}
                   </div>
 
-                  {/* 2. 四大階段雙 Bar (上方黑色規劃 Bar，下方藍色實際 Bar) */}
+                  {/* 2. 四大階段雙 Bar (上方黑色原始規劃階梯 Bar，下方藍/紅色實際與新執行方案 Bar) */}
                   {expandedProjects[currentAnalysis.project.id] &&
-                    currentAnalysis.phasesData.map((phase) => {
+                    currentAnalysis.phasesData.map((phase, phaseIdx) => {
                       const phaseKeyId = `${currentAnalysis.project.id}-${phase.key}`;
                       const isPhaseExpanded = !!expandedPhases[phaseKeyId];
 
-                      // 計算規劃 Bar 座標
+                      // 計算原始規劃 Bar 座標
                       const planStartX = getXForDate(phase.plan.startDate);
                       const planEndX = getXForDate(phase.plan.endDate);
                       const planWidth =
                         planStartX !== null && planEndX !== null
-                          ? Math.max(planEndX - planStartX, 10)
+                          ? Math.max(planEndX - planStartX, 12)
                           : 0;
+
+                      // 計算下一階段規劃起點 (繪製前後順序階梯導引箭頭，仿人工圖示)
+                      const nextPhase =
+                        phaseIdx < currentAnalysis.phasesData.length - 1
+                          ? currentAnalysis.phasesData[phaseIdx + 1]
+                          : null;
+                      const nextPlanStartX = nextPhase
+                        ? getXForDate(nextPhase.plan.startDate)
+                        : null;
 
                       // 計算實際 Bar 座標 (依據待辦事項)
                       const actualStartX = getXForDate(phase.actual.actualStart);
                       const actualEndX = getXForDate(phase.actual.actualEnd);
                       const actualWidth =
                         actualStartX !== null && actualEndX !== null
-                          ? Math.max(actualEndX - actualStartX, 8)
+                          ? Math.max(actualEndX - actualStartX, 12)
                           : 0;
 
+                      const planStartShort = phase.plan.startDate
+                        ? format(parseISO(phase.plan.startDate), 'M/d')
+                        : '';
+                      const planEndShort = phase.plan.endDate
+                        ? format(parseISO(phase.plan.endDate), 'M/d')
+                        : '';
+
                       return (
-                        <div key={phase.key}>
+                        <div key={phase.key} className="relative">
                           {/* 階段列：高度 64px 容納上下雙 Bar */}
                           <div className="h-16 relative border-b border-slate-100 flex flex-col justify-center">
-                            {/* 上方 Bar：規劃期程 (黑色 Bar) */}
+                            {/* 上方 Bar：原始規劃期程 (黑色 Bar + 左右日期標示 + 階梯連接箭頭) */}
                             {planStartX !== null && planWidth > 0 && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      style={{
-                                        left: `${planStartX}px`,
-                                        width: `${planWidth}px`,
-                                        top: '10px',
-                                      }}
-                                      className="absolute h-4 bg-slate-900 rounded-xs shadow-2xs flex items-center justify-between px-1 cursor-pointer hover:bg-black transition-all group z-10"
-                                    >
-                                      {/* 左箭頭端帽 */}
-                                      <div className="w-1 h-2 border-l border-t border-b border-white" />
-                                      <span className="text-[9px] font-semibold text-white/95 truncate px-1 hidden sm:inline">
-                                        規劃：{phase.plan.startDate} ~ {phase.plan.endDate}
-                                      </span>
-                                      {/* 右箭頭端帽 */}
-                                      <div className="w-1 h-2 border-r border-t border-b border-white" />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="text-xs bg-slate-900 text-white p-2.5">
-                                    <p className="font-bold">⬛ {phase.fullName} (預定規劃)</p>
-                                    <p>起訖日：{phase.plan.startDate} ~ {phase.plan.endDate}</p>
-                                    <p>
-                                      規劃天數：
-                                      {differenceInDays(
-                                        parseISO(phase.plan.endDate),
-                                        parseISO(phase.plan.startDate)
-                                      ) + 1}{' '}
-                                      天
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              <>
+                                {/* 左側起始日標籤 (仿人工製作圖示 6/16, 8/4, 9/11, 11/21) */}
+                                <span
+                                  style={{
+                                    left: `${Math.max(2, planStartX - 30)}px`,
+                                    top: '10px',
+                                  }}
+                                  className="absolute text-[10px] font-bold text-slate-700 pointer-events-none"
+                                >
+                                  {planStartShort}
+                                </span>
+
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div
+                                        style={{
+                                          left: `${planStartX}px`,
+                                          width: `${planWidth}px`,
+                                          top: '10px',
+                                        }}
+                                        className="absolute h-4 bg-slate-900 rounded-xs shadow-2xs flex items-center justify-between px-1 cursor-pointer hover:bg-black transition-all group z-10"
+                                      >
+                                        <div className="w-1 h-2 border-l border-t border-b border-white/90" />
+                                        {planWidth > 75 && (
+                                          <span className="text-[9px] font-semibold text-white/95 truncate px-1">
+                                            原規劃 ({phase.planDays}天)
+                                          </span>
+                                        )}
+                                        <div className="w-1 h-2 border-r border-t border-b border-white/90" />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="text-xs bg-slate-900 text-white p-2.5">
+                                      <p className="font-bold">⬛ {phase.fullName} (原始預定規劃)</p>
+                                      <p>規劃起訖：{phase.plan.startDate} ~ {phase.plan.endDate}</p>
+                                      <p>規劃天數：{phase.planDays} 天</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+
+                                {/* 右側結束日標籤 (仿人工製作圖示 8/1, 9/10, 11/20, 12/26) */}
+                                <span
+                                  style={{
+                                    left: `${planStartX + planWidth + 5}px`,
+                                    top: '10px',
+                                  }}
+                                  className="absolute text-[10px] font-bold text-slate-700 pointer-events-none"
+                                >
+                                  {planEndShort}
+                                </span>
+
+                                {/* 階段前後順序階梯導引箭頭 (連接本階段結束點與下一階段開始點) */}
+                                {nextPlanStartX !== null && !isPhaseExpanded && (
+                                  <div
+                                    style={{
+                                      left: `${planStartX + planWidth}px`,
+                                      top: '24px',
+                                      height: '44px',
+                                    }}
+                                    className="absolute border-l border-dashed border-blue-500/70 z-20 pointer-events-none flex flex-col justify-end items-center"
+                                  >
+                                    <div className="w-0 h-0 border-l-[3.5px] border-l-transparent border-r-[3.5px] border-r-transparent border-t-[5px] border-t-blue-600 -ml-[1px]" />
+                                  </div>
+                                )}
+                              </>
                             )}
 
-                            {/* 下方 Bar：實際期程 (正常為藍色，超過原規劃時以紅色顯示) */}
+                            {/* 下方 Bar：實際期程 / 後續新執行方案 (正常為藍色，超過原規劃往後展延時以紅色顯示) */}
                             {actualStartX !== null && actualWidth > 0 ? (
                               (() => {
                                 const isDelayed =
                                   phase.statusVariant === 'destructive' ||
                                   (phase.varianceDays !== null && phase.varianceDays > 0);
 
+                                // 若實際執行方案起點在原規劃結束點之後，繪製虛線串接表示「原規劃後的新執行方案延伸」
+                                const hasExtensionGap =
+                                  planStartX !== null &&
+                                  planWidth > 0 &&
+                                  actualStartX > planStartX + planWidth + 4;
+
                                 return (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div
-                                          style={{
-                                            left: `${actualStartX}px`,
-                                            width: `${actualWidth}px`,
-                                            bottom: '10px',
-                                          }}
-                                          className={`absolute h-4 rounded-xs shadow-2xs flex items-center px-1.5 cursor-pointer transition-all z-10 ${
+                                  <>
+                                    {hasExtensionGap && (
+                                      <div
+                                        style={{
+                                          left: `${planStartX + planWidth}px`,
+                                          width: `${actualStartX - (planStartX + planWidth)}px`,
+                                          bottom: '17px',
+                                        }}
+                                        className="absolute border-b-2 border-dotted border-red-400/80 z-0 pointer-events-none"
+                                      />
+                                    )}
+
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div
+                                            style={{
+                                              left: `${actualStartX}px`,
+                                              width: `${actualWidth}px`,
+                                              bottom: '10px',
+                                            }}
+                                            className={`absolute h-4 rounded-xs shadow-2xs flex items-center px-1.5 cursor-pointer transition-all z-10 ${
+                                              isDelayed
+                                                ? 'bg-red-600 hover:bg-red-700 shadow-red-200 ring-1 ring-red-400'
+                                                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                                            }`}
+                                          >
+                                            <span className="text-[9px] font-bold text-white truncate">
+                                              實際：{phase.actual.actualStart} ~{' '}
+                                              {phase.actual.isCompleted ? phase.actual.actualEnd : '進行中'}
+                                              {phase.actual.actualDays ? ` (${phase.actual.actualDays}天)` : ''}
+                                            </span>
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent
+                                          className={`text-xs p-2.5 border ${
                                             isDelayed
-                                              ? 'bg-red-600 hover:bg-red-700 shadow-red-200 ring-1 ring-red-400'
-                                              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                                              ? 'bg-red-950 text-white border-red-800'
+                                              : 'bg-blue-950 text-white border-blue-800'
                                           }`}
                                         >
-                                          <span className="text-[9px] font-bold text-white truncate">
-                                            實際：{phase.actual.actualStart} ~ {phase.actual.isCompleted ? phase.actual.actualEnd : '進行中'}
-                                            {isDelayed ? ' ⚠️ (逾期)' : ''}
-                                          </span>
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent className={`text-xs p-2.5 border ${
-                                        isDelayed
-                                          ? 'bg-red-950 text-white border-red-800'
-                                          : 'bg-blue-950 text-white border-blue-800'
-                                      }`}>
-                                        <p className={`font-bold ${isDelayed ? 'text-red-200' : 'text-blue-200'}`}>
-                                          {isDelayed ? '🟥' : '🟦'} {phase.fullName} (待辦實際執行 - {isDelayed ? '超過原規劃' : '正常進行'})
-                                        </p>
-                                        <p>實際起始：{phase.actual.actualStart}</p>
-                                        <p>
-                                          實際截止：
-                                          {phase.actual.isCompleted
-                                            ? `${phase.actual.actualEnd} (全數結案)`
-                                            : `${phase.actual.actualEnd} (進行中)`}
-                                        </p>
-                                        <p>待辦完成度：{phase.actual.completedCount} / {phase.actual.totalCount} 項</p>
-                                        <p className={`font-semibold mt-1 ${isDelayed ? 'text-red-300 font-bold' : 'text-emerald-300'}`}>
-                                          差異分析：{phase.statusText}
-                                        </p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
+                                          <p className={`font-bold ${isDelayed ? 'text-red-200' : 'text-blue-200'}`}>
+                                            {isDelayed ? '🟥' : '🟦'} {phase.fullName} (實際執行 -{' '}
+                                            {isDelayed ? '超過原規劃 / 新執行方案' : '如期完成'})
+                                          </p>
+                                          <p>實際起始：{phase.actual.actualStart}</p>
+                                          <p>
+                                            實際截止：
+                                            {phase.actual.isCompleted
+                                              ? `${phase.actual.actualEnd} (全數結案)`
+                                              : `${phase.actual.actualEnd} (進行中)`}
+                                          </p>
+                                          {phase.actual.actualDays && (
+                                            <p>執行天數：共 {phase.actual.actualDays} 天</p>
+                                          )}
+                                          <p>
+                                            待辦完成度：{phase.actual.completedCount} / {phase.actual.totalCount} 項
+                                          </p>
+                                          <p
+                                            className={`font-semibold mt-1 ${
+                                              isDelayed ? 'text-red-300 font-bold' : 'text-emerald-300'
+                                            }`}
+                                          >
+                                            差異分析：{phase.statusText}
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </>
                                 );
                               })()
                             ) : (
-                              /* 尚無待辦實際時，顯示虛線引導 */
+                              /* 尚無待辦實際時，顯示虛線引導於原規劃下方 */
                               <div
                                 style={{
                                   left: `${planStartX || 0}px`,
-                                  bottom: '14px',
+                                  bottom: '12px',
                                 }}
-                                className="absolute text-[10px] text-slate-400 italic pl-1"
+                                className="absolute text-[10px] text-slate-400 italic pl-1 whitespace-nowrap"
                               >
                                 (尚未有實際待辦事項執行紀錄)
                               </div>
                             )}
                           </div>
 
-                          {/* 展開時個別待辦事項的時間 Bar */}
+                          {/* 展開時個別細項規畫項目 (待辦事項) 的時間 Bar + BAR 後直接顯示完成天數 */}
                           {isPhaseExpanded &&
                             phase.actual.items.map((item) => {
-                              const itemStart = item.startedAt || item.createdAt;
-                              const itemEnd = item.completedAt || item.dueDate || (item.status === 'completed' ? item.updatedAt : todayStr);
-                              const iStartX = getXForDate(itemStart);
-                              const iEndX = getXForDate(itemEnd);
+                              const iStartX = getXForDate(item.resolvedStart);
+                              const iEndX = getXForDate(item.resolvedEnd);
                               const iWidth =
                                 iStartX !== null && iEndX !== null
-                                  ? Math.max(iEndX - iStartX, 6)
+                                  ? Math.max(iEndX - iStartX, 10)
                                   : 0;
 
-                              const isItemDelayed =
-                                (item.status !== 'completed' && item.dueDate && isAfter(today, parseISO(item.dueDate))) ||
-                                (phase.plan.endDate && itemEnd && isAfter(parseISO(itemEnd), parseISO(phase.plan.endDate)));
+                              const isCompleted = item.status === 'completed';
 
                               return (
                                 <div
                                   key={item.id}
-                                  className="h-10 relative border-b border-slate-100/80 flex items-center bg-slate-50/20"
+                                  onClick={() => {
+                                    if (permissions.gapAnalysis.canManage) {
+                                      setEditingActionItem(item);
+                                      setIsAddActionItemOpen(true);
+                                    }
+                                  }}
+                                  className="h-10 relative border-b border-slate-100/80 flex items-center bg-slate-50/20 hover:bg-blue-50/20 transition-colors cursor-pointer"
                                 >
                                   {iStartX !== null && iWidth > 0 && (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div
-                                            style={{
-                                              left: `${iStartX}px`,
-                                              width: `${iWidth}px`,
-                                            }}
-                                            className={`absolute h-2.5 rounded-xs shadow-2xs cursor-pointer transition-all ${
-                                              item.status === 'completed'
-                                                ? 'bg-emerald-500 hover:bg-emerald-600'
-                                                : isItemDelayed
-                                                ? 'bg-red-500 hover:bg-red-600'
-                                                : item.status === 'blocked'
-                                                ? 'bg-amber-500 hover:bg-amber-600'
-                                                : 'bg-blue-400 hover:bg-blue-500'
-                                            }`}
-                                          />
-                                        </TooltipTrigger>
-                                        <TooltipContent className="text-xs">
-                                          <p className="font-bold">{item.title}</p>
-                                          <p>狀態：{item.status}{isItemDelayed ? ' (超過規劃期程)' : ''}</p>
-                                          <p>負責/等候：{item.owner} / {item.waitingOn || '無'}</p>
-                                          <p>期間：{itemStart ? itemStart.slice(0, 10) : ''} ~ {itemEnd ? itemEnd.slice(0, 10) : ''}</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                    <>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <div
+                                              style={{
+                                                left: `${iStartX}px`,
+                                                width: `${iWidth}px`,
+                                              }}
+                                              className={`absolute h-3 rounded-xs shadow-2xs cursor-pointer transition-all z-10 ${
+                                                isCompleted
+                                                  ? 'bg-emerald-500 hover:bg-emerald-600'
+                                                  : item.isItemDelayed
+                                                  ? 'bg-red-500 hover:bg-red-600'
+                                                  : item.status === 'blocked'
+                                                  ? 'bg-amber-500 hover:bg-amber-600'
+                                                  : 'bg-blue-500 hover:bg-blue-600'
+                                              }`}
+                                            />
+                                          </TooltipTrigger>
+                                          <TooltipContent className="text-xs space-y-1">
+                                            <p className="font-bold">{item.title}</p>
+                                            <p>
+                                              狀態：{isCompleted ? '已完成' : item.status === 'blocked' ? '卡關中' : '進行中'}
+                                              {item.isItemDelayed ? ' (超過原階段規劃期程)' : ''}
+                                            </p>
+                                            <p>負責/等候：{item.owner} / {item.waitingOn || '無'}</p>
+                                            <p>
+                                              執行期間：{item.resolvedStart} ~ {item.resolvedEnd}
+                                            </p>
+                                            <p className="font-bold text-emerald-400">
+                                              {isCompleted
+                                                ? `完成天數：${item.durationDays} 天`
+                                                : `已進行：${item.elapsedDays} 天 (預計共 ${item.durationDays} 天)`}
+                                            </p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+
+                                      {/* 細項規畫項目 BAR 後直接顯示完成天數標籤 */}
+                                      <div
+                                        style={{
+                                          left: `${iStartX + iWidth + 6}px`,
+                                        }}
+                                        className={`absolute z-20 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap shadow-2xs border ${
+                                          isCompleted
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                            : item.isItemDelayed
+                                            ? 'bg-red-50 text-red-700 border-red-300'
+                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                        }`}
+                                      >
+                                        <span>
+                                          {isCompleted
+                                            ? `${item.durationDays}天`
+                                            : `進行中 ${item.elapsedDays}天`}
+                                        </span>
+                                        <span className="text-[9px] font-normal opacity-80">
+                                          ({item.resolvedStart.slice(5).replace('-', '/')}~
+                                          {item.resolvedEnd.slice(5).replace('-', '/')})
+                                        </span>
+                                      </div>
+                                    </>
                                   )}
                                 </div>
                               );
@@ -998,7 +1315,7 @@ export function ProjectVarianceClient({
                   <div className="flex justify-between">
                     <span className="text-slate-500">⬛ 預定規劃：</span>
                     <span className="font-semibold text-slate-800">
-                      {phase.plan.startDate.slice(5)} ~ {phase.plan.endDate.slice(5)}
+                      {phase.plan.startDate.replace(/-/g, '/')} ~ {phase.plan.endDate.slice(5).replace(/-/g, '/')} ({phase.planDays}天)
                     </span>
                   </div>
                   {(() => {
@@ -1012,9 +1329,12 @@ export function ProjectVarianceClient({
                         </span>
                         <span className={`font-semibold ${isDelayed ? 'text-red-600 font-bold' : 'text-blue-700'}`}>
                           {phase.actual.actualStart
-                            ? `${phase.actual.actualStart.slice(5)} ~ ${phase.actual.isCompleted ? phase.actual.actualEnd?.slice(5) : '進行中'}`
+                            ? `${phase.actual.actualStart.replace(/-/g, '/')} ~ ${
+                                phase.actual.isCompleted
+                                  ? phase.actual.actualEnd?.slice(5).replace(/-/g, '/')
+                                  : '進行中'
+                              }${phase.actual.actualDays ? ` (${phase.actual.actualDays}天)` : ''}`
                             : '尚無待辦'}
-                          {isDelayed ? ' ⚠️ (逾期)' : ''}
                         </span>
                       </div>
                     );
@@ -1043,11 +1363,15 @@ export function ProjectVarianceClient({
         />
       )}
 
-      {/* 彈出視窗：新增待辦事項 */}
+      {/* 彈出視窗：新增或編輯待辦事項 */}
       {currentProject && (
         <ActionItemDialog
           open={isAddActionItemOpen}
-          onOpenChange={setIsAddActionItemOpen}
+          onOpenChange={(open) => {
+            setIsAddActionItemOpen(open);
+            if (!open) setEditingActionItem(null);
+          }}
+          item={editingActionItem}
           defaultProjectId={currentProject.id}
           projects={projects}
           users={users}

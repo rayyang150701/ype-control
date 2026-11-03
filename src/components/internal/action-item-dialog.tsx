@@ -107,6 +107,7 @@ export function ActionItemDialog({
   const [status, setStatus] = useState<ActionItemStatus>(item?.status || 'pending');
   const [owner, setOwner] = useState(item?.owner || '');
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
+  const [startedAt, setStartedAt] = useState(item?.startedAt ? item.startedAt.slice(0, 10) : '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => getLocalTodayDateStr());
@@ -377,6 +378,7 @@ export function ActionItemDialog({
       setStatus(item.status);
       setOwner(item.owner || '');
       setWaitingOn(item.waitingOn || '');
+      setStartedAt(item.startedAt ? item.startedAt.slice(0, 10) : '');
       setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
       setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
       // 每次打開編輯待辦時，自動預設填入當天最新存檔日期（若同專案在2, 5, 10天分別更新，存檔皆為當天最新日期）
@@ -402,6 +404,7 @@ export function ActionItemDialog({
       setStatus('pending');
       setOwner(targetProj?.clientName || '燁輝');
       setWaitingOn('');
+      setStartedAt('');
       setDueDate('');
       setCompletedAt('');
       setLastUpdatedDate(todayStr);
@@ -528,6 +531,7 @@ export function ActionItemDialog({
           status,
           owner: owner === '未指定' ? '' : owner,
           waitingOn,
+          startedAt: startedAt ? new Date(startedAt).toISOString() : null,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           updatedAt: saveUpdatedAt,
@@ -562,6 +566,7 @@ export function ActionItemDialog({
           status,
           owner: owner === '未指定' ? '' : owner,
           waitingOn,
+          startedAt: startedAt ? new Date(startedAt).toISOString() : null,
           dueDate: dueDate || null,
           completedAt: status === 'completed' ? (completedAt ? new Date(completedAt).toISOString() : null) : null,
           updatedAt: saveUpdatedAt,
@@ -957,8 +962,21 @@ export function ActionItemDialog({
             </div>
           </div>
 
-          {/* 預計完成日、最近更新日 與 實際完成日 */}
-          <div className={`grid grid-cols-1 sm:grid-cols-2 ${status === 'completed' ? 'md:grid-cols-3' : ''} gap-3`}>
+          {/* 開始日、預計完成日、最近更新日 與 實際完成日 */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${status === 'completed' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3`}>
+            <div>
+              <Label className="text-sm font-semibold flex items-center justify-between h-5">
+                <span>開始日期</span>
+                <span className="text-[10px] font-normal text-muted-foreground">(選填)</span>
+              </Label>
+              <Input
+                type="date"
+                className="mt-1"
+                value={startedAt}
+                onChange={(e) => setStartedAt(e.target.value)}
+              />
+            </div>
+
             <div>
               <Label className="text-sm font-semibold flex items-center h-5">預計完成日</Label>
               <Input
