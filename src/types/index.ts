@@ -86,11 +86,24 @@ export interface Project {
   onHoldEndDate?: Timestamp | Date | string;
   onHoldNotes?: string;
   phaseSchedules?: ProjectPhaseSchedules;
+  wbsItems?: WbsItem[];
+  wbsBaselineLockedAt?: string | null;
 }
 
 export interface PhaseSchedule {
   startDate: string | null;
   endDate: string | null;
+}
+
+/** 第二階 WBS 工作包（里程碑檢核點）。基準日一旦鎖定即不可修改，延誤以此為準。 */
+export interface WbsItem {
+  id: string;
+  phaseKey: 'design' | 'construction' | 'verification' | 'acceptance';
+  code: string;            // 例如 1.2.3
+  name: string;            // 可自訂名稱
+  baselineStart?: string | null;
+  baselineEnd?: string | null;
+  addedAfterLock?: boolean; // 基準鎖定後才追加的工作包（無基準，不計延誤）
 }
 
 export interface ProjectPhaseSchedules {
@@ -189,6 +202,8 @@ export interface DueDateChange {
   to: string | null;
   changedAt: string;
   delayDays: number;
+  reason?: string;          // 延期原因說明
+  reasonCategory?: string;  // 原因分類：客戶 / 廠商 / 內部 / 需求變更 / 其他
 }
 
 export interface StatusChange {
@@ -213,6 +228,7 @@ export interface ProjectActionItem {
   id: string;
   projectId: string;
   subProjectId?: string | null;
+  wbsItemId?: string | null; // 所屬第二階工作包
   title: string;
   phase: ActionItemPhase;
   status: ActionItemStatus;

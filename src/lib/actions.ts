@@ -2,12 +2,13 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient as getSupabaseClient } from '@/lib/supabase/server';
-import type { User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday, ProjectPhaseSchedules, AuditLog, AuditDiffItem, AuditOperator } from '@/types';
+import type { WbsItem, User, ProgressLog, FullProject, SubProjectWithLatestLog, ProjectActionItem, InternalProjectOption, Client, ProjectSourceType, CurrentUser, UserRole, UserStatus, WeeklySnapshotItem, WeeklySnapshotData, ActionItemAttachment, BusinessTrip, TripFilter, Holiday, ProjectPhaseSchedules, AuditLog, AuditDiffItem, AuditOperator } from '@/types';
 import { recordAuditLog, getAuditLogs } from '@/lib/audit';
 import { deleteFileFromDrive } from '@/lib/drive-upload';
 import { subDays, startOfWeek, endOfWeek, format, subWeeks } from 'date-fns';
 import { DEFAULT_TAIWAN_HOLIDAYS } from '@/lib/calendar-helper';
 import { isTpmPerson, separatePmAndTpm } from '@/lib/tpm-helper';
+import { DEFAULT_WBS_TEMPLATE } from '@/lib/phase-constants';
 
 export async function getAuditLogsAction(params?: any) {
     return await getAuditLogs(params);
@@ -76,6 +77,8 @@ interface ProjectMeta {
     linkedCustomerProjectId?: string;
     onHoldNotes?: string;
     phaseSchedules?: ProjectPhaseSchedules;
+    wbsItems?: WbsItem[];
+    wbsBaselineLockedAt?: string | null;
 }
 
 function parseProjectMeta(onHoldNotesRaw: string | null | undefined): ProjectMeta {
@@ -1547,6 +1550,8 @@ async function getOptimizedProjectData() {
                 egigaContact,
                 isOnHold: !!doc.is_on_hold,
                 phaseSchedules: meta.phaseSchedules || undefined,
+            wbsItems: meta.wbsItems || undefined,
+            wbsBaselineLockedAt: meta.wbsBaselineLockedAt || null,
                 createdAt: formatISO(doc.created_at),
                 subProjects: [],
             } as any;
@@ -1739,6 +1744,7 @@ export const getProgressLogsForSubProject = async (projectId: string, subProject
 const ATTACHMENTS_MARKER_REGEX = /<!--ATTACHMENTS:([\s\S]*?)-->/g;
 const PINNED_MARKER_REGEX = /<!--PINNED:(true|false)-->/gi;
 const MEETING_URL_MARKER_REGEX = /<!--MEETING_URL:([\s\S]*?)-->/gi;
+const WBS_MARKER_REGEX = /<!--WBS:([\s\S]*?)-->/gi;
 
 function isColumnMissingError(err: any): boolean {
     if (!err) return false;
@@ -1750,7 +1756,12 @@ function isColumnMissingError(err: any): boolean {
 // 標記資料庫是否已具備 is_pinned 實體欄位（預設 false 採 notes 標記無痛儲存，杜絕 PostgREST PGRST204 報錯）
 let dbSupportsPinnedColumn = false;
 
-function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean; meetingUrl?: string } {
+function extractWbsItemId(rawNotes: string | null | undefined): string | null {
+    const m = String(rawNotes || '').match(/<!--WBS:([\s\S]*?)-->/i);
+    return m && m[1] ? m[1].trim() : null;
+}
+
+function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean; meetingUrl?: string; wbsItemId: string | null } {
     let list: ActionItemAttachment[] = [];
     const rawNotes = item.notes || '';
     const isPinned = Boolean(item.is_pinned) || /<!--PINNED:true-->/i.test(rawNotes);
@@ -1766,6 +1777,7 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
         .replace(ATTACHMENTS_MARKER_REGEX, '')
         .replace(PINNED_MARKER_REGEX, '')
         .replace(MEETING_URL_MARKER_REGEX, '')
+            .replace(WBS_MARKER_REGEX, '')
         .trim();
 
     if (item.attachments) {
@@ -1785,7 +1797,7 @@ function extractAttachments(item: any): { attachments: ActionItemAttachment[]; c
         }
     }
 
-    return { attachments: list, cleanNotes: notes, isPinned, meetingUrl: meetingUrl || undefined };
+    return { attachments: list, cleanNotes: notes, isPinned, meetingUrl: meetingUrl || undefined, wbsItemId: extractWbsItemId(item.notes) };
 }
 
 function encodeAttachmentsIntoNotes(notes: string, attachments?: ActionItemAttachment[]): string {
@@ -1833,11 +1845,12 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
 
         return sortedData.map(item => {
             const proj = projMap.get(item.project_id);
-            const { attachments, cleanNotes, isPinned, meetingUrl } = extractAttachments(item);
+            const { attachments, cleanNotes, isPinned, meetingUrl, wbsItemId } = extractAttachments(item);
             return {
                 id: item.id,
                 projectId: item.project_id,
                 subProjectId: item.sub_project_id || null,
+                wbsItemId,
                 title: item.title,
                 phase: item.phase,
                 status: item.status,
@@ -2004,6 +2017,7 @@ export async function createActionItem(data: {
     attachments?: ActionItemAttachment[];
     isPinned?: boolean;
     meetingUrl?: string;
+    wbsItemId?: string | null;
     updatedAt?: string | null;
     operator?: AuditOperator;
 }) {
@@ -2019,12 +2033,16 @@ export async function createActionItem(data: {
             .replace(ATTACHMENTS_MARKER_REGEX, '')
             .replace(PINNED_MARKER_REGEX, '')
             .replace(MEETING_URL_MARKER_REGEX, '')
+            .replace(WBS_MARKER_REGEX, '')
             .trim();
         if (isPinned) {
             cleanNotes = `${cleanNotes}\n<!--PINNED:true-->`.trim();
         }
         if (meetingUrl) {
             cleanNotes = `${cleanNotes}\n<!--MEETING_URL:${meetingUrl}-->`.trim();
+        }
+        if (data.wbsItemId) {
+            cleanNotes = `${cleanNotes}\n<!--WBS:${data.wbsItemId}-->`.trim();
         }
 
         const insertPayload: any = {
@@ -2081,12 +2099,14 @@ export async function createActionItem(data: {
             .replace(ATTACHMENTS_MARKER_REGEX, '')
             .replace(PINNED_MARKER_REGEX, '')
             .replace(MEETING_URL_MARKER_REGEX, '')
+            .replace(WBS_MARKER_REGEX, '')
             .trim();
 
         const newItem: ProjectActionItem = {
             id: inserted.id,
             projectId: inserted.project_id,
             subProjectId: inserted.sub_project_id || null,
+            wbsItemId: data.wbsItemId || null,
             title: inserted.title,
             phase: inserted.phase,
             status: inserted.status,
@@ -2166,6 +2186,9 @@ export async function updateActionItem(id: string, data: Partial<{
     attachments: ActionItemAttachment[];
     isPinned: boolean;
     meetingUrl?: string;
+    wbsItemId: string | null;
+    dueDateReason: string;
+    dueDateReasonCategory: string;
     updatedAt: string | null;
     operator?: AuditOperator;
 }>) {
@@ -2206,18 +2229,25 @@ export async function updateActionItem(id: string, data: Partial<{
             ? (data.meetingUrl ? data.meetingUrl.trim() : '')
             : existingMeetingUrl;
 
-        if (data.notes !== undefined || data.isPinned !== undefined || data.meetingUrl !== undefined) {
+        const existingWbsId = extractWbsItemId(existing.notes);
+        const targetWbsId = data.wbsItemId !== undefined ? (data.wbsItemId || null) : existingWbsId;
+
+        if (data.notes !== undefined || data.isPinned !== undefined || data.meetingUrl !== undefined || data.wbsItemId !== undefined) {
             const rawNotes = data.notes !== undefined ? data.notes : (existing.notes || '');
             let clean = (rawNotes || '')
                 .replace(ATTACHMENTS_MARKER_REGEX, '')
                 .replace(PINNED_MARKER_REGEX, '')
                 .replace(MEETING_URL_MARKER_REGEX, '')
+            .replace(WBS_MARKER_REGEX, '')
                 .trim();
             if (targetPinned) {
                 clean = `${clean}\n<!--PINNED:true-->`.trim();
             }
             if (targetMeetingUrl) {
                 clean = `${clean}\n<!--MEETING_URL:${targetMeetingUrl}-->`.trim();
+            }
+            if (targetWbsId) {
+                clean = `${clean}\n<!--WBS:${targetWbsId}-->`.trim();
             }
             updatePayload.notes = clean;
         }
@@ -2245,11 +2275,14 @@ export async function updateActionItem(id: string, data: Partial<{
                 const delayDays = (oldDueDate && newDueDate)
                     ? Math.round((new Date(newDueDate).getTime() - new Date(oldDueDate).getTime()) / (1000 * 60 * 60 * 24))
                     : 0;
+                const reason = (data.dueDateReason || '').trim();
                 history.push({
                     from: oldDueDate,
                     to: newDueDate,
                     changedAt: nowIso,
                     delayDays,
+                    ...(reason ? { reason } : {}),
+                    ...(data.dueDateReasonCategory ? { reasonCategory: data.dueDateReasonCategory } : {}),
                 });
                 updatePayload.due_date_history = JSON.stringify(history);
             }
@@ -2380,6 +2413,7 @@ export async function updateActionItem(id: string, data: Partial<{
                 id: updated.id,
                 projectId: updated.project_id,
                 subProjectId: updated.sub_project_id || null,
+                wbsItemId: extractWbsItemId(updated.notes),
                 title: updated.title,
                 phase: updated.phase,
                 status: updated.status,
@@ -2585,6 +2619,8 @@ export const getAllProjectsForInternal = async (): Promise<FullProject[]> => {
             egigaContact: doc.egiga_contact || '',
             isOnHold: !!doc.is_on_hold,
             phaseSchedules: meta.phaseSchedules || undefined,
+            wbsItems: meta.wbsItems || undefined,
+            wbsBaselineLockedAt: meta.wbsBaselineLockedAt || null,
             createdAt: formatISO(doc.created_at),
             createdBy: doc.created_by || '',
             subProjects: [],
@@ -3976,3 +4012,141 @@ export async function updateProjectPhaseSchedules(
 
 
 
+
+// ─── 第二階 WBS 工作包（基準時程）管理 ───────────────────────────────
+
+function newWbsId(): string {
+    return `wbs_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+}
+
+/** 以預設範本建立第二階工作包（不含基準日，需由使用者填入起訖日） */
+function buildDefaultWbsItems(): WbsItem[] {
+    return DEFAULT_WBS_TEMPLATE.map(t => ({
+        id: newWbsId(),
+        phaseKey: t.phaseKey,
+        code: t.code,
+        name: t.name,
+        baselineStart: null,
+        baselineEnd: null,
+    }));
+}
+
+/**
+ * 儲存專案第二階工作包。
+ * - 基準鎖定前：可自由修改名稱、起訖日、新增、刪除。
+ * - 基準鎖定後：既有工作包的基準起訖日不可更動（延誤以此為準）；仍可改名、刪除；新增者標記為鎖定後追加，不計延誤。
+ */
+export async function saveProjectWbs(
+    projectId: string,
+    items: WbsItem[]
+): Promise<{ success: boolean; message: string; data?: { wbsItems: WbsItem[]; wbsBaselineLockedAt: string | null } }> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects').select('on_hold_notes').eq('id', projectId).single();
+        if (fetchErr || !proj) return { success: false, message: '找不到對應專案主檔' };
+
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        const lockedAt = meta.wbsBaselineLockedAt || null;
+        const prevById = new Map((meta.wbsItems || []).map(i => [i.id, i]));
+
+        const cleaned: WbsItem[] = items.map(i => {
+            const base: WbsItem = {
+                id: i.id || newWbsId(),
+                phaseKey: i.phaseKey,
+                code: (i.code || '').trim(),
+                name: (i.name || '').trim(),
+                baselineStart: i.baselineStart ? String(i.baselineStart).slice(0, 10) : null,
+                baselineEnd: i.baselineEnd ? String(i.baselineEnd).slice(0, 10) : null,
+            };
+            if (lockedAt) {
+                const prev = prevById.get(base.id);
+                if (prev) {
+                    base.baselineStart = prev.baselineStart ?? null;
+                    base.baselineEnd = prev.baselineEnd ?? null;
+                    if (prev.addedAfterLock) base.addedAfterLock = true;
+                } else {
+                    base.baselineStart = null;
+                    base.baselineEnd = null;
+                    base.addedAfterLock = true;
+                }
+            }
+            return base;
+        }).filter(i => i.name);
+
+        for (const i of cleaned) {
+            if (i.baselineStart && i.baselineEnd && i.baselineEnd < i.baselineStart) {
+                return { success: false, message: `「${i.code} ${i.name}」的基準結束日不可早於開始日` };
+            }
+        }
+
+        meta.wbsItems = cleaned;
+        const { error: updateErr } = await supabase
+            .from('projects').update({ on_hold_notes: serializeProjectMeta(meta) }).eq('id', projectId);
+        if (updateErr) throw updateErr;
+
+        revalidatePath('/project-variance');
+        revalidatePath('/internal-tasks');
+        return { success: true, message: 'WBS 工作包已儲存', data: { wbsItems: cleaned, wbsBaselineLockedAt: lockedAt } };
+    } catch (err: any) {
+        console.error('儲存 WBS 失敗:', err);
+        return { success: false, message: err?.message || '儲存 WBS 失敗' };
+    }
+}
+
+/** 鎖定基準：之後既有工作包的基準日不可再改。至少需有一個設好起訖日的工作包。 */
+export async function lockProjectWbsBaseline(
+    projectId: string
+): Promise<{ success: boolean; message: string; lockedAt?: string }> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects').select('on_hold_notes').eq('id', projectId).single();
+        if (fetchErr || !proj) return { success: false, message: '找不到對應專案主檔' };
+
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        if (meta.wbsBaselineLockedAt) return { success: false, message: '基準已鎖定' };
+        const withDates = (meta.wbsItems || []).filter(i => i.baselineStart && i.baselineEnd);
+        if (withDates.length === 0) return { success: false, message: '請先為至少一個工作包填入基準起訖日再鎖定' };
+
+        // 未填基準日的工作包視為鎖定後追加（不計延誤）
+        meta.wbsItems = (meta.wbsItems || []).map(i =>
+            (i.baselineStart && i.baselineEnd) ? i : { ...i, addedAfterLock: true });
+        meta.wbsBaselineLockedAt = new Date().toISOString();
+
+        const { error: updateErr } = await supabase
+            .from('projects').update({ on_hold_notes: serializeProjectMeta(meta) }).eq('id', projectId);
+        if (updateErr) throw updateErr;
+
+        revalidatePath('/project-variance');
+        return { success: true, message: '基準已鎖定', lockedAt: meta.wbsBaselineLockedAt };
+    } catch (err: any) {
+        console.error('鎖定 WBS 基準失敗:', err);
+        return { success: false, message: err?.message || '鎖定失敗' };
+    }
+}
+
+/** 一鍵套用預設第二階範本（僅在專案尚無工作包時執行，不覆蓋既有資料） */
+export async function applyDefaultWbsTemplate(
+    projectId: string
+): Promise<{ success: boolean; message: string; data?: { wbsItems: WbsItem[] } }> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects').select('on_hold_notes').eq('id', projectId).single();
+        if (fetchErr || !proj) return { success: false, message: '找不到對應專案主檔' };
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        if (meta.wbsItems && meta.wbsItems.length > 0) {
+            return { success: false, message: '此專案已有工作包，未覆蓋。' };
+        }
+        meta.wbsItems = buildDefaultWbsItems();
+        const { error: updateErr } = await supabase
+            .from('projects').update({ on_hold_notes: serializeProjectMeta(meta) }).eq('id', projectId);
+        if (updateErr) throw updateErr;
+        revalidatePath('/project-variance');
+        return { success: true, message: '已套用預設二階範本', data: { wbsItems: meta.wbsItems } };
+    } catch (err: any) {
+        console.error('套用 WBS 範本失敗:', err);
+        return { success: false, message: err?.message || '套用範本失敗' };
+    }
+}

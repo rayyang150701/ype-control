@@ -15,6 +15,7 @@ import { AttachmentsUploader } from './attachments-uploader';
 import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
 import { useAdmin } from '@/components/admin-context';
 import { TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
+import { DELAY_REASON_CATEGORIES, MAJOR_PHASES } from '@/lib/phase-constants';
 import type { ProjectActionItem, FullProject, ActionItemPhase, ActionItemStatus, User, Client, ActionItemAttachment } from '@/types';
 
 interface ActionItemDialogProps {
@@ -109,11 +110,18 @@ export function ActionItemDialog({
   const [waitingOn, setWaitingOn] = useState(item?.waitingOn || '');
   const [startedAt, setStartedAt] = useState(item?.startedAt ? item.startedAt.slice(0, 10) : '');
   const [dueDate, setDueDate] = useState(item?.dueDate ? item.dueDate.slice(0, 10) : '');
+  const [wbsItemId, setWbsItemId] = useState<string>(item?.wbsItemId || '');
+  const [delayReason, setDelayReason] = useState('');
+  const [delayCategory, setDelayCategory] = useState('');
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => getLocalTodayDateStr());
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
   const [lessonLearnt, setLessonLearnt] = useState(item?.lessonLearnt || '');
   const [attachments, setAttachments] = useState<ActionItemAttachment[]>(item?.attachments || []);
+  const currentProjectWbs = (projects.find((p) => p.id === projectId)?.wbsItems) || [];
+  const oldDueStr = item?.dueDate ? item.dueDate.slice(0, 10) : '';
+  const isDueDateChanged = !!item && !!dueDate && dueDate !== oldDueStr;
+  const isDueDateDelayed = isDueDateChanged && !!oldDueStr && dueDate > oldDueStr;
   const attachmentsRef = useRef<ActionItemAttachment[]>(item?.attachments || []);
   const initializedSessionRef = useRef<string | null>(null);
 
@@ -380,6 +388,9 @@ export function ActionItemDialog({
       setWaitingOn(item.waitingOn || '');
       setStartedAt(item.startedAt ? item.startedAt.slice(0, 10) : '');
       setDueDate(item.dueDate ? item.dueDate.slice(0, 10) : '');
+      setWbsItemId(item.wbsItemId || '');
+      setDelayReason('');
+      setDelayCategory('');
       setCompletedAt(item.completedAt ? item.completedAt.slice(0, 10) : '');
       // 每次打開編輯待辦時，自動預設填入當天最新存檔日期（若同專案在2, 5, 10天分別更新，存檔皆為當天最新日期）
       setLastUpdatedDate(todayStr);
@@ -406,6 +417,9 @@ export function ActionItemDialog({
       setWaitingOn('');
       setStartedAt('');
       setDueDate('');
+      setWbsItemId('');
+      setDelayReason('');
+      setDelayCategory('');
       setCompletedAt('');
       setLastUpdatedDate(todayStr);
       setNotes('');
@@ -500,6 +514,12 @@ export function ActionItemDialog({
         targetProjectId = pocRes.data.id;
       }
 
+      if (isDueDateDelayed && !delayReason.trim()) {
+        toast({ title: '請填寫延期原因', description: '預計完成日往後延時，必須說明原因，才能在 Gap 分析中追溯延誤來源。', variant: 'destructive' });
+        setIsSubmitting(false);
+        return;
+      }
+
       const cleanNotes = (notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim();
 
       // 存檔時自動寫入當下最新存檔時間（若手動調整日期則依指定日期）
@@ -540,6 +560,9 @@ export function ActionItemDialog({
           attachments: finalAttachments,
           isPinned,
           meetingUrl: meetingUrl.trim() || undefined,
+          wbsItemId: wbsItemId || null,
+          dueDateReason: isDueDateChanged ? delayReason.trim() : undefined,
+          dueDateReasonCategory: isDueDateChanged ? (delayCategory || undefined) : undefined,
           operator,
         });
         if (res.success) {
@@ -575,6 +598,7 @@ export function ActionItemDialog({
           attachments: finalAttachments,
           isPinned,
           meetingUrl: meetingUrl.trim() || undefined,
+          wbsItemId: wbsItemId || null,
           operator,
         });
         if (res.success) {
@@ -828,6 +852,29 @@ export function ActionItemDialog({
             )}
           </div>
 
+          {/* 所屬第二階工作包 */}
+          {currentProjectWbs.length > 0 && (
+            <div>
+              <Label className="text-sm font-semibold flex items-center h-5">所屬第二階工作包（Gap 分析延誤歸屬）</Label>
+              <Select value={wbsItemId || 'none'} onValueChange={(v) => setWbsItemId(v === 'none' ? '' : v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="選擇工作包" /></SelectTrigger>
+                <SelectContent className="max-h-80">
+                  <SelectItem value="none">（不歸屬任何工作包）</SelectItem>
+                  {MAJOR_PHASES.map((ph) => {
+                    const list = currentProjectWbs.filter((w) => w.phaseKey === ph.key);
+                    if (list.length === 0) return null;
+                    return (
+                      <SelectGroup key={ph.key}>
+                        <SelectLabel className="text-xs">{ph.fullName}</SelectLabel>
+                        {list.map((w) => (<SelectItem key={w.id} value={w.id}>{w.code} {w.name}</SelectItem>))}
+                      </SelectGroup>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* 階段與狀態 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -985,6 +1032,25 @@ export function ActionItemDialog({
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
+              {isDueDateChanged && (
+                <div className={`mt-2 rounded-md border p-2 space-y-1.5 ${isDueDateDelayed ? 'border-red-200 bg-red-50/60' : 'border-slate-200 bg-slate-50'}`}>
+                  <span className="text-[11px] font-semibold text-slate-700 block">
+                    {isDueDateDelayed ? '⚠️ 預計日往後延，請說明延期原因（必填）' : '預計日調整說明（選填）'}
+                  </span>
+                  <Select value={delayCategory} onValueChange={setDelayCategory}>
+                    <SelectTrigger className="h-8 text-xs bg-white"><SelectValue placeholder="原因分類" /></SelectTrigger>
+                    <SelectContent>
+                      {DELAY_REASON_CATEGORIES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    className="text-xs bg-white min-h-[56px]"
+                    placeholder="例如：廠商設備交期延後、客戶停機時間未確定…"
+                    value={delayReason}
+                    onChange={(e) => setDelayReason(e.target.value)}
+                  />
+                </div>
+              )}
               {item?.originalDueDate && item.originalDueDate !== dueDate && (
                 <span className="text-[11px] text-amber-600 block mt-0.5">
                   📌 最初基準日：{item.originalDueDate}

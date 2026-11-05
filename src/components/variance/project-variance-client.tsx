@@ -40,6 +40,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/components/admin-context';
 import { EditPhaseScheduleDialog } from './edit-phase-schedule-dialog';
+import { WbsGapPanel } from './wbs-gap-panel';
 import { ActionItemDialog } from '@/components/internal/action-item-dialog';
 import {
   MAJOR_PHASES,
@@ -1351,6 +1352,22 @@ export function ProjectVarianceClient({
             </Card>
           ))}
         </div>
+      )}
+
+      {/* 第二階 WBS 基準 vs 預估（延誤追蹤） */}
+      {currentProject && (
+        <WbsGapPanel
+          project={currentProject}
+          actionItems={actionItems}
+          canManage={permissions.gapAnalysis.canManage}
+          onWbsChange={(wbsItems, lockedAt) =>
+            setProjects((prev) =>
+              prev.map((p) =>
+                p.id === currentProject.id ? { ...p, wbsItems, wbsBaselineLockedAt: lockedAt } : p
+              )
+            )
+          }
+        />
       )}
 
       {/* 彈出視窗：編輯專案四大階段規劃時程 */}

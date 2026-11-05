@@ -157,3 +157,31 @@ export function getMajorPhaseName(phase: string | undefined | null): '設計階�
       return '驗收階段';
   }
 }
+
+
+/**
+ * 預設第二階 WBS 範本（開案時一鍵套用，可於專案內改名、刪除、新增）。
+ * 各專案的二階不盡相同，這份只是起點。
+ */
+export const DEFAULT_WBS_TEMPLATE: { phaseKey: MajorPhaseKey; code: string; name: string }[] = [
+  { phaseKey: 'design', code: '1.1.1', name: '現場勘查與規格確認（立項/簽呈）' },
+  { phaseKey: 'design', code: '1.1.2', name: '硬體架構與電控圖面設計' },
+  { phaseKey: 'design', code: '1.1.3', name: '軟體/PLC 通訊協定定義' },
+  { phaseKey: 'construction', code: '1.2.1', name: '關鍵設備採購與到貨檢驗（備料）' },
+  { phaseKey: 'construction', code: '1.2.2', name: '廠內盤體組裝與預先測試' },
+  { phaseKey: 'construction', code: '1.2.3', name: '現場硬體架設與佈線施工' },
+  { phaseKey: 'verification', code: '1.3.1', name: '單機功能與訊號測試' },
+  { phaseKey: 'verification', code: '1.3.2', name: '系統整合對接測試' },
+  { phaseKey: 'verification', code: '1.3.3', name: '試運行與異常收斂（故障排除）' },
+  { phaseKey: 'acceptance', code: '1.4.1', name: '教育訓練與操作手冊交付' },
+  { phaseKey: 'acceptance', code: '1.4.2', name: '驗收測試報告簽認與結案' },
+];
+
+export const DELAY_REASON_CATEGORIES = ['客戶端', '廠商/供應商', '內部作業', '需求變更', '外部環境', '其他'] as const;
+
+/** 待辦階段文字 → 預設歸屬的第二階工作包編號（供舊資料自動歸類參考） */
+export function defaultWbsCodeForPhase(phase: string | undefined | null): string | null {
+  if (!phase) return null;
+  const m = String(phase).match(/^(\d\.\d\.\d)/);
+  return m ? m[1] : null;
+}
