@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { User, InternalProjectOption } from '@/types';
+import { getPmOwnerOptions } from '@/lib/owner-options';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { cn } from '@/lib/utils';
 import { Separator } from '../ui/separator';
@@ -284,11 +285,16 @@ export function NewProjectDialog({ isOpen, setIsOpen, onProjectAdded }: NewProje
                               <SelectValue placeholder="選擇負責人" />
                             </SelectTrigger>
                             <SelectContent>
-                              {users.map(user => (
-                                <SelectItem key={user.uid} value={user.uid}>
-                                  {user.displayName}
-                                </SelectItem>
-                              ))}
+                              {getPmOwnerOptions(users).map(user => (
+                                    <SelectItem key={user.uid} value={user.uid}>
+                                      {user.displayName}
+                                    </SelectItem>
+                                  ))}
+                                  {field.value && !getPmOwnerOptions(users).some(u => u.uid === field.value) && (
+                                    <SelectItem value={field.value} disabled>
+                                      {(users.find(u => u.uid === field.value)?.displayName || '未知') + '（非PM，請重新選擇）'}
+                                    </SelectItem>
+                                  )}
                             </SelectContent>
                           </Select>
                         )}
