@@ -123,6 +123,8 @@ export function ProjectVarianceClient({
   });
 
   const [timeScale, setTimeScale] = useState<TimeScale>('month');
+  // 子階段（第二階）列的收合狀態：key = `${projectId}-${phaseKey}`，true = 收合
+  const [wbsCollapsed, setWbsCollapsed] = useState<Record<string, boolean>>({});
   const chartScrollRef = useRef<HTMLDivElement | null>(null);
   const [chartViewportW, setChartViewportW] = useState(0);
   useEffect(() => {
@@ -778,6 +780,30 @@ export function ProjectVarianceClient({
         </div>
 
         <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-slate-700">子階段：</span>
+          <div className="inline-flex rounded-md border border-slate-300 overflow-hidden bg-white">
+            <button
+              type="button"
+              onClick={() => setWbsCollapsed({})}
+              className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            >
+              全部展開
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setWbsCollapsed(
+                  Object.fromEntries(MAJOR_PHASES.map((ph) => [`${selectedProjectId}-${ph.key}`, true]))
+                )
+              }
+              className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 border-l border-slate-300"
+            >
+              全部收合
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
           <span className="font-semibold text-slate-700">時間刻度：</span>
           <div className="inline-flex rounded-md border border-slate-300 overflow-hidden bg-white">
             {TIME_SCALE_OPTIONS.map((o) => (
@@ -978,7 +1004,21 @@ export function ProjectVarianceClient({
                           ))}
 
                         {/* 第二階子階段列（WBS） */}
-                        {(wbsRowsByPhase[phase.key] || []).map((w) => (
+                        {(wbsRowsByPhase[phase.key] || []).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setWbsCollapsed((prev) => ({ ...prev, [phaseKeyId]: !prev[phaseKeyId] }))}
+                            className="w-full h-7 px-3.5 pl-9 flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/70 border-b border-slate-100 text-left"
+                          >
+                            {wbsCollapsed[phaseKeyId] ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            子階段（{(wbsRowsByPhase[phase.key] || []).length}）
+                            {wbsCollapsed[phaseKeyId] && (() => {
+                              const maxDelay = Math.max(0, ...(wbsRowsByPhase[phase.key] || []).map((w) => w.delayDays));
+                              return maxDelay > 0 ? <span className="ml-2 text-rose-600">最大延誤 {maxDelay} 天</span> : null;
+                            })()}
+                          </button>
+                        )}
+                        {!wbsCollapsed[phaseKeyId] && (wbsRowsByPhase[phase.key] || []).map((w) => (
                           <div
                             key={w.wbs.id}
                             className="h-10 px-3.5 pl-9 flex items-center justify-between text-[11px] bg-indigo-50/40 border-b border-slate-100"
@@ -1440,7 +1480,10 @@ export function ProjectVarianceClient({
                             })}
 
                           {/* 第二階子階段（WBS）：上黑＝基準，下藍/紅＝實際（由待辦彙整） */}
-                          {(wbsRowsByPhase[phase.key] || []).map((w) => {
+                          {(wbsRowsByPhase[phase.key] || []).length > 0 && (
+                            <div className="h-7 border-b border-slate-100 bg-indigo-50/50" />
+                          )}
+                          {!wbsCollapsed[phaseKeyId] && (wbsRowsByPhase[phase.key] || []).map((w) => {
                             const bs = w.wbs.baselineStart ? getXForDate(w.wbs.baselineStart) : null;
                             const be = w.wbs.baselineEnd ? getXForDate(w.wbs.baselineEnd) : null;
                             const as = w.actualStart ? getXForDate(w.actualStart) : null;
