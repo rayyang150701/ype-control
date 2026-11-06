@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   format,
   parseISO,
@@ -123,6 +123,17 @@ export function ProjectVarianceClient({
   });
 
   const [timeScale, setTimeScale] = useState<TimeScale>('month');
+  const chartScrollRef = useRef<HTMLDivElement | null>(null);
+  const [chartViewportW, setChartViewportW] = useState(0);
+  useEffect(() => {
+    const el = chartScrollRef.current;
+    if (!el) return;
+    const update = () => setChartViewportW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
@@ -521,13 +532,20 @@ export function ProjectVarianceClient({
 
   // 依據總月數自動調整單月欄寬，兼顧跨年度全貌與日期比例清晰度
   const monthWidth = useMemo(() => {
-    if (timeScale === 'week') return 260;
-    if (timeScale === 'quarter') return 46;
-    if (timeScale === 'half') return 26;
-    if (timelineMonths.length > 16) return 86;
-    if (timelineMonths.length > 12) return 96;
-    return 110;
-  }, [timelineMonths.length, timeScale]);
+    let base = 110;
+    if (timeScale === 'week') base = 260;
+    else if (timeScale === 'quarter') base = 46;
+    else if (timeScale === 'half') base = 26;
+    else if (timelineMonths.length > 16) base = 86;
+    else if (timelineMonths.length > 12) base = 96;
+    // 讓時間軸至少填滿可視寬度，避免右側留白（左欄在大螢幕固定 370px）
+    const leftW = typeof window !== 'undefined' && window.innerWidth >= 1280 ? 370 : 0;
+    const avail = chartViewportW - leftW - 2;
+    if (avail > 0 && timelineMonths.length > 0) {
+      return Math.max(base, Math.floor(avail / timelineMonths.length));
+    }
+    return base;
+  }, [timelineMonths.length, timeScale, chartViewportW]);
 
   const timelineStart = useMemo(
     () => startOfMonth(timelineMonths[0]),
@@ -786,12 +804,15 @@ export function ProjectVarianceClient({
       </div>
 
       {/* 甘特圖主容器 (仿人工製作甘特圖的前後階梯順序佈局) */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+      <div
+        ref={chartScrollRef}
+        className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-auto max-h-[calc(100vh-110px)]"
+      >
         <div className="flex flex-col xl:flex-row">
           {/* 左欄：任務名稱、原始規劃日期與工期樹狀結構 */}
-          <div className="w-full xl:w-[370px] shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white select-none">
+          <div className="w-full xl:w-[370px] shrink-0 border-b xl:border-b-0 xl:border-r border-slate-200 bg-white select-none xl:sticky xl:left-0 z-20">
             {/* 左欄表頭 */}
-            <div className="h-[72px] border-b border-slate-200 px-3.5 bg-slate-50/90 flex items-center justify-between">
+            <div className="h-[72px] border-b border-slate-200 px-3.5 bg-slate-50 flex items-center justify-between sticky top-0 z-30">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-slate-800">任務名稱</span>
                 <span className="text-[11px] text-slate-500 font-medium">
@@ -990,11 +1011,13 @@ export function ProjectVarianceClient({
           </div>
 
           {/* 右欄：甘特圖時間軸 (原始規劃階梯黑 Bar + 後續執行方案藍/紅 Bar + 細項完成天數) */}
-          <div className="flex-1 overflow-x-auto relative bg-slate-50/30 min-w-0">
+          <div className="flex-1 relative bg-slate-50/30 min-w-0">
             <div
               style={{ width: `${totalTimelineWidth}px` }}
               className="relative select-none"
             >
+              {/* 時間軸表頭（捲動時固定在上方，隨時看得到日期） */}
+              <div className="sticky top-0 z-30">
               {/* 時間軸表頭：季度列 (頂層) */}
               <div className="h-9 border-b border-slate-200 bg-slate-100/90 flex text-xs font-bold text-slate-700">
                 {quarterGroups.map((q, idx) => (
@@ -1045,6 +1068,8 @@ export function ProjectVarianceClient({
                     )}
                   </div>
                 ))}
+              </div>
+
               </div>
 
               {/* 今日垂直綠線 (Today Line - 貫穿整個圖表) */}
