@@ -44,12 +44,13 @@ export function computeWbsGap(
   return wbsItems.map((wbs) => {
     const linked = actionItems.filter((a) => a.wbsItemId === wbs.id);
     const completedCount = linked.filter((a) => a.status === 'completed').length;
-    const isDone = linked.length > 0 && completedCount === linked.length;
+    const closedAt = d10(wbs.completedAt);
+    const isDone = !!closedAt || (linked.length > 0 && completedCount === linked.length);
     const baselineEnd = d10(wbs.baselineEnd);
     const hasBaseline = !wbs.addedAfterLock && !!baselineEnd && !!d10(wbs.baselineStart);
 
     const ends = linked.map((a) => itemEndDate(a, todayStr)).filter((x): x is string => !!x).sort();
-    const forecastEnd = ends.length ? ends[ends.length - 1] : null;
+    const forecastEnd = closedAt || (ends.length ? ends[ends.length - 1] : null);
     const delayDays = hasBaseline && forecastEnd && baselineEnd ? Math.max(0, daysBetween(forecastEnd, baselineEnd)) : 0;
 
     const causes: WbsDelayCause[] = linked

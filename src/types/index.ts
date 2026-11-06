@@ -104,6 +104,7 @@ export interface WbsItem {
   baselineStart?: string | null;
   baselineEnd?: string | null;
   addedAfterLock?: boolean; // 基準鎖定後才追加的工作包（無基準，不計延誤）
+  completedAt?: string | null; // 此子階段已結束的日期（手動標記結束）
 }
 
 export interface ProjectPhaseSchedules {

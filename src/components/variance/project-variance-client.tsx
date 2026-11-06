@@ -41,6 +41,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/components/admin-context';
 import { EditPhaseScheduleDialog } from './edit-phase-schedule-dialog';
 import { WbsGapPanel } from './wbs-gap-panel';
+import { computeWbsGap } from '@/lib/wbs-gap';
 import { ActionItemDialog } from '@/components/internal/action-item-dialog';
 import {
   MAJOR_PHASES,
@@ -54,6 +55,27 @@ import type {
   User,
   Client,
 } from '@/types';
+
+type TimeScale = 'week' | 'month' | 'quarter' | 'half';
+const TIME_SCALE_OPTIONS: { key: TimeScale; label: string }[] = [
+  { key: 'week', label: '週' },
+  { key: 'month', label: '月' },
+  { key: 'quarter', label: '季' },
+  { key: 'half', label: '半年' },
+];
+
+/** Gap 分析只追蹤「已開案」專案（評估案/POC 尚無需追蹤時程） */
+const isOpenProject = (p: FullProject) =>
+  (p.projectCategory || '已開案') === '已開案' &&
+  !['evaluation', 'poc'].includes(String(p.status || ''));
+
+/** 依案號由小到大排序（數字案號在前，非數字案號在後） */
+const compareCaseNumber = (a: FullProject, b: FullProject) => {
+  const na = /^\d+$/.test(a.caseNumber || '') ? parseInt(a.caseNumber, 10) : Number.POSITIVE_INFINITY;
+  const nb = /^\d+$/.test(b.caseNumber || '') ? parseInt(b.caseNumber, 10) : Number.POSITIVE_INFINITY;
+  if (na !== nb) return na - nb;
+  return (a.caseNumber || '').localeCompare(b.caseNumber || '');
+};
 
 interface ProjectVarianceClientProps {
   initialProjects: FullProject[];
@@ -85,9 +107,10 @@ export function ProjectVarianceClient({
 
   // 專案篩選與選中專案
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
-    if (initialProjects.length === 0) return '';
+    const openInitial = initialProjects.filter(isOpenProject).sort(compareCaseNumber);
+    if (openInitial.length === 0) return '';
     // 優先選中有設定自訂階段時程的專案（如 [33] 屏東廠空氣品質即時監測系統）或第一個專案
-    const withSchedule = initialProjects.find(
+    const withSchedule = openInitial.find(
       (p) =>
         p.phaseSchedules &&
         (p.phaseSchedules.design?.startDate ||
@@ -96,12 +119,10 @@ export function ProjectVarianceClient({
           p.phaseSchedules.acceptance?.startDate)
     );
     if (withSchedule) return withSchedule.id;
-    const found = initialProjects.find(
-      (p) => p.name.includes('屏東廠空氣品質') || p.name.includes('烤一線') || p.name.includes('顯性缺陷')
-    );
-    return found ? found.id : initialProjects[0].id;
+    return openInitial[0].id;
   });
 
+  const [timeScale, setTimeScale] = useState<TimeScale>('month');
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
@@ -134,7 +155,7 @@ export function ProjectVarianceClient({
 
   // 篩選後的主專案列表
   const filteredProjects = useMemo(() => {
-    return projects.filter((p) => {
+    return projects.filter(isOpenProject).sort(compareCaseNumber).filter((p) => {
       const matchClient =
         clientFilter === 'all' || (p.clientName || '燁輝') === clientFilter;
       const matchCat =
@@ -436,6 +457,13 @@ export function ProjectVarianceClient({
   const timelineMonths = useMemo(() => {
     const curYear = today.getFullYear();
     const dateCandidates: Date[] = [today];
+    (currentProject?.wbsItems || []).forEach((w) => {
+      [w.baselineStart, w.baselineEnd, w.completedAt].forEach((v) => {
+        if (!v) return;
+        const d = parseISO(String(v).slice(0, 10));
+        if (isValid(d)) dateCandidates.push(d);
+      });
+    });
 
     if (currentAnalysis) {
       currentAnalysis.phasesData.forEach((p) => {
@@ -489,14 +517,17 @@ export function ProjectVarianceClient({
     }
 
     return months;
-  }, [currentAnalysis, today]);
+  }, [currentAnalysis, currentProject, today]);
 
   // 依據總月數自動調整單月欄寬，兼顧跨年度全貌與日期比例清晰度
   const monthWidth = useMemo(() => {
+    if (timeScale === 'week') return 260;
+    if (timeScale === 'quarter') return 46;
+    if (timeScale === 'half') return 26;
     if (timelineMonths.length > 16) return 86;
     if (timelineMonths.length > 12) return 96;
     return 110;
-  }, [timelineMonths.length]);
+  }, [timelineMonths.length, timeScale]);
 
   const timelineStart = useMemo(
     () => startOfMonth(timelineMonths[0]),
@@ -528,6 +559,41 @@ export function ProjectVarianceClient({
   const todayX = useMemo(() => {
     return getXForDate(today);
   }, [today, timelineStart, totalTimelineDays, totalTimelineWidth]);
+
+  // 第二階子階段（WBS）列：基準 vs 實際（由待辦彙整）
+  const wbsRowsByPhase = useMemo(() => {
+    const map: Record<string, {
+      wbs: NonNullable<FullProject['wbsItems']>[number];
+      hasBaseline: boolean;
+      isDone: boolean;
+      delayDays: number;
+      linkedCount: number;
+      completedCount: number;
+      actualStart: string | null;
+      actualEnd: string | null;
+    }[]> = {};
+    if (!currentProject?.wbsItems?.length) return map;
+    const projItems = actionItems.filter((a) => a.projectId === currentProject.id);
+    const { schedules } = getProjectPhaseSchedules(currentProject);
+    computeWbsGap(currentProject.wbsItems, projItems, todayStr).forEach((r) => {
+      const resolved = projItems
+        .filter((a) => a.wbsItemId === r.wbs.id)
+        .map((a) => resolveActionItemTimeline(a, schedules[r.wbs.phaseKey]));
+      const starts = resolved.map((i) => i.resolvedStart).sort();
+      (map[r.wbs.phaseKey] ||= []).push({
+        wbs: r.wbs,
+        hasBaseline: r.hasBaseline,
+        isDone: r.isDone,
+        delayDays: r.delayDays,
+        linkedCount: r.linkedCount,
+        completedCount: r.completedCount,
+        actualStart: starts[0] || null,
+        actualEnd: r.forecastEnd,
+      });
+    });
+    Object.values(map).forEach((arr) => arr.sort((a, b) => a.wbs.code.localeCompare(b.wbs.code, undefined, { numeric: true })));
+    return map;
+  }, [currentProject, actionItems, todayStr]);
 
   // 儲存規劃時程回調
   const handleScheduleSaved = (updatedSchedules: ProjectPhaseSchedules) => {
@@ -650,7 +716,7 @@ export function ProjectVarianceClient({
               className="h-9 text-xs flex items-center gap-1.5 border-slate-300 hover:bg-slate-100 font-medium"
             >
               <Settings className="h-3.5 w-3.5 text-slate-600" />
-              設定四大階段規劃時程
+              規劃專案時程（階段＋子階段）
             </Button>
           )}
 
@@ -693,10 +759,28 @@ export function ProjectVarianceClient({
           </div>
         </div>
 
+        <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-slate-700">時間刻度：</span>
+          <div className="inline-flex rounded-md border border-slate-300 overflow-hidden bg-white">
+            {TIME_SCALE_OPTIONS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setTimeScale(o.key)}
+                className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  timeScale === o.key ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {currentAnalysis?.isDefault && (
           <div className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
             <Info className="h-3.5 w-3.5 shrink-0" />
-            <span>目前為標準排程範本，點擊「設定四大階段規劃時程」即可自訂</span>
+            <span>目前為標準排程範本，點擊「規劃專案時程」即可自訂</span>
           </div>
         )}
       </div>
@@ -871,6 +955,33 @@ export function ProjectVarianceClient({
                               </div>
                             </div>
                           ))}
+
+                        {/* 第二階子階段列（WBS） */}
+                        {(wbsRowsByPhase[phase.key] || []).map((w) => (
+                          <div
+                            key={w.wbs.id}
+                            className="h-10 px-3.5 pl-9 flex items-center justify-between text-[11px] bg-indigo-50/40 border-b border-slate-100"
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                              <span className="text-indigo-400 font-mono shrink-0">{w.wbs.code}</span>
+                              <span className="font-semibold text-slate-800 truncate" title={w.wbs.name}>{w.wbs.name}</span>
+                              {w.wbs.completedAt && <span className="text-emerald-600 shrink-0" title={`已結束 ${w.wbs.completedAt}`}>✔</span>}
+                            </div>
+                            <span
+                              className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                !w.hasBaseline
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : w.delayDays > 0
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : w.isDone
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}
+                            >
+                              {!w.hasBaseline ? '未設基準' : w.delayDays > 0 ? `延誤 ${w.delayDays} 天` : w.isDone ? '準時完成' : '進行中'}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     );
                   })}
@@ -903,9 +1014,35 @@ export function ProjectVarianceClient({
                   <div
                     key={idx}
                     style={{ width: `${monthWidth}px` }}
-                    className="border-r border-slate-200/80 flex items-center justify-center text-[11px]"
+                    className="border-r border-slate-200/80 relative flex items-center justify-center text-[11px] overflow-hidden"
                   >
-                    {format(m, 'yyyy年M月')}
+                    {timeScale === 'week' ? (
+                      <>
+                        <span className="absolute top-0.5 left-1 font-semibold">{format(m, 'yyyy年M月')}</span>
+                        {(() => {
+                          const dim = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+                          const ticks: number[] = [];
+                          for (let d = 1; d <= dim; d++) {
+                            if (new Date(m.getFullYear(), m.getMonth(), d).getDay() === 1) ticks.push(d);
+                          }
+                          return ticks.map((d) => (
+                            <span
+                              key={d}
+                              style={{ left: `${((d - 1) / dim) * monthWidth}px` }}
+                              className="absolute bottom-0.5 text-[9px] text-slate-400 border-l border-slate-200 pl-0.5"
+                            >
+                              {d}
+                            </span>
+                          ));
+                        })()}
+                      </>
+                    ) : timeScale === 'month' ? (
+                      format(m, 'yyyy年M月')
+                    ) : timeScale === 'quarter' ? (
+                      format(m, 'M月')
+                    ) : (
+                      format(m, 'M')
+                    )}
                   </div>
                 ))}
               </div>
@@ -1276,6 +1413,44 @@ export function ProjectVarianceClient({
                                 </div>
                               );
                             })}
+
+                          {/* 第二階子階段（WBS）：上黑＝基準，下藍/紅＝實際（由待辦彙整） */}
+                          {(wbsRowsByPhase[phase.key] || []).map((w) => {
+                            const bs = w.wbs.baselineStart ? getXForDate(w.wbs.baselineStart) : null;
+                            const be = w.wbs.baselineEnd ? getXForDate(w.wbs.baselineEnd) : null;
+                            const as = w.actualStart ? getXForDate(w.actualStart) : null;
+                            const ae = w.actualEnd ? getXForDate(w.actualEnd) : null;
+                            const delayed = w.delayDays > 0;
+                            return (
+                              <div key={w.wbs.id} className="h-10 relative border-b border-slate-100/80 bg-indigo-50/20">
+                                {w.hasBaseline && bs !== null && be !== null && (
+                                  <div
+                                    title={`基準 ${w.wbs.baselineStart} ~ ${w.wbs.baselineEnd}`}
+                                    style={{ left: `${bs}px`, width: `${Math.max(be - bs, 6)}px`, top: '7px' }}
+                                    className="absolute h-2 bg-slate-800 rounded-xs"
+                                  />
+                                )}
+                                {as !== null && ae !== null && (
+                                  <div
+                                    title={`實際/預估 ${w.actualStart} ~ ${w.actualEnd}${delayed ? `（延誤 ${w.delayDays} 天）` : ''}`}
+                                    style={{ left: `${as}px`, width: `${Math.max(ae - as, 6)}px`, top: '21px' }}
+                                    className={`absolute h-2.5 rounded-xs ${delayed ? 'bg-red-600' : 'bg-blue-600'}`}
+                                  />
+                                )}
+                                {ae !== null && delayed && (
+                                  <span
+                                    style={{ left: `${ae + 4}px`, top: '19px' }}
+                                    className="absolute text-[10px] font-bold text-red-600 whitespace-nowrap"
+                                  >
+                                    +{w.delayDays}天
+                                  </span>
+                                )}
+                                {!w.hasBaseline && as === null && (
+                                  <span className="absolute left-2 top-3 text-[10px] text-slate-400 italic">尚未設定基準日</span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })}
@@ -1360,6 +1535,7 @@ export function ProjectVarianceClient({
           project={currentProject}
           actionItems={actionItems}
           canManage={permissions.gapAnalysis.canManage}
+          onEditSchedule={() => setIsEditDialogOpen(true)}
           onWbsChange={(wbsItems, lockedAt) =>
             setProjects((prev) =>
               prev.map((p) =>
@@ -1377,6 +1553,9 @@ export function ProjectVarianceClient({
           onOpenChange={setIsEditDialogOpen}
           project={currentProject}
           onSuccess={handleScheduleSaved}
+          onWbsSaved={(wbsItems) =>
+            setProjects((prev) => prev.map((p) => (p.id === currentProject.id ? { ...p, wbsItems } : p)))
+          }
         />
       )}
 
@@ -1395,6 +1574,15 @@ export function ProjectVarianceClient({
           clients={clients}
           actionItems={actionItems}
           onSuccess={handleActionItemSaved}
+          onWbsCompletedChange={(projectId, wbsId, completedAt) =>
+            setProjects((prev) =>
+              prev.map((p) =>
+                p.id === projectId
+                  ? { ...p, wbsItems: (p.wbsItems || []).map((w) => (w.id === wbsId ? { ...w, completedAt } : w)) }
+                  : p
+              )
+            )
+          }
         />
       )}
     </div>

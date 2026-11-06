@@ -4058,6 +4058,7 @@ export async function saveProjectWbs(
                 name: (i.name || '').trim(),
                 baselineStart: i.baselineStart ? String(i.baselineStart).slice(0, 10) : null,
                 baselineEnd: i.baselineEnd ? String(i.baselineEnd).slice(0, 10) : null,
+                completedAt: prevById.get(i.id)?.completedAt ?? null,
             };
             if (lockedAt) {
                 const prev = prevById.get(base.id);
@@ -4148,5 +4149,33 @@ export async function applyDefaultWbsTemplate(
     } catch (err: any) {
         console.error('套用 WBS 範本失敗:', err);
         return { success: false, message: err?.message || '套用範本失敗' };
+    }
+}
+
+/** 標記（或取消標記）某個第二階子階段已結束。基準鎖定後仍可標記。 */
+export async function setWbsItemCompleted(
+    projectId: string,
+    wbsItemId: string,
+    completed: boolean,
+    completedDate?: string | null
+): Promise<{ success: boolean; message: string; completedAt?: string | null }> {
+    const supabase = getSupabaseClient();
+    try {
+        const { data: proj, error: fetchErr } = await supabase
+            .from('projects').select('on_hold_notes').eq('id', projectId).single();
+        if (fetchErr || !proj) return { success: false, message: '找不到對應專案主檔' };
+        const meta = parseProjectMeta(proj.on_hold_notes);
+        const items = meta.wbsItems || [];
+        if (!items.some(i => i.id === wbsItemId)) return { success: false, message: '找不到子階段' };
+        const when = completed ? (completedDate || new Date().toISOString().slice(0, 10)) : null;
+        meta.wbsItems = items.map(i => i.id === wbsItemId ? { ...i, completedAt: when } : i);
+        const { error: updateErr } = await supabase
+            .from('projects').update({ on_hold_notes: serializeProjectMeta(meta) }).eq('id', projectId);
+        if (updateErr) throw updateErr;
+        revalidatePath('/project-variance');
+        return { success: true, message: completed ? '子階段已標記結束' : '已取消子階段結束標記', completedAt: when };
+    } catch (err: any) {
+        console.error('標記子階段結束失敗:', err);
+        return { success: false, message: err?.message || '標記失敗' };
     }
 }

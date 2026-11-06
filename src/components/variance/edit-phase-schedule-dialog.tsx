@@ -6,16 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { updateProjectPhaseSchedules } from '@/lib/actions';
-import { MAJOR_PHASES, MajorPhaseKey } from '@/lib/phase-constants';
-import type { FullProject, ProjectPhaseSchedules } from '@/types';
-import { Calendar, Wand2, Check } from 'lucide-react';
+import { updateProjectPhaseSchedules, saveProjectWbs } from '@/lib/actions';
+import { MAJOR_PHASES, MajorPhaseKey, DEFAULT_WBS_TEMPLATE } from '@/lib/phase-constants';
+import type { FullProject, ProjectPhaseSchedules, WbsItem } from '@/types';
+import { Calendar, Wand2, Check, Plus, Trash2, Lock } from 'lucide-react';
 
 interface EditPhaseScheduleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: FullProject | null;
   onSuccess: (updatedSchedules: ProjectPhaseSchedules) => void;
+  onWbsSaved?: (wbsItems: WbsItem[]) => void;
 }
 
 export function EditPhaseScheduleDialog({
@@ -23,9 +24,12 @@ export function EditPhaseScheduleDialog({
   onOpenChange,
   project,
   onSuccess,
+  onWbsSaved,
 }: EditPhaseScheduleDialogProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [wbsDraft, setWbsDraft] = useState<WbsItem[]>([]);
+  const wbsLocked = !!project?.wbsBaselineLockedAt;
 
   // 四大階段起始與結束日期 state
   const [schedules, setSchedules] = useState<{
@@ -62,7 +66,42 @@ export function EditPhaseScheduleDialog({
         },
       });
     }
+    setWbsDraft(project?.wbsItems ? project.wbsItems.map((w) => ({ ...w })) : []);
   }, [project, open]);
+
+  const updateWbs = (id: string, patch: Partial<WbsItem>) =>
+    setWbsDraft((d) => d.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+
+  const addWbs = (phaseKey: MajorPhaseKey) => {
+    const ph = MAJOR_PHASES.find((x) => x.key === phaseKey)!;
+    const count = wbsDraft.filter((w) => w.phaseKey === phaseKey).length;
+    setWbsDraft((d) => [
+      ...d,
+      { id: `new_${Math.random().toString(36).slice(2, 10)}`, phaseKey, code: `${ph.code}.${count + 1}`, name: '新子階段', baselineStart: null, baselineEnd: null },
+    ]);
+  };
+
+  const applyWbsTemplate = () => {
+    setWbsDraft(
+      DEFAULT_WBS_TEMPLATE.map((t) => ({
+        id: `new_${Math.random().toString(36).slice(2, 10)}`,
+        phaseKey: t.phaseKey,
+        code: t.code,
+        name: t.name,
+        baselineStart: null,
+        baselineEnd: null,
+      }))
+    );
+  };
+
+  // 依子階段起訖，帶入該階段的起訖範圍
+  const fillPhaseFromWbs = (phaseKey: MajorPhaseKey) => {
+    const list = wbsDraft.filter((w) => w.phaseKey === phaseKey && w.baselineStart && w.baselineEnd);
+    if (list.length === 0) return;
+    const start = list.map((w) => w.baselineStart as string).sort()[0];
+    const end = list.map((w) => w.baselineEnd as string).sort().slice(-1)[0];
+    setSchedules((prev) => ({ ...prev, [phaseKey]: { startDate: start.slice(0, 10), endDate: end.slice(0, 10) } }));
+  };
 
   // 快捷排程範本 (依今年/指定年自動切分四大階段)
   const applyQuarterPreset = () => {
@@ -129,6 +168,18 @@ export function EditPhaseScheduleDialog({
 
       const res = await updateProjectPhaseSchedules(project.id, payload);
       if (res.success) {
+        if (wbsDraft.length > 0 || (project.wbsItems && project.wbsItems.length > 0)) {
+          const wres = await saveProjectWbs(
+            project.id,
+            wbsDraft.map((w) => (w.id.startsWith('new_') ? { ...w, id: '' } : w))
+          );
+          if (!wres.success) {
+            toast({ title: '子階段儲存失敗', description: wres.message, variant: 'destructive' });
+            setIsSubmitting(false);
+            return;
+          }
+          if (wres.data) onWbsSaved?.(wres.data.wbsItems);
+        }
         toast({
           title: '四大階段規劃時程儲存成功',
           description: `專案「${project.name}」已更新四大階段規劃時程。`,
@@ -155,18 +206,18 @@ export function EditPhaseScheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Calendar className="h-5 w-5 text-blue-600" />
             <DialogTitle className="text-xl font-bold">
-              設定專案四大階段規劃期程
+              規劃專案時程（階段＋子階段）
             </DialogTitle>
           </div>
           <DialogDescription className="text-slate-600">
             專案：<span className="font-semibold text-slate-800">[{project?.caseNumber}] {project?.name}</span>
             <br />
-            為此專案的四大階段（設計、施工、驗證、驗收）設定預定起始與結束日期，系統將自動比對待辦事項實際進度進行差異分析。
+            先規劃四大階段的起訖日，再為各階段規劃子階段（第二階）的基準起訖日。專案待辦會依這裡的子階段選擇，Gap 圖以此比對延誤。
           </DialogDescription>
         </DialogHeader>
 
@@ -182,6 +233,18 @@ export function EditPhaseScheduleDialog({
               <Wand2 className="h-3.5 w-3.5" />
               帶入標準季度排程範本
             </Button>
+            {wbsDraft.length === 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyWbsTemplate}
+                className="ml-2 text-xs flex items-center gap-1.5 border-dashed text-indigo-700 hover:bg-indigo-50"
+              >
+                <Wand2 className="h-3.5 w-3.5" />
+                套用預設子階段範本
+              </Button>
+            )}
           </div>
 
           <div className="space-y-3.5">
@@ -190,8 +253,9 @@ export function EditPhaseScheduleDialog({
               return (
                 <div
                   key={p.key}
-                  className="p-3.5 rounded-lg border border-slate-200/90 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className="p-3.5 rounded-lg border border-slate-200/90 bg-slate-50/60 space-y-3"
                 >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="sm:w-44 shrink-0">
                     <div className="font-bold text-slate-800 flex items-center gap-1.5">
                       <span className="inline-block w-2 h-2 rounded-full bg-slate-800" />
@@ -224,6 +288,56 @@ export function EditPhaseScheduleDialog({
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* 子階段（第二階） */}
+                <div className="rounded-md bg-white border border-slate-200 p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">
+                      子階段（第二階）
+                      {wbsLocked && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
+                          <Lock className="h-3 w-3" />基準已鎖定
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => fillPhaseFromWbs(p.key)}>
+                        依子階段帶入階段起訖
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => addWbs(p.key)}>
+                        <Plus className="h-3.5 w-3.5 mr-0.5" />新增子階段
+                      </Button>
+                    </div>
+                  </div>
+                  {wbsDraft.filter((w) => w.phaseKey === p.key).length === 0 && (
+                    <div className="text-[11px] text-slate-400 py-1">尚無子階段。可按「新增子階段」，或在上方按「套用預設子階段範本」。</div>
+                  )}
+                  {wbsDraft.filter((w) => w.phaseKey === p.key).map((w) => (
+                    <div key={w.id} className="grid grid-cols-12 gap-1.5 items-center">
+                      <Input className="col-span-2 h-8 text-xs" value={w.code} onChange={(e) => updateWbs(w.id, { code: e.target.value })} />
+                      <Input className="col-span-5 h-8 text-xs" value={w.name} onChange={(e) => updateWbs(w.id, { name: e.target.value })} />
+                      <Input
+                        type="date"
+                        className="col-span-2 h-8 text-xs"
+                        disabled={wbsLocked && !w.id.startsWith('new_')}
+                        value={w.baselineStart ? w.baselineStart.slice(0, 10) : ''}
+                        onChange={(e) => updateWbs(w.id, { baselineStart: e.target.value || null })}
+                      />
+                      <Input
+                        type="date"
+                        className="col-span-2 h-8 text-xs"
+                        disabled={wbsLocked && !w.id.startsWith('new_')}
+                        value={w.baselineEnd ? w.baselineEnd.slice(0, 10) : ''}
+                        onChange={(e) => updateWbs(w.id, { baselineEnd: e.target.value || null })}
+                      />
+                      <Button type="button" size="icon" variant="ghost" className="col-span-1 h-8 w-8 text-red-500"
+                        onClick={() => setWbsDraft((d) => d.filter((x) => x.id !== w.id))}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
                 </div>
               );
             })}

@@ -1,16 +1,12 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Lock, Plus, Trash2, Wand2, Pencil } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, Wand2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { applyDefaultWbsTemplate, lockProjectWbsBaseline, saveProjectWbs } from '@/lib/actions';
-import { MAJOR_PHASES, MajorPhaseKey } from '@/lib/phase-constants';
+import { applyDefaultWbsTemplate, lockProjectWbsBaseline } from '@/lib/actions';
+import { MAJOR_PHASES } from '@/lib/phase-constants';
 import { computeWbsGap } from '@/lib/wbs-gap';
 import type { FullProject, ProjectActionItem, WbsItem } from '@/types';
 
@@ -19,13 +15,13 @@ interface Props {
   actionItems: ProjectActionItem[];
   canManage: boolean;
   onWbsChange: (wbsItems: WbsItem[], lockedAt: string | null) => void;
+  onEditSchedule: () => void;
 }
 
 const fmt = (d?: string | null) => (d ? d.slice(0, 10).replace(/-/g, '/') : '—');
 
-export function WbsGapPanel({ project, actionItems, canManage, onWbsChange }: Props) {
+export function WbsGapPanel({ project, actionItems, canManage, onWbsChange, onEditSchedule }: Props) {
   const { toast } = useToast();
-  const [editOpen, setEditOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
 
@@ -74,7 +70,7 @@ export function WbsGapPanel({ project, actionItems, canManage, onWbsChange }: Pr
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
           <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            第二階 WBS 基準 vs 預估（延誤追蹤）
+            子階段延誤明細（基準 vs 預估）
             {lockedAt && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
                 <Lock className="h-3 w-3" /> 基準已鎖定 {fmt(lockedAt)}
@@ -93,8 +89,8 @@ export function WbsGapPanel({ project, actionItems, canManage, onWbsChange }: Pr
               </Button>
             ) : (
               <>
-                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-                  <Pencil className="h-4 w-4 mr-1" /> 編輯工作包／基準
+                <Button size="sm" variant="outline" onClick={onEditSchedule}>
+                  <Pencil className="h-4 w-4 mr-1" /> 編輯子階段／基準
                 </Button>
                 {!lockedAt && (
                   <Button size="sm" disabled={busy} onClick={handleLock}>
@@ -212,101 +208,6 @@ export function WbsGapPanel({ project, actionItems, canManage, onWbsChange }: Pr
         </>
       )}
 
-      {editOpen && (
-        <WbsEditDialog
-          projectId={project.id}
-          items={wbsItems}
-          locked={!!lockedAt}
-          onClose={() => setEditOpen(false)}
-          onSaved={(items) => {
-            onWbsChange(items, lockedAt);
-            setEditOpen(false);
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-function WbsEditDialog({
-  projectId, items, locked, onClose, onSaved,
-}: {
-  projectId: string;
-  items: WbsItem[];
-  locked: boolean;
-  onClose: () => void;
-  onSaved: (items: WbsItem[]) => void;
-}) {
-  const { toast } = useToast();
-  const [draft, setDraft] = useState<WbsItem[]>(items);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => setDraft(items), [items]);
-
-  const update = (id: string, patch: Partial<WbsItem>) =>
-    setDraft((d) => d.map((i) => (i.id === id ? { ...i, ...patch } : i)));
-
-  const add = (phaseKey: MajorPhaseKey) => {
-    const ph = MAJOR_PHASES.find((p) => p.key === phaseKey)!;
-    const count = draft.filter((i) => i.phaseKey === phaseKey).length;
-    setDraft((d) => [
-      ...d,
-      { id: `new_${Math.random().toString(36).slice(2, 10)}`, phaseKey, code: `${ph.code}.${count + 1}`, name: '新工作包', baselineStart: null, baselineEnd: null },
-    ]);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    const payload = draft.map((i) => (i.id.startsWith('new_') ? { ...i, id: '' } : i));
-    const res = await saveProjectWbs(projectId, payload);
-    setSaving(false);
-    if (res.success && res.data) {
-      toast({ title: '已儲存' });
-      onSaved(res.data.wbsItems);
-    } else {
-      toast({ title: '儲存失敗', description: res.message, variant: 'destructive' });
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>編輯第二階工作包與基準日</DialogTitle>
-          <DialogDescription>
-            {locked
-              ? '基準已鎖定：既有工作包的基準日不可修改，仍可改名或刪除；新增的工作包不計延誤。'
-              : '填入每個工作包的基準起訖日，確認後回到頁面按「鎖定基準」。'}
-          </DialogDescription>
-        </DialogHeader>
-        {MAJOR_PHASES.map((ph) => (
-          <div key={ph.key} className="mb-2">
-            <div className="flex items-center justify-between text-sm font-bold text-slate-700 mb-1">
-              {ph.fullName}
-              <Button size="sm" variant="ghost" onClick={() => add(ph.key)}>
-                <Plus className="h-4 w-4 mr-1" /> 新增
-              </Button>
-            </div>
-            {draft.filter((i) => i.phaseKey === ph.key).map((i) => (
-              <div key={i.id} className="grid grid-cols-12 gap-2 mb-1.5 items-center">
-                <Input className="col-span-2 h-8 text-xs" value={i.code} onChange={(e) => update(i.id, { code: e.target.value })} />
-                <Input className="col-span-5 h-8 text-xs" value={i.name} onChange={(e) => update(i.id, { name: e.target.value })} />
-                <Input type="date" className="col-span-2 h-8 text-xs" disabled={locked && !i.id.startsWith('new_')}
-                  value={i.baselineStart?.slice(0, 10) || ''} onChange={(e) => update(i.id, { baselineStart: e.target.value || null })} />
-                <Input type="date" className="col-span-2 h-8 text-xs" disabled={locked && !i.id.startsWith('new_')}
-                  value={i.baselineEnd?.slice(0, 10) || ''} onChange={(e) => update(i.id, { baselineEnd: e.target.value || null })} />
-                <Button size="icon" variant="ghost" className="col-span-1 h-8 w-8 text-red-500"
-                  onClick={() => setDraft((d) => d.filter((x) => x.id !== i.id))}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        ))}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button disabled={saving} onClick={save}>{saving ? '儲存中…' : '儲存'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

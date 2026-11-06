@@ -12,7 +12,7 @@ import { Building2, Pin, CalendarPlus, Video, ExternalLink, UserPlus } from 'luc
 import { useToast } from '@/hooks/use-toast';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { AttachmentsUploader } from './attachments-uploader';
-import { createActionItem, updateActionItem, createPocProject, getClients } from '@/lib/actions';
+import { createActionItem, updateActionItem, createPocProject, getClients, setWbsItemCompleted } from '@/lib/actions';
 import { useAdmin } from '@/components/admin-context';
 import { TPM_PERSONNEL_NAMES } from '@/lib/tpm-helper';
 import { DELAY_REASON_CATEGORIES, MAJOR_PHASES } from '@/lib/phase-constants';
@@ -27,6 +27,7 @@ interface ActionItemDialogProps {
   users?: User[];
   clients?: Client[];
   actionItems?: ProjectActionItem[];
+  onWbsCompletedChange?: (projectId: string, wbsItemId: string, completedAt: string | null) => void;
   onSuccess: (
     savedItem?: ProjectActionItem,
     createdUserDraft?: User,
@@ -63,6 +64,7 @@ export function ActionItemDialog({
   users = [],
   clients: initialClients = [],
   actionItems = [],
+  onWbsCompletedChange,
   onSuccess,
 }: ActionItemDialogProps) {
   const router = useRouter();
@@ -113,6 +115,7 @@ export function ActionItemDialog({
   const [wbsItemId, setWbsItemId] = useState<string>(item?.wbsItemId || '');
   const [delayReason, setDelayReason] = useState('');
   const [delayCategory, setDelayCategory] = useState('');
+  const [wbsClosed, setWbsClosed] = useState(false);
   const [completedAt, setCompletedAt] = useState(item?.completedAt ? item.completedAt.slice(0, 10) : '');
   const [lastUpdatedDate, setLastUpdatedDate] = useState<string>(() => getLocalTodayDateStr());
   const [notes, setNotes] = useState((item?.notes || '').replace(/<!--ATTACHMENTS:[\s\S]*?-->/g, '').trim());
@@ -122,6 +125,32 @@ export function ActionItemDialog({
   const oldDueStr = item?.dueDate ? item.dueDate.slice(0, 10) : '';
   const isDueDateChanged = !!item && !!dueDate && dueDate !== oldDueStr;
   const isDueDateDelayed = isDueDateChanged && !!oldDueStr && dueDate > oldDueStr;
+  const selectedWbs = currentProjectWbs.find((w) => w.id === wbsItemId) || null;
+
+  // 切換子階段時，同步其「已結束」狀態
+  useEffect(() => {
+    setWbsClosed(!!selectedWbs?.completedAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wbsItemId, open]);
+
+  // 選擇子階段時，自動帶入對應的四大階段
+  const handleSelectWbs = (value: string) => {
+    if (value === 'none') {
+      setWbsItemId('');
+      return;
+    }
+    setWbsItemId(value);
+    const w = currentProjectWbs.find((x) => x.id === value);
+    const ph = w ? MAJOR_PHASES.find((x) => x.key === w.phaseKey) : null;
+    if (ph) setPhase(ph.fullName as ActionItemPhase);
+  };
+
+  const syncWbsClosed = async (pid: string) => {
+    if (!wbsItemId || !selectedWbs) return;
+    if (wbsClosed === !!selectedWbs.completedAt) return;
+    const r = await setWbsItemCompleted(pid, wbsItemId, wbsClosed);
+    if (r.success) onWbsCompletedChange?.(pid, wbsItemId, r.completedAt ?? null);
+  };
   const attachmentsRef = useRef<ActionItemAttachment[]>(item?.attachments || []);
   const initializedSessionRef = useRef<string | null>(null);
 
@@ -576,6 +605,7 @@ export function ActionItemDialog({
               ? `待辦歷程已成功儲存，並已為「${draftUser.displayName}」自動建置成員帳號初版（待管理員維護細節）！`
               : '待辦歷程已成功儲存',
           });
+          await syncWbsClosed(targetProjectId);
           onSuccess(res.data as any, draftUser);
           onOpenChange(false);
         } else {
@@ -612,6 +642,7 @@ export function ActionItemDialog({
               ? `待辦事項已建立，並已為「${draftUser.displayName}」自動建置成員帳號初版（待管理員維護細節）！`
               : '待辦事項已建立！',
           });
+          await syncWbsClosed(targetProjectId);
           onSuccess(res.data as any, draftUser);
           onOpenChange(false);
         } else {
@@ -855,11 +886,11 @@ export function ActionItemDialog({
           {/* 所屬第二階工作包 */}
           {currentProjectWbs.length > 0 && (
             <div>
-              <Label className="text-sm font-semibold flex items-center h-5">所屬第二階工作包（Gap 分析延誤歸屬）</Label>
-              <Select value={wbsItemId || 'none'} onValueChange={(v) => setWbsItemId(v === 'none' ? '' : v)}>
+              <Label className="text-sm font-semibold flex items-center h-5">專案階段／子階段（依 Gap 分析規劃）</Label>
+              <Select value={wbsItemId || 'none'} onValueChange={handleSelectWbs}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="選擇工作包" /></SelectTrigger>
                 <SelectContent className="max-h-80">
-                  <SelectItem value="none">（不歸屬任何工作包）</SelectItem>
+                  <SelectItem value="none">（其他／不歸屬子階段）</SelectItem>
                   {MAJOR_PHASES.map((ph) => {
                     const list = currentProjectWbs.filter((w) => w.phaseKey === ph.key);
                     if (list.length === 0) return null;
@@ -875,8 +906,24 @@ export function ActionItemDialog({
             </div>
           )}
 
+          {currentProjectWbs.length > 0 && selectedWbs && (
+            <label className="flex items-center gap-2 text-xs text-slate-700 -mt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={wbsClosed}
+                onChange={(e) => setWbsClosed(e.target.checked)}
+              />
+              <span>
+                此子階段「{selectedWbs.code} {selectedWbs.name}」已全部完成／結束
+                <span className="text-slate-400">（勾選後 Gap 圖以今天為實際完成日）</span>
+              </span>
+            </label>
+          )}
+
           {/* 階段與狀態 */}
           <div className="grid grid-cols-2 gap-3">
+            {(currentProjectWbs.length === 0 || !wbsItemId) && (
             <div>
               <Label className="text-sm font-semibold flex items-center h-5">專案階段</Label>
               <Select value={phase} onValueChange={(val) => setPhase(val as ActionItemPhase)}>
@@ -931,6 +978,7 @@ export function ActionItemDialog({
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             <div>
               <Label className="text-sm font-semibold flex items-center h-5">目前狀態</Label>
