@@ -907,7 +907,7 @@ export function ProjectVarianceClient({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-slate-700">子階段：</span>
+          <span className="font-semibold text-slate-700">階段明細：</span>
           <div className="inline-flex rounded-md border border-slate-300 overflow-hidden bg-white">
             <button
               type="button"
@@ -1029,6 +1029,8 @@ export function ProjectVarianceClient({
                     const looseItems = phase.actual.items.filter((i) => !i.wbsItemId || !wbsIdSet.has(i.wbsItemId));
                     const itemsOfWbs = (id: string) => phase.actual.items.filter((i) => i.wbsItemId === id);
                     const isPhaseExpanded = !!expandedPhases[phaseKeyId];
+                    const hasWbs = (wbsRowsByPhase[phase.key] || []).length > 0;
+                    const phaseOpen = hasWbs ? !wbsCollapsed[phaseKeyId] : isPhaseExpanded;
                     const hasItems = phase.actual.items.length > 0;
 
                     return (
@@ -1037,7 +1039,9 @@ export function ProjectVarianceClient({
                         <div
                           className="h-16 px-3.5 pl-6 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-100"
                           onClick={() => {
-                            if (hasItems) {
+                            if (hasWbs) {
+                              setWbsCollapsed((prev) => ({ ...prev, [phaseKeyId]: !prev[phaseKeyId] }));
+                            } else if (hasItems) {
                               setExpandedPhases((prev) => ({
                                 ...prev,
                                 [phaseKeyId]: !prev[phaseKeyId],
@@ -1046,12 +1050,12 @@ export function ProjectVarianceClient({
                           }}
                         >
                           <div className="flex items-center gap-2 min-w-0 pr-2">
-                            {hasItems ? (
+                            {hasItems || hasWbs ? (
                               <button
                                 type="button"
                                 className="p-0.5 hover:bg-slate-200 rounded text-slate-500 shrink-0"
                               >
-                                {isPhaseExpanded ? (
+                                {phaseOpen ? (
                                   <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
                                 ) : (
                                   <ChevronRight className="h-3.5 w-3.5" />
@@ -1098,23 +1102,9 @@ export function ProjectVarianceClient({
                         </div>
 
                         {/* 展開之細項規劃 / 待辦事項明細 (依時間先後順序排列) */}
-                        {isPhaseExpanded && looseItems.map(renderLeftItem)}
+                        {phaseOpen && looseItems.map(renderLeftItem)}
 
                         {/* 第二階子階段列（WBS） */}
-                        {(wbsRowsByPhase[phase.key] || []).length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setWbsCollapsed((prev) => ({ ...prev, [phaseKeyId]: !prev[phaseKeyId] }))}
-                            className="w-full h-7 px-3.5 pl-9 flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/70 border-b border-slate-100 text-left"
-                          >
-                            {wbsCollapsed[phaseKeyId] ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                            子階段（{(wbsRowsByPhase[phase.key] || []).length}）
-                            {wbsCollapsed[phaseKeyId] && (() => {
-                              const maxDelay = Math.max(0, ...(wbsRowsByPhase[phase.key] || []).map((w) => w.delayDays));
-                              return maxDelay > 0 ? <span className="ml-2 text-rose-600">最大延誤 {maxDelay} 天</span> : null;
-                            })()}
-                          </button>
-                        )}
                         {!wbsCollapsed[phaseKeyId] && (wbsRowsByPhase[phase.key] || []).map((w) => (
                           <Fragment key={w.wbs.id}>
                           <div
@@ -1291,6 +1281,8 @@ export function ProjectVarianceClient({
                     const looseItems = phase.actual.items.filter((i) => !i.wbsItemId || !wbsIdSet.has(i.wbsItemId));
                     const itemsOfWbs = (id: string) => phase.actual.items.filter((i) => i.wbsItemId === id);
                       const isPhaseExpanded = !!expandedPhases[phaseKeyId];
+                    const hasWbs = (wbsRowsByPhase[phase.key] || []).length > 0;
+                    const phaseOpen = hasWbs ? !wbsCollapsed[phaseKeyId] : isPhaseExpanded;
 
                       // 計算原始規劃 Bar 座標
                       const planStartX = getXForDate(phase.plan.startDate);
@@ -1497,12 +1489,9 @@ export function ProjectVarianceClient({
                           </div>
 
                           {/* 展開時個別細項規畫項目 (待辦事項) 的時間 Bar + BAR 後直接顯示完成天數 */}
-                          {isPhaseExpanded && looseItems.map(renderRightItem)}
+                          {phaseOpen && looseItems.map(renderRightItem)}
 
                           {/* 第二階子階段（WBS）：上黑＝基準，下藍/紅＝實際（由待辦彙整） */}
-                          {(wbsRowsByPhase[phase.key] || []).length > 0 && (
-                            <div className="h-7 border-b border-slate-100 bg-indigo-50/50" />
-                          )}
                           {!wbsCollapsed[phaseKeyId] && (wbsRowsByPhase[phase.key] || []).map((w) => {
                             const bs = w.wbs.baselineStart ? getXForDate(w.wbs.baselineStart) : null;
                             const be = w.wbs.baselineEnd ? getXForDate(w.wbs.baselineEnd) : null;

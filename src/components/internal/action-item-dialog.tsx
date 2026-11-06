@@ -147,8 +147,29 @@ export function ActionItemDialog({
 
   const syncWbsClosed = async (pid: string) => {
     if (!wbsItemId || !selectedWbs) return;
-    if (wbsClosed === !!selectedWbs.completedAt) return;
-    const r = await setWbsItemCompleted(pid, wbsItemId, wbsClosed);
+    const prevClosed = selectedWbs.completedAt ? String(selectedWbs.completedAt).slice(0, 10) : null;
+
+    if (!wbsClosed) {
+      if (!prevClosed) return;
+      const r = await setWbsItemCompleted(pid, wbsItemId, false);
+      if (r.success) onWbsCompletedChange?.(pid, wbsItemId, null);
+      return;
+    }
+
+    // 子階段的實際完成日 = 其下待辦中最晚的實際完成日（含目前這筆）；都沒有才用今天
+    const dates: string[] = [];
+    actionItems
+      .filter((a) => a.wbsItemId === wbsItemId && a.id !== item?.id && a.status === 'completed' && a.completedAt)
+      .forEach((a) => dates.push(String(a.completedAt).slice(0, 10)));
+    if (status === 'completed') {
+      const mine = completedAt || getLocalTodayDateStr();
+      dates.push(mine);
+    }
+    const derived = dates.length > 0 ? dates.sort().slice(-1)[0] : null;
+    if (!derived && prevClosed) return; // 沒有可依據的日期，保留原本的結束日
+    const target = derived || getLocalTodayDateStr();
+    if (prevClosed === target) return;
+    const r = await setWbsItemCompleted(pid, wbsItemId, true, target);
     if (r.success) onWbsCompletedChange?.(pid, wbsItemId, r.completedAt ?? null);
   };
   const attachmentsRef = useRef<ActionItemAttachment[]>(item?.attachments || []);
@@ -916,7 +937,7 @@ export function ActionItemDialog({
               />
               <span>
                 此子階段「{selectedWbs.code} {selectedWbs.name}」已全部完成／結束
-                <span className="text-slate-400">（勾選後 Gap 圖以今天為實際完成日）</span>
+                <span className="text-slate-400">（實際完成日取該子階段待辦中最晚的完成日）</span>
               </span>
             </label>
           )}
