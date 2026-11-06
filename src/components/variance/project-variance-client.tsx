@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { Fragment, useState, useMemo, useEffect, useRef } from 'react';
 import {
   format,
   parseISO,
@@ -125,6 +125,8 @@ export function ProjectVarianceClient({
   const [timeScale, setTimeScale] = useState<TimeScale>('month');
   // 子階段（第二階）列的收合狀態：key = `${projectId}-${phaseKey}`，true = 收合
   const [wbsCollapsed, setWbsCollapsed] = useState<Record<string, boolean>>({});
+  // 子階段底下的待辦明細收合狀態：key = 子階段 id，true = 收合
+  const [wbsItemsClosed, setWbsItemsClosed] = useState<Record<string, boolean>>({});
   const chartScrollRef = useRef<HTMLDivElement | null>(null);
   const [chartViewportW, setChartViewportW] = useState(0);
   useEffect(() => {
@@ -580,6 +582,131 @@ export function ProjectVarianceClient({
     return getXForDate(today);
   }, [today, timelineStart, totalTimelineDays, totalTimelineWidth]);
 
+  // 待辦列（左：名稱；右：時間 Bar）— 供階段層與子階段層共用
+  const renderLeftItem = (item: ResolvedActionItem) => (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                if (permissions.gapAnalysis.canManage) {
+                                  setEditingActionItem(item);
+                                  setIsAddActionItemOpen(true);
+                                }
+                              }}
+                              className="h-10 px-3.5 pl-10 flex items-center justify-between text-[11px] bg-slate-50/50 hover:bg-blue-50/40 border-b border-slate-100/80 transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    item.status === 'completed'
+                                      ? 'bg-emerald-500'
+                                      : item.status === 'blocked'
+                                      ? 'bg-rose-500'
+                                      : 'bg-blue-500'
+                                  }`}
+                                />
+                                <span className="text-slate-700 truncate font-medium" title={item.title}>
+                                  {item.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {item.resolvedStart.slice(5).replace('-', '/')}~
+                                  {item.resolvedEnd.slice(5).replace('-', '/')}
+                                </span>
+                              </div>
+                            </div>
+);
+
+  const renderRightItem = (item: ResolvedActionItem) => {
+                              const iStartX = getXForDate(item.resolvedStart);
+                              const iEndX = getXForDate(item.resolvedEnd);
+                              const iWidth =
+                                iStartX !== null && iEndX !== null
+                                  ? Math.max(iEndX - iStartX, 10)
+                                  : 0;
+
+                              const isCompleted = item.status === 'completed';
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  onClick={() => {
+                                    if (permissions.gapAnalysis.canManage) {
+                                      setEditingActionItem(item);
+                                      setIsAddActionItemOpen(true);
+                                    }
+                                  }}
+                                  className="h-10 relative border-b border-slate-100/80 flex items-center bg-slate-50/20 hover:bg-blue-50/20 transition-colors cursor-pointer"
+                                >
+                                  {iStartX !== null && iWidth > 0 && (
+                                    <>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <div
+                                              style={{
+                                                left: `${iStartX}px`,
+                                                width: `${iWidth}px`,
+                                              }}
+                                              className={`absolute h-3 rounded-xs shadow-2xs cursor-pointer transition-all z-10 ${
+                                                isCompleted
+                                                  ? 'bg-emerald-500 hover:bg-emerald-600'
+                                                  : item.isItemDelayed
+                                                  ? 'bg-red-500 hover:bg-red-600'
+                                                  : item.status === 'blocked'
+                                                  ? 'bg-amber-500 hover:bg-amber-600'
+                                                  : 'bg-blue-500 hover:bg-blue-600'
+                                              }`}
+                                            />
+                                          </TooltipTrigger>
+                                          <TooltipContent className="text-xs space-y-1">
+                                            <p className="font-bold">{item.title}</p>
+                                            <p>
+                                              狀態：{isCompleted ? '已完成' : item.status === 'blocked' ? '卡關中' : '進行中'}
+                                              {item.isItemDelayed ? ' (超過原階段規劃期程)' : ''}
+                                            </p>
+                                            <p>負責/等候：{item.owner} / {item.waitingOn || '無'}</p>
+                                            <p>
+                                              執行期間：{item.resolvedStart} ~ {item.resolvedEnd}
+                                            </p>
+                                            <p className="font-bold text-emerald-400">
+                                              {isCompleted
+                                                ? `完成天數：${item.durationDays} 天`
+                                                : `已進行：${item.elapsedDays} 天 (預計共 ${item.durationDays} 天)`}
+                                            </p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+
+                                      {/* 細項規畫項目 BAR 後直接顯示完成天數標籤 */}
+                                      <div
+                                        style={{
+                                          left: `${iStartX + iWidth + 6}px`,
+                                        }}
+                                        className={`absolute z-20 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap shadow-2xs border ${
+                                          isCompleted
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                            : item.isItemDelayed
+                                            ? 'bg-red-50 text-red-700 border-red-300'
+                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                        }`}
+                                      >
+                                        <span>
+                                          {isCompleted
+                                            ? `${item.durationDays}天`
+                                            : `進行中 ${item.elapsedDays}天`}
+                                        </span>
+                                        <span className="text-[9px] font-normal opacity-80">
+                                          ({item.resolvedStart.slice(5).replace('-', '/')}~
+                                          {item.resolvedEnd.slice(5).replace('-', '/')})
+                                        </span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+};
+
   // 第二階子階段（WBS）列：基準 vs 實際（由待辦彙整）
   const wbsRowsByPhase = useMemo(() => {
     const map: Record<string, {
@@ -898,6 +1025,9 @@ export function ProjectVarianceClient({
                 {expandedProjects[currentAnalysis.project.id] &&
                   currentAnalysis.phasesData.map((phase) => {
                     const phaseKeyId = `${currentAnalysis.project.id}-${phase.key}`;
+                    const wbsIdSet = new Set((wbsRowsByPhase[phase.key] || []).map((w) => w.wbs.id));
+                    const looseItems = phase.actual.items.filter((i) => !i.wbsItemId || !wbsIdSet.has(i.wbsItemId));
+                    const itemsOfWbs = (id: string) => phase.actual.items.filter((i) => i.wbsItemId === id);
                     const isPhaseExpanded = !!expandedPhases[phaseKeyId];
                     const hasItems = phase.actual.items.length > 0;
 
@@ -968,40 +1098,7 @@ export function ProjectVarianceClient({
                         </div>
 
                         {/* 展開之細項規劃 / 待辦事項明細 (依時間先後順序排列) */}
-                        {isPhaseExpanded &&
-                          phase.actual.items.map((item) => (
-                            <div
-                              key={item.id}
-                              onClick={() => {
-                                if (permissions.gapAnalysis.canManage) {
-                                  setEditingActionItem(item);
-                                  setIsAddActionItemOpen(true);
-                                }
-                              }}
-                              className="h-10 px-3.5 pl-10 flex items-center justify-between text-[11px] bg-slate-50/50 hover:bg-blue-50/40 border-b border-slate-100/80 transition-colors cursor-pointer"
-                            >
-                              <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                    item.status === 'completed'
-                                      ? 'bg-emerald-500'
-                                      : item.status === 'blocked'
-                                      ? 'bg-rose-500'
-                                      : 'bg-blue-500'
-                                  }`}
-                                />
-                                <span className="text-slate-700 truncate font-medium" title={item.title}>
-                                  {item.title}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[10px] text-slate-500 font-mono">
-                                  {item.resolvedStart.slice(5).replace('-', '/')}~
-                                  {item.resolvedEnd.slice(5).replace('-', '/')}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                        {isPhaseExpanded && looseItems.map(renderLeftItem)}
 
                         {/* 第二階子階段列（WBS） */}
                         {(wbsRowsByPhase[phase.key] || []).length > 0 && (
@@ -1019,11 +1116,18 @@ export function ProjectVarianceClient({
                           </button>
                         )}
                         {!wbsCollapsed[phaseKeyId] && (wbsRowsByPhase[phase.key] || []).map((w) => (
+                          <Fragment key={w.wbs.id}>
                           <div
-                            key={w.wbs.id}
-                            className="h-10 px-3.5 pl-9 flex items-center justify-between text-[11px] bg-indigo-50/40 border-b border-slate-100"
+                            onClick={() => setWbsItemsClosed((prev) => ({ ...prev, [w.wbs.id]: !prev[w.wbs.id] }))}
+                            className="h-10 px-3.5 pl-9 flex items-center justify-between text-[11px] bg-indigo-50/40 border-b border-slate-100 cursor-pointer hover:bg-indigo-50"
                           >
                             <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                              {itemsOfWbs(w.wbs.id).length > 0 &&
+                                (wbsItemsClosed[w.wbs.id] ? (
+                                  <ChevronRight className="h-3 w-3 text-indigo-500 shrink-0" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-indigo-500 shrink-0" />
+                                ))}
                               <span className="text-indigo-400 font-mono shrink-0">{w.wbs.code}</span>
                               <span className="font-semibold text-slate-800 truncate" title={w.wbs.name}>{w.wbs.name}</span>
                               {w.wbs.completedAt && <span className="text-emerald-600 shrink-0" title={`已結束 ${w.wbs.completedAt}`}>✔</span>}
@@ -1042,6 +1146,8 @@ export function ProjectVarianceClient({
                               {!w.hasBaseline ? '未設基準' : w.delayDays > 0 ? `延誤 ${w.delayDays} 天` : w.isDone ? '準時完成' : '進行中'}
                             </span>
                           </div>
+                          {!wbsItemsClosed[w.wbs.id] && itemsOfWbs(w.wbs.id).map(renderLeftItem)}
+                          </Fragment>
                         ))}
                       </div>
                     );
@@ -1181,6 +1287,9 @@ export function ProjectVarianceClient({
                   {expandedProjects[currentAnalysis.project.id] &&
                     currentAnalysis.phasesData.map((phase, phaseIdx) => {
                       const phaseKeyId = `${currentAnalysis.project.id}-${phase.key}`;
+                    const wbsIdSet = new Set((wbsRowsByPhase[phase.key] || []).map((w) => w.wbs.id));
+                    const looseItems = phase.actual.items.filter((i) => !i.wbsItemId || !wbsIdSet.has(i.wbsItemId));
+                    const itemsOfWbs = (id: string) => phase.actual.items.filter((i) => i.wbsItemId === id);
                       const isPhaseExpanded = !!expandedPhases[phaseKeyId];
 
                       // 計算原始規劃 Bar 座標
@@ -1388,96 +1497,7 @@ export function ProjectVarianceClient({
                           </div>
 
                           {/* 展開時個別細項規畫項目 (待辦事項) 的時間 Bar + BAR 後直接顯示完成天數 */}
-                          {isPhaseExpanded &&
-                            phase.actual.items.map((item) => {
-                              const iStartX = getXForDate(item.resolvedStart);
-                              const iEndX = getXForDate(item.resolvedEnd);
-                              const iWidth =
-                                iStartX !== null && iEndX !== null
-                                  ? Math.max(iEndX - iStartX, 10)
-                                  : 0;
-
-                              const isCompleted = item.status === 'completed';
-
-                              return (
-                                <div
-                                  key={item.id}
-                                  onClick={() => {
-                                    if (permissions.gapAnalysis.canManage) {
-                                      setEditingActionItem(item);
-                                      setIsAddActionItemOpen(true);
-                                    }
-                                  }}
-                                  className="h-10 relative border-b border-slate-100/80 flex items-center bg-slate-50/20 hover:bg-blue-50/20 transition-colors cursor-pointer"
-                                >
-                                  {iStartX !== null && iWidth > 0 && (
-                                    <>
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <div
-                                              style={{
-                                                left: `${iStartX}px`,
-                                                width: `${iWidth}px`,
-                                              }}
-                                              className={`absolute h-3 rounded-xs shadow-2xs cursor-pointer transition-all z-10 ${
-                                                isCompleted
-                                                  ? 'bg-emerald-500 hover:bg-emerald-600'
-                                                  : item.isItemDelayed
-                                                  ? 'bg-red-500 hover:bg-red-600'
-                                                  : item.status === 'blocked'
-                                                  ? 'bg-amber-500 hover:bg-amber-600'
-                                                  : 'bg-blue-500 hover:bg-blue-600'
-                                              }`}
-                                            />
-                                          </TooltipTrigger>
-                                          <TooltipContent className="text-xs space-y-1">
-                                            <p className="font-bold">{item.title}</p>
-                                            <p>
-                                              狀態：{isCompleted ? '已完成' : item.status === 'blocked' ? '卡關中' : '進行中'}
-                                              {item.isItemDelayed ? ' (超過原階段規劃期程)' : ''}
-                                            </p>
-                                            <p>負責/等候：{item.owner} / {item.waitingOn || '無'}</p>
-                                            <p>
-                                              執行期間：{item.resolvedStart} ~ {item.resolvedEnd}
-                                            </p>
-                                            <p className="font-bold text-emerald-400">
-                                              {isCompleted
-                                                ? `完成天數：${item.durationDays} 天`
-                                                : `已進行：${item.elapsedDays} 天 (預計共 ${item.durationDays} 天)`}
-                                            </p>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-
-                                      {/* 細項規畫項目 BAR 後直接顯示完成天數標籤 */}
-                                      <div
-                                        style={{
-                                          left: `${iStartX + iWidth + 6}px`,
-                                        }}
-                                        className={`absolute z-20 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap shadow-2xs border ${
-                                          isCompleted
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                                            : item.isItemDelayed
-                                            ? 'bg-red-50 text-red-700 border-red-300'
-                                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                                        }`}
-                                      >
-                                        <span>
-                                          {isCompleted
-                                            ? `${item.durationDays}天`
-                                            : `進行中 ${item.elapsedDays}天`}
-                                        </span>
-                                        <span className="text-[9px] font-normal opacity-80">
-                                          ({item.resolvedStart.slice(5).replace('-', '/')}~
-                                          {item.resolvedEnd.slice(5).replace('-', '/')})
-                                        </span>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })}
+                          {isPhaseExpanded && looseItems.map(renderRightItem)}
 
                           {/* 第二階子階段（WBS）：上黑＝基準，下藍/紅＝實際（由待辦彙整） */}
                           {(wbsRowsByPhase[phase.key] || []).length > 0 && (
@@ -1490,7 +1510,8 @@ export function ProjectVarianceClient({
                             const ae = w.actualEnd ? getXForDate(w.actualEnd) : null;
                             const delayed = w.delayDays > 0;
                             return (
-                              <div key={w.wbs.id} className="h-10 relative border-b border-slate-100/80 bg-indigo-50/20">
+                              <Fragment key={w.wbs.id}>
+                              <div className="h-10 relative border-b border-slate-100/80 bg-indigo-50/20">
                                 {w.hasBaseline && bs !== null && be !== null && (
                                   <div
                                     title={`基準 ${w.wbs.baselineStart} ~ ${w.wbs.baselineEnd}`}
@@ -1517,6 +1538,8 @@ export function ProjectVarianceClient({
                                   <span className="absolute left-2 top-3 text-[10px] text-slate-400 italic">尚未設定基準日</span>
                                 )}
                               </div>
+                              {!wbsItemsClosed[w.wbs.id] && itemsOfWbs(w.wbs.id).map(renderRightItem)}
+                              </Fragment>
                             );
                           })}
                         </div>
