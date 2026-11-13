@@ -80,7 +80,7 @@ export function InternalTasksClient({
   users = [],
   clients = [],
 }: InternalTasksClientProps) {
-  const { isAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen, permissions, currentUser } = useAdmin();
+  const { isAdmin, isSuperAdmin, isEditor, isGuest, isLoaded, setIsLoginDialogOpen, permissions, currentUser } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1734,7 +1734,7 @@ export function InternalTasksClient({
         </div>
 
         <div className="flex items-center gap-2">
-          {isAdmin && (
+          {isSuperAdmin && (
             <Button
               onClick={() => handleOpenAI()}
               variant="outline"
@@ -3184,6 +3184,7 @@ export function InternalTasksClient({
       />
 
       {/* AI 分析彈窗 */}
+      {isSuperAdmin && (
       <AIAnalysisDialog
         open={aiDialogOpen}
         onOpenChange={setAiDialogOpen}
@@ -3197,6 +3198,7 @@ export function InternalTasksClient({
           status: p.status,
         }))}
       />
+      )}
     </div>
   );
 }

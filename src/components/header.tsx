@@ -175,8 +175,8 @@ export function Header() {
               </Button>
             )}
 
-            {/* AI分析快捷按鈕 (放置於幫助選單左側) */}
-            {isAdmin ? (
+            {/* AI分析快捷按鈕：僅「管理者」(最高權限) 可見，其他身分一律隱藏 */}
+            {isSuperAdmin && (
               <Button
                 variant="outline"
                 size="sm"
@@ -191,31 +191,6 @@ export function Header() {
                 title="開啟 AI 全專案/個別專案延誤診斷與卡關歷程分析"
               >
                 <Bot className="h-4 w-4 text-indigo-600" />
-                <span>AI分析</span>
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (isGuest) {
-                    toast({
-                      title: '需要管理者權限',
-                      description: '「AI分析」僅限管理員以上使用，請先登入帳號。',
-                    });
-                    setIsLoginDialogOpen(true);
-                  } else {
-                    toast({
-                      title: '權限不足',
-                      description: 'AI分析功能僅限管理員以上權限使用。編輯者權限為檢視內部專案與維護管制總表。',
-                      variant: 'destructive',
-                    });
-                  }
-                }}
-                className="gap-1.5 text-xs text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed hover:bg-slate-100"
-                title="僅限管理員與主管理員使用"
-              >
-                <Lock className="h-3.5 w-3.5 text-slate-400" />
                 <span>AI分析</span>
               </Button>
             )}
