@@ -15,7 +15,7 @@ import {
   buildFollowUp, findMissing, openItems, retarget, taipeiToday, type AiTodoKind, type AiTodoProposal,
 } from '@/lib/ai-todo';
 import { formTemplate, isBlankForm, isForm, parseForm } from '@/lib/ai-todo-form';
-import { applyAiTodo, deleteAiTodoDraft, listAiTodoDrafts, saveAiTodoDraft, type AiTodoDraft } from '@/lib/ai-todo-actions';
+import { applyAiTodo, loadAiTodoScope, deleteAiTodoDraft, listAiTodoDrafts, saveAiTodoDraft, type AiTodoDraft } from '@/lib/ai-todo-actions';
 import type { ProjectActionItem } from '@/types';
 
 type ProjectLite = { id: string; name: string; caseNumber: string };
@@ -45,10 +45,15 @@ function Field({ label, missing, children }: { label: string; missing?: MissingL
   );
 }
 
-export function AiTodoClient({ projects, items, people, clientNames, companyOf }: Props) {
+export function AiTodoClient({ projects: pageProjects, items: pageItems, people, clientNames, companyOf }: Props) {
   const { isSuperAdmin, isLoaded, currentUser, setIsLoginDialogOpen } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
+  // 按「帶入」時取回的最新資料；頁面重新取得資料後改用頁面的
+  const [fresh, setFresh] = useState<{ projects: ProjectLite[]; items: ProjectActionItem[] } | null>(null);
+  useEffect(() => setFresh(null), [pageProjects, pageItems]);
+  const projects = fresh?.projects ?? pageProjects;
+  const items = fresh?.items ?? pageItems;
   const [mode, setMode] = useState<'form' | 'free'>('form');
   const [formText, setFormText] = useState(formTemplate());
   const [freeText, setFreeText] = useState('');
@@ -158,12 +163,18 @@ export function AiTodoClient({ projects, items, people, clientNames, companyOf }
   const parse = async () => {
     if (pending.some((r) => r.checked) && !window.confirm('還有未寫入的項目，重新整理會清掉，要繼續嗎？')) return;
     if (mode === 'form') {
+      setBusy('parse');
       try {
+        // 先取最新專案與待辦，剛在別頁新增或改名的也對得到
+        const latest = await loadAiTodoScope();
+        setFresh(latest);
         showProposals(parseForm(formText, messageDate, {
-          projects, items, owners, people: Array.from(peopleSet), companyOf, speaker: currentUser?.displayName || '',
+          ...latest, owners, people: Array.from(peopleSet), companyOf, speaker: currentUser?.displayName || '',
         }));
       } catch (e: any) {
         toast({ title: '無法帶入', description: e.message, variant: 'destructive' });
+      } finally {
+        setBusy('');
       }
       return;
     }
@@ -266,6 +277,7 @@ export function AiTodoClient({ projects, items, people, clientNames, companyOf }
         </div>
         <Textarea
           ref={inputRef}
+          readOnly={busy === 'parse'}
           onKeyDown={onFormKey}
           value={text}
           onChange={(e) => {

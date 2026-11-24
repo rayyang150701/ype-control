@@ -21,7 +21,8 @@ export interface AiTodoFormContext {
   speaker: string;
 }
 
-const norm = (s: string) => s.replace(/[\s()（）「」\-_、，,。．.]/g, '').replace(/臺/g, '台').toLowerCase();
+// 全形半形、標點、空白、隱藏字元、常見異體字都視為相同
+const norm = (s: string) => s.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu, '').replace(/臺/g, '台').replace(/[厰廠]/g, '廠').toLowerCase();
 
 /** 依「完全相同 → 包含 → 依序出現的字」逐級比對，回傳第一個有結果的等級 */
 function match<T>(query: string, list: T[], keys: (t: T) => string[]): T[] {
@@ -38,6 +39,25 @@ function match<T>(query: string, list: T[], keys: (t: T) => string[]): T[] {
     if (hit.length) return hit;
   }
   return [];
+}
+
+const pairs = (s: string) => new Set(Array.from(s).slice(1).map((c, i) => Array.from(s)[i] + c));
+
+/** 名稱有錯字、順序不同或多打字時，以相鄰兩字的重疊比例找最像的（至少四成） */
+function similar<T>(query: string, list: T[], key: (t: T) => string): { best?: T; hits: T[] } {
+  const q = pairs(norm(query));
+  if (!q.size) return { hits: [] };
+  const scored = list
+    .map((t) => {
+      const k = pairs(norm(key(t)));
+      let same = 0;
+      q.forEach((x) => { if (k.has(x)) same++; });
+      return { t, score: k.size ? same / Math.min(q.size, k.size) : 0 };
+    })
+    .filter((x) => x.score >= 0.4)
+    .sort((a, b) => b.score - a.score);
+  const clear = scored.length > 0 && (scored.length === 1 || scored[0].score - scored[1].score >= 0.15);
+  return { best: clear ? scored[0].t : undefined, hits: scored.slice(0, 5).map((x) => x.t) };
 }
 
 const CN = '零一二三四五六七八九';
@@ -117,7 +137,12 @@ export function parseForm(text: string, base: string, ctx: AiTodoFormContext): A
       notes.push(hits.length ? `${label}「${value}」有多個可能：${hits.slice(0, 5).map(name).join('、')}` : `${label}「${value}」對不到，請重選`);
       return undefined;
     };
-    const byProject = match(b.專案 || '', ctx.projects, (p) => [p.name, p.caseNumber]);
+    let byProject = match(b.專案 || '', ctx.projects, (p) => [p.name, p.caseNumber]);
+    if (b.專案 && !byProject.length) {
+      const near = similar(b.專案, ctx.projects, (p) => p.name);
+      byProject = near.best ? [near.best] : near.hits;
+      if (near.best) notes.push(`專案「${b.專案}」是以相似名稱帶入「${near.best.name}」，請確認後再勾選`);
+    }
     const project = pick('專案', b.專案, byProject, (p) => p.name);
     let owner = pick('負責', b.負責, match(b.負責 || '', ctx.owners, (o) => [o]), (o) => o) || '';
     const phase = pick('階段', b.階段, match(b.階段 || '', AI_TODO_PHASES, (p) => [p, p.replace(/^[\d.]+\s*/, '')]), (p) => p) || '';

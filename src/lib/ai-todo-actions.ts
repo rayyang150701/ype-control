@@ -94,3 +94,9 @@ export async function deleteAiTodoDraft(id: string) {
   const { error } = await createClient().from('ai_todo_drafts').delete().eq('id', id);
   return error ? { success: false, message: draftError(error) } : { success: true, message: '草稿已刪除' };
 }
+
+/** 取得最新的內部專案與待辦，供框架填寫比對 */
+export async function loadAiTodoScope() {
+  const { projects, items } = await getAiTodoScope();
+  return { projects: projects.map(({ id, name, caseNumber }) => ({ id, name, caseNumber })), items };
+}
