@@ -23,6 +23,10 @@ export interface AiTodoProposal {
   relatedItemId: string | null;
   /** AI 建議的事項名稱，切換成新增時使用 */
   suggestedTitle: string;
+  /** 使用者原話明確說了「新增／更新／完成」，不必再問 */
+  explicit: boolean;
+  /** 負責單位是依等候對象的所屬單位帶入，不是原文說的 */
+  ownerInferred: boolean;
   projectId: string | null;
   candidateProjectIds: string[];
   title: string;
@@ -44,6 +48,10 @@ export interface AiTodoContext {
   items: ProjectActionItem[];
   owners: string[];
   people: string[];
+  /** 人員 → 所屬單位 */
+  companyOf: Record<string, string>;
+  /** 目前使用者，口述中的「我」 */
+  speaker: string;
 }
 
 const str = (v: unknown, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -87,9 +95,13 @@ export function buildAiTodoPrompt(ctx: AiTodoContext, messageDate: string): stri
 5. 無法判斷是哪件事或要做什麼用 unclear，在 question 寫要追問的話。閒聊略過。
 6. evidence 必須逐字摘錄原文的一小段。有填期限時，evidence 要包含提到期限的原文。
 7. waitingOn 是「正在等誰處理」，owner 是負責單位；人名優先採用下列名單的寫法。
+8. 口述常直接說出欄位：「新增／更新／完成」、專案、事項、「等候／等／請某人」、「負責」、「幾月幾號前／預計完成」、「階段」、「備註」，逐一填入對應欄位。title 只寫要做的事，不含專案名、人名、日期與「新增」等字。
+9. 使用者明確說出新增、更新（改期、改成）、完成時，explicit 填 true 並照做；沒明講填 false。
+10. 語音會有同音錯字，人名與單位若與名單中唯一一個同音或簡稱相符（例：億威＝億威電子），改用名單寫法；不只一個可能就保留原字。
+11. 「我」指 ${ctx.speaker || '目前使用者（姓名未知，留空）'}。只說月日沒說年份時，取訊息日期當天或之後最近的日期。
 
 只輸出 JSON：
-{"items":[{"kind":"create|update|complete|unclear","item":"T代碼或空","project":"P代碼或空","candidates":["P代碼"],"title":"","phase":"","status":"","owner":"","waitingOn":"","dueDate":"YYYY-MM-DD或空","dueDateReason":"改期原因或空","completedDate":"YYYY-MM-DD或空","note":"補充重點或空","evidence":"","question":""}]}
+{"items":[{"kind":"create|update|complete|unclear","item":"T代碼或空","project":"P代碼或空","candidates":["P代碼"],"title":"","phase":"","status":"","owner":"","waitingOn":"","dueDate":"YYYY-MM-DD或空","dueDateReason":"改期原因或空","completedDate":"YYYY-MM-DD或空","explicit":false,"note":"補充重點或空","evidence":"","question":""}]}
 
 phase 只能是：${AI_TODO_PHASES.join('、')}
 status 只能是：${AI_TODO_STATUSES.join('、')}
@@ -102,6 +114,14 @@ ${projects}
 未完成待辦（代碼|專案|事項|狀態|期限|負責|等候）：
 ${items}`;
 }
+
+/** AI 說使用者有明講時，原文必須真的出現對應字眼才採信 */
+const SPOKEN: Record<AiTodoKind, RegExp> = {
+  create: /新增|新建|加一筆|加一個/,
+  update: /更新|改期|改到|改成|改為|延到|延期|合併/,
+  complete: /完成|做完|結案|處理好/,
+  unclear: /$^/,
+};
 
 /** 驗證並還原 AI 輸出：代碼轉回真實 ID，不合法的值一律清空，讓畫面標示為缺漏 */
 export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: string): AiTodoProposal[] {
@@ -131,6 +151,8 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
       itemUpdatedAt: isChange ? item!.updatedAt : null,
       relatedItemId: item?.id || null,
       suggestedTitle: str(r.title, 200),
+      explicit: r.explicit === true && SPOKEN[kind].test(sourceText),
+      ownerInferred: false,
       projectId: isChange ? item!.projectId : byCode(r.project, 'P', ctx.projects)?.id || (kind === 'create' ? item?.projectId : null) || null,
       candidateProjectIds: (Array.isArray(r.candidates) ? r.candidates : [])
         .map((c: unknown) => byCode(c, 'P', ctx.projects)?.id)
@@ -148,7 +170,15 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
       evidenceVerified: !!evidence && source.includes(squash(evidence)),
       question: str(r.question),
     };
-    if (kind === 'create' && !p.status) p.status = 'pending';
+    if (kind === 'create') {
+      if (!p.status) p.status = 'pending';
+      // 沒說負責單位時，用等候對象的所屬單位帶入（畫面會標示來源）
+      const company = ctx.companyOf[p.waitingOn] || '';
+      if (!p.owner && !str(r.owner) && ctx.owners.includes(company)) {
+        p.owner = company;
+        p.ownerInferred = true;
+      }
+    }
     if (isChange) {
       // 狀態變成完成者一律歸到「完成」，畫面不會把它混在一般更新裡
       if (kind === 'complete' || p.status === 'completed') {

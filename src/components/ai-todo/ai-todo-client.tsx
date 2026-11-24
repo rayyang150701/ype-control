@@ -20,7 +20,7 @@ import type { ProjectActionItem } from '@/types';
 type ProjectLite = { id: string; name: string; caseNumber: string };
 interface Props { projects: ProjectLite[]; items: ProjectActionItem[]; people: string[]; clientNames: string[] }
 /** decision：使用者對「新增或合併」的回答；空值代表尚未回答，不可寫入 */
-type Row = AiTodoProposal & { checked: boolean; decision: '' | 'new' | 'merge'; saved?: boolean; error?: string; allowNewPerson?: boolean };
+type Row = AiTodoProposal & { checked: boolean; decision: '' | 'new' | 'merge'; expanded?: boolean; saved?: boolean; error?: string; allowNewPerson?: boolean };
 type MissingLevel = 'required' | 'suggested' | undefined;
 
 const KIND: Record<AiTodoKind, { label: string; cls: string }> = {
@@ -114,14 +114,16 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
       const res = await fetch('/api/ai/parse-todo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, messageDate }),
+        body: JSON.stringify({ text, messageDate, speaker: currentUser?.displayName || '' }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || '整理失敗');
       // 有疑慮的（原文對不上、缺必填）與會改到既有待辦的，預設不勾，需人工確認
       setRows((json.proposals as AiTodoProposal[]).map((p): Row => {
-        const sure = p.kind === 'create' && !p.relatedItemId;
-        return { ...p, decision: sure ? 'new' : '', checked: sure && p.evidenceVerified && !findMissing(p).required.length };
+        // 明講「新增」就不再詢問；明講更新／完成則先帶入 AI 找到的那筆，仍需自己勾選
+        const sure = p.kind === 'create' && (!p.relatedItemId || p.explicit);
+        const merge = p.explicit && (p.kind === 'update' || p.kind === 'complete');
+        return { ...p, decision: sure ? 'new' : merge ? 'merge' : '', checked: sure && p.evidenceVerified && !findMissing(p).required.length };
       }));
       setParsed(true);
       router.refresh();
@@ -213,6 +215,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
           placeholder="電腦：貼上 LINE 或社群對話。手機：點這裡，再按鍵盤上的麥克風口述。"
           className="text-base"
         />
+        <p className="text-xs text-slate-600">口述範例：「新增，核一廠，提供施工計畫書，等候 James，負責億威電子，12 月 4 號前完成」</p>
         <div className="flex flex-wrap items-end gap-2">
           <Field label="訊息日期（換算「明天、下週三」用）">
             <Input type="date" value={messageDate} onChange={(e) => setMessageDate(e.target.value)} className="w-44" />
@@ -300,7 +303,9 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                   {r.kind !== 'unclear' && !r.saved && (
                     <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
                       <p className="font-semibold">
-                        {related
+                        {r.decision
+                          ? `處理方式（可改）${related && r.decision === 'new' ? `：另有相近待辦「${related.title}」` : ''}`
+                          : related
                           ? `AI 找到相近的待辦「${related.title}」。這段內容要合併進現有待辦，還是新增一筆？`
                           : '這段內容要合併進現有待辦，還是新增一筆？'}
                       </p>
@@ -369,7 +374,22 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                     </Button>
                   )}
 
-                  {r.kind !== 'unclear' && r.decision && (r.decision === 'new' || r.itemId) && (
+                  {r.kind === 'create' && r.decision === 'new' && !r.saved && (
+                    <div className="space-y-0.5 break-words text-sm">
+                      <div className="font-semibold">{projectLabel(r.projectId) || '（未指定專案）'}｜{r.title || '（未填事項）'}</div>
+                      <div className="text-slate-600">
+                        期限：{r.dueDate || '未提到'}　等候：{r.waitingOn || '未提到'}　負責：{r.owner || '未提到'}
+                        {r.ownerInferred && <span className="text-amber-700">（依等候對象帶入）</span>}
+                      </div>
+                      {r.note && <div className="text-slate-600">備註：{r.note}</div>}
+                    </div>
+                  )}
+                  {r.kind !== 'unclear' && r.decision && (r.decision === 'new' || r.itemId) && !r.saved && missing.required.length === 0 && (
+                    <Button type="button" variant="ghost" size="sm" aria-expanded={!!r.expanded} onClick={() => patch(r.id, { expanded: !r.expanded })}>
+                      {r.expanded ? '收合欄位' : '修改欄位'}
+                    </Button>
+                  )}
+                  {r.kind !== 'unclear' && r.decision && (r.decision === 'new' || r.itemId) && !r.saved && (r.expanded || missing.required.length > 0) && (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {r.kind === 'create' && (
                         <Field label="專案" missing={state('專案')}>
@@ -392,7 +412,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                         <Input value={r.title} onChange={(e) => patch(r.id, { title: e.target.value })} />
                       </Field>
                       <Field label="負責單位" missing={state('負責單位')}>
-                        <select className={selectCls} value={r.owner} onChange={(e) => patch(r.id, { owner: e.target.value })}>
+                        <select className={selectCls} value={r.owner} onChange={(e) => patch(r.id, { owner: e.target.value, ownerInferred: false })}>
                           <option value="">{isChange ? '不變更' : '請選擇'}</option>
                           {owners.map((o) => <option key={o}>{o}</option>)}
                         </select>

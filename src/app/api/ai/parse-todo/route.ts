@@ -68,6 +68,8 @@ export async function POST(request: NextRequest) {
       items,
       owners: unique([...clients.map((c) => c.name), ...items.map((i) => i.owner)]),
       people: unique(users.map((u) => u.displayName)),
+      companyOf: Object.fromEntries(users.filter((u) => u.displayName && u.clientName).map((u) => [u.displayName.trim(), u.clientName!.trim()])),
+      speaker: typeof body.speaker === 'string' ? body.speaker.trim().slice(0, 50) : '',
     };
 
     const reply = await callModel(buildAiTodoPrompt(ctx, messageDate), text);

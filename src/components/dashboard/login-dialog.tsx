@@ -56,6 +56,12 @@ export function LoginDialog({ isOpen, setIsOpen, onLoginSuccess }: LoginDialogPr
         password: data.password,
       });
 
+      // 網頁不存在或版本已更新時，伺服器不會回傳結果
+      if (!res) {
+        setError('目前網頁無法登入，請確認網址是否正確，並重新整理後再試。');
+        return;
+      }
+
       if (res.success && res.user) {
         login(res.user);
         const roleLabel =
