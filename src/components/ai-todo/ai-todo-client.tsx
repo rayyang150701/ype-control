@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Copy, Loader2, Save, Sparkles, Trash2 } from 'lucide-react';
@@ -12,14 +12,15 @@ import { useAdmin } from '@/components/admin-context';
 import { useToast } from '@/hooks/use-toast';
 import {
   AI_TODO_MAX_CHARS, AI_TODO_PHASES, AI_TODO_STATUSES, AI_TODO_STATUS_LABEL,
-  buildFollowUp, findMissing, openItems, taipeiToday, type AiTodoKind, type AiTodoProposal,
+  buildFollowUp, findMissing, openItems, retarget, taipeiToday, type AiTodoKind, type AiTodoProposal,
 } from '@/lib/ai-todo';
 import { applyAiTodo, deleteAiTodoDraft, listAiTodoDrafts, saveAiTodoDraft, type AiTodoDraft } from '@/lib/ai-todo-actions';
 import type { ProjectActionItem } from '@/types';
 
 type ProjectLite = { id: string; name: string; caseNumber: string };
 interface Props { projects: ProjectLite[]; items: ProjectActionItem[]; people: string[]; clientNames: string[] }
-type Row = AiTodoProposal & { checked: boolean; saved?: boolean; error?: string; allowNewPerson?: boolean };
+/** decision：使用者對「新增或合併」的回答；空值代表尚未回答，不可寫入 */
+type Row = AiTodoProposal & { checked: boolean; decision: '' | 'new' | 'merge'; saved?: boolean; error?: string; allowNewPerson?: boolean };
 type MissingLevel = 'required' | 'suggested' | undefined;
 
 const KIND: Record<AiTodoKind, { label: string; cls: string }> = {
@@ -55,7 +56,8 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
   const [drafts, setDrafts] = useState<AiTodoDraft[]>([]);
   const [draftError, setDraftError] = useState('');
   const [tab, setTab] = useState<'overdue' | 'week' | 'all'>('overdue');
-  const skipFirstStore = useRef(true);
+
+  const reset = () => { setText(''); setMessageDate(taipeiToday()); setRows([]); setParsed(false); };
 
   const refreshDrafts = async () => {
     try {
@@ -67,13 +69,16 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
     }
   };
 
-  // 打到一半的文字留在本機，重新整理也不會不見
+  // 每次進入都是空白；清掉舊版留在瀏覽器的內容
   useEffect(() => {
-    try { setText(localStorage.getItem(STORE_KEY) || ''); } catch {}
+    try { localStorage.removeItem(STORE_KEY); } catch {}
   }, []);
+  // 有未處理的文字時，關閉或重新整理前提醒
   useEffect(() => {
-    if (skipFirstStore.current) { skipFirstStore.current = false; return; }
-    try { localStorage.setItem(STORE_KEY, text); } catch {}
+    if (!text.trim()) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
   }, [text]);
   useEffect(() => { if (isSuperAdmin) refreshDrafts(); }, [isSuperAdmin]);
 
@@ -88,7 +93,8 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
 
   const pending = rows.filter((r) => !r.saved);
   const followUp = buildFollowUp(pending, (id) => itemMap.get(id)?.title || '');
-  const ready = pending.filter((r) => r.checked && !findMissing(r).required.length);
+  const canSave = (r: Row) => !!r.decision && !findMissing(r).required.length && (r.decision === 'new' || !!r.itemId);
+  const ready = pending.filter((r) => r.checked && canSave(r));
   const patch = (id: string, data: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, error: undefined, ...data } : r)));
 
@@ -112,8 +118,11 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || '整理失敗');
-      // 有疑慮的（原文對不上、缺必填）預設不勾，需人工確認
-      setRows((json.proposals as AiTodoProposal[]).map((p) => ({ ...p, checked: p.evidenceVerified && !findMissing(p).required.length })));
+      // 有疑慮的（原文對不上、缺必填）與會改到既有待辦的，預設不勾，需人工確認
+      setRows((json.proposals as AiTodoProposal[]).map((p): Row => {
+        const sure = p.kind === 'create' && !p.relatedItemId;
+        return { ...p, decision: sure ? 'new' : '', checked: sure && p.evidenceVerified && !findMissing(p).required.length };
+      }));
       setParsed(true);
       router.refresh();
     } catch (e: any) {
@@ -139,6 +148,8 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
       }
     }
     toast({ title: `已寫入 ${ok} 筆${ok < ready.length ? `，${ready.length - ok} 筆失敗` : ''}`, variant: ok < ready.length ? 'destructive' : 'default' });
+    // 全部處理完就清空；還有失敗或未處理的則保留
+    if (ok > 0 && ok === pending.length) reset();
     setBusy('');
     router.refresh();
   };
@@ -148,7 +159,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
     try {
       const res = await saveAiTodoDraft(text, messageDate, currentUser?.displayName || '');
       toast({ title: res.message, variant: res.success ? 'default' : 'destructive' });
-      if (res.success) { setText(''); await refreshDrafts(); }
+      if (res.success) { reset(); await refreshDrafts(); }
     } catch {
       toast({ title: '草稿儲存失敗，文字仍保留在輸入框', variant: 'destructive' });
     } finally {
@@ -212,7 +223,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
           <Button variant="outline" onClick={saveDraft} disabled={!text.trim() || !messageDate || !!busy} className="gap-1.5">
             <Save className="h-4 w-4" />存草稿
           </Button>
-          <Button variant="ghost" onClick={() => { setText(''); setRows([]); setParsed(false); }} disabled={!!busy}>清空</Button>
+          <Button variant="ghost" onClick={reset} disabled={!!busy}>清空</Button>
         </div>
         <p className="text-xs text-muted-foreground">按「整理」會把這段文字，以及專案名稱、未完成待辦與人員名單送到 AI 服務。確認前不會寫入資料。</p>
         {text.length >= AI_TODO_MAX_CHARS && <p className="text-xs font-semibold text-rose-600">已達 {AI_TODO_MAX_CHARS} 字上限，超過的部分沒有貼入，請分段處理。</p>}
@@ -244,6 +255,8 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
               missing.required.includes(f) ? 'required' : missing.suggested.includes(f) ? 'suggested' : undefined;
             const current = r.itemId ? itemMap.get(r.itemId) : undefined;
             const isChange = r.kind === 'update' || r.kind === 'complete';
+            const related = itemMap.get(r.relatedItemId || '');
+            const sameProject = open.filter((i) => i.projectId === r.projectId);
             const newPerson = !!r.waitingOn && !peopleSet.has(r.waitingOn);
             const allDiffs: [string, string, string][] = current
               ? [
@@ -265,12 +278,13 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                       type="checkbox"
                       className="h-5 w-5"
                       aria-label="寫入這筆"
-                      checked={r.checked && !missing.required.length}
-                      disabled={!!busy || missing.required.length > 0}
+                      checked={r.checked && canSave(r)}
+                      disabled={!!busy || !canSave(r)}
                       onChange={(e) => patch(r.id, { checked: e.target.checked })}
                     />
                   )}
                   <Badge variant="outline" className={KIND[r.kind].cls}>{KIND[r.kind].label}</Badge>
+                  {!r.saved && r.kind !== 'unclear' && !r.decision && <span className="text-sm font-semibold text-rose-600">請先回答：新增或合併</span>}
                   {r.saved && <span className="text-sm font-semibold text-emerald-700">已寫入</span>}
                   {missing.required.length > 0 && <span className="text-sm font-semibold text-rose-600">缺：{missing.required.join('、')}</span>}
                   {missing.suggested.length > 0 && <span className="text-sm text-amber-700">未提到：{missing.suggested.join('、')}</span>}
@@ -283,6 +297,61 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                 {r.question && <p className="text-sm text-rose-700">{r.question}</p>}
 
                 <fieldset disabled={!!busy || r.saved} className="min-w-0 space-y-3">
+                  {r.kind !== 'unclear' && !r.saved && (
+                    <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
+                      <p className="font-semibold">
+                        {related
+                          ? `AI 找到相近的待辦「${related.title}」。這段內容要合併進現有待辦，還是新增一筆？`
+                          : '這段內容要合併進現有待辦，還是新增一筆？'}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button" size="sm" aria-pressed={r.decision === 'new'}
+                          variant={r.decision === 'new' ? 'default' : 'outline'}
+                          onClick={() => {
+                            const next = r.kind === 'create' ? r : retarget(r, null, current || null);
+                            patch(r.id, { ...next, decision: 'new', checked: !findMissing(next).required.length });
+                          }}
+                        >
+                          新增一筆待辦
+                        </Button>
+                        <Button
+                          type="button" size="sm" aria-pressed={r.decision === 'merge'}
+                          variant={r.decision === 'merge' ? 'default' : 'outline'}
+                          onClick={() => {
+                            // AI 判為更新／完成時沿用它的建議；原本是新增則先帶入相近的那筆
+                            const next = r.kind === 'create' && related ? retarget(r, related, null) : r;
+                            patch(r.id, { ...next, decision: 'merge', checked: next.kind !== 'create' && !findMissing(next).required.length });
+                          }}
+                        >
+                          合併到現有待辦
+                        </Button>
+                      </div>
+                      {r.decision === 'merge' && (
+                        <label className="block text-xs text-slate-600">
+                          合併到哪一筆
+                          <select
+                            className={`${selectCls} mt-1`}
+                            value={r.itemId || ''}
+                            onChange={(e) => {
+                              const target = itemMap.get(e.target.value);
+                              if (!target) return;
+                              const next = retarget(r, target, null);
+                              patch(r.id, { ...next, checked: !findMissing(next).required.length });
+                            }}
+                          >
+                            {!r.itemId && <option value="">請選擇</option>}
+                            <optgroup label="同專案">
+                              {sameProject.map((i) => <option key={i.id} value={i.id}>{i.title}（期限 {due(i) || '無'}）</option>)}
+                            </optgroup>
+                            <optgroup label="其他專案">
+                              {open.filter((i) => !sameProject.includes(i)).map((i) => <option key={i.id} value={i.id}>{i.title}（{i.projectName}）</option>)}
+                            </optgroup>
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  )}
                   {isChange && current && (
                     <div className="text-sm">
                       <div className="font-semibold">{projectLabel(current.projectId) || current.projectName}｜{current.title}</div>
@@ -295,12 +364,12 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                   )}
 
                   {r.kind === 'unclear' && (
-                    <Button variant="outline" size="sm" onClick={() => patch(r.id, { kind: 'create', status: 'pending', title: r.title || r.evidence })}>
+                    <Button variant="outline" size="sm" onClick={() => patch(r.id, { kind: 'create', status: 'pending', title: r.title || r.evidence, decision: 'new' })}>
                       改為新增待辦
                     </Button>
                   )}
 
-                  {r.kind !== 'unclear' && (
+                  {r.kind !== 'unclear' && r.decision && (r.decision === 'new' || r.itemId) && (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {r.kind === 'create' && (
                         <Field label="專案" missing={state('專案')}>

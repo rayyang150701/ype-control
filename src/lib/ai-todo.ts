@@ -19,6 +19,10 @@ export interface AiTodoProposal {
   kind: AiTodoKind;
   itemId: string | null;
   itemUpdatedAt: string | null;
+  /** AI 認為可能相關的既有待辦，僅供畫面提示與切換，不代表要更新它 */
+  relatedItemId: string | null;
+  /** AI 建議的事項名稱，切換成新增時使用 */
+  suggestedTitle: string;
   projectId: string | null;
   candidateProjectIds: string[];
   title: string;
@@ -74,7 +78,10 @@ export function buildAiTodoPrompt(ctx: AiTodoContext, messageDate: string): stri
 
 規則：
 1. 內容沒提到的一律填空字串，不可推測期限、人名、負責單位。
-2. 先比對既有待辦：同一件事用 update 或 complete，不要重複 create。update／complete 只填「要變更」的欄位，其餘留空。
+2. 預設用 create。只有原文明確在講某筆既有待辦的後續（改期、回報進度、卡住、完成），才用 update 或 complete。
+   - 新的要求、新的文件或交付物、範圍或做法不同，即使同專案、主題相近，也是 create，並把相近的既有待辦代碼填在 item 供使用者參考。
+   - 無法確定是不是同一件事，用 create。
+   - update／complete 的 title 必須留空，不可改名；只填原文有提到要變更的欄位，其餘留空。
 3. 明確說已做完、結束，才用 complete；「快好了、應該可以」不是完成。
 4. 專案名稱注意語音錯字與簡稱（例：酸二、烤三）。不只一個可能時 project 留空，把可能的代碼列在 candidates。
 5. 無法判斷是哪件事或要做什麼用 unclear，在 question 寫要追問的話。閒聊略過。
@@ -112,6 +119,8 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
     const item = byCode(r.item, 'T', open);
     let kind: AiTodoKind = ['create', 'update', 'complete'].includes(r.kind) ? r.kind : 'unclear';
     if ((kind === 'update' || kind === 'complete') && !item) kind = 'unclear';
+    // 更新卻給了不同名稱，多半是另一件事：改列新增，由使用者決定是否併入
+    if (kind === 'update' && str(r.title) && squash(str(r.title)) !== squash(item!.title)) kind = 'create';
     const isChange = kind === 'update' || kind === 'complete';
     const evidence = str(r.evidence);
     const status = str(r.status);
@@ -120,7 +129,9 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
       kind,
       itemId: isChange ? item!.id : null,
       itemUpdatedAt: isChange ? item!.updatedAt : null,
-      projectId: isChange ? item!.projectId : byCode(r.project, 'P', ctx.projects)?.id || null,
+      relatedItemId: item?.id || null,
+      suggestedTitle: str(r.title, 200),
+      projectId: isChange ? item!.projectId : byCode(r.project, 'P', ctx.projects)?.id || (kind === 'create' ? item?.projectId : null) || null,
       candidateProjectIds: (Array.isArray(r.candidates) ? r.candidates : [])
         .map((c: unknown) => byCode(c, 'P', ctx.projects)?.id)
         .filter(Boolean) as string[],
@@ -145,7 +156,7 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
         p.status = 'completed';
       }
       // 與現值相同者不算變更
-      if (p.title === item!.title) p.title = '';
+      p.title = ''; // AI 不可改既有待辦的名稱，要改由使用者在畫面輸入
       if (p.phase === item!.phase) p.phase = '';
       if (p.status === item!.status) p.status = '';
       if (p.owner === item!.owner) p.owner = '';
@@ -154,6 +165,23 @@ export function normalizeAiTodo(raw: unknown, ctx: AiTodoContext, sourceText: st
     }
     return p;
   });
+}
+
+/** 使用者在畫面切換處理方式：itemId 為 null 表示新增，否則更新指定的既有待辦 */
+export function retarget(p: AiTodoProposal, target: ProjectActionItem | null, previous: ProjectActionItem | null): AiTodoProposal {
+  if (target) {
+    return {
+      ...p, kind: 'update', itemId: target.id, itemUpdatedAt: target.updatedAt, projectId: target.projectId,
+      // 只帶入明確會累加的內容，其餘欄位留空，避免把新增用的值蓋到既有待辦上
+      title: '', phase: '', status: '', owner: '', waitingOn: '', dueDate: p.dueDate === (target.dueDate || '').slice(0, 10) ? '' : p.dueDate,
+      suggestedTitle: p.kind === 'create' ? p.title : p.suggestedTitle,
+    };
+  }
+  return {
+    ...p, kind: 'create', itemId: null, itemUpdatedAt: null,
+    title: p.title || p.suggestedTitle, status: p.status && p.status !== 'completed' ? p.status : 'pending',
+    owner: p.owner || previous?.owner || '', completedDate: '', dueDateReason: '',
+  };
 }
 
 export interface AiTodoMissing {
