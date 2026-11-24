@@ -1736,6 +1736,15 @@ export function InternalTasksClient({
         <div className="flex items-center gap-2">
           {isSuperAdmin && (
             <Button
+              onClick={() => router.push('/ai-todo')}
+              variant="outline"
+              className="gap-1.5 border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 shadow-2xs font-semibold"
+            >
+              ⚡ AI 快速輸入
+            </Button>
+          )}
+          {isSuperAdmin && (
+            <Button
               onClick={() => handleOpenAI()}
               variant="outline"
               className="gap-1.5 border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shadow-2xs font-semibold"

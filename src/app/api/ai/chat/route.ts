@@ -139,15 +139,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { projectId, messages = [], customApiKey, customProvider, customModel } = body;
 
-    console.log('[DEBUG /api/ai/chat REQUEST]', {
-      customApiKeyProvided: !!customApiKey,
-      customApiKeyLength: customApiKey ? String(customApiKey).length : 0,
-      customApiKeyPrefix: customApiKey ? String(customApiKey).slice(0, 8) : null,
-      customProvider,
-      customModel,
-      projectId,
-      messagesCount: messages.length,
-    });
 
     const actionItems = await getActionItems(projectId === 'all' ? undefined : projectId);
     const projects = await getFullProjects();
@@ -324,13 +315,6 @@ ${JSON.stringify(formattedItems, null, 2)}
     let usedModel = '';
     let apiErrorMessage = '';
 
-    console.log('[DEBUG /api/ai/chat RESOLVED KEY]', {
-      hasApiKey: !!apiKey,
-      apiKeyLength: apiKey?.length,
-      apiKeyPrefix: apiKey ? apiKey.slice(0, 10) : 'NONE',
-      provider,
-      selectedModel,
-    });
 
     // 1. 若為 OpenAI (或提供 OpenAI API Key)
     if (apiKey && provider === 'openai') {
@@ -350,7 +334,6 @@ ${JSON.stringify(formattedItems, null, 2)}
           requestPayload.temperature = 0.4;
         }
 
-        console.log('[DEBUG /api/ai/chat SENDING TO OPENAI]', { model: selectedModel, payloadKeys: Object.keys(requestPayload) });
 
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -361,7 +344,6 @@ ${JSON.stringify(formattedItems, null, 2)}
           body: JSON.stringify(requestPayload),
         });
 
-        console.log('[DEBUG /api/ai/chat OPENAI RESPONSE STATUS]', res.status);
 
         if (res.ok) {
           const json = await res.json();

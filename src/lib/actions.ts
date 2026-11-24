@@ -1761,6 +1761,15 @@ function extractWbsItemId(rawNotes: string | null | undefined): string | null {
     return m && m[1] ? m[1].trim() : null;
 }
 
+/** 歷程欄位可能是陣列，也可能是舊資料的 JSON 字串；一律還原為陣列，避免更新時覆蓋既有歷程 */
+function parseHistory(raw: unknown): any[] {
+    let value = raw;
+    for (let i = 0; i < 2 && typeof value === 'string'; i++) {
+        try { value = JSON.parse(value); } catch { return []; }
+    }
+    return Array.isArray(value) ? value : [];
+}
+
 function extractAttachments(item: any): { attachments: ActionItemAttachment[]; cleanNotes: string; isPinned: boolean; meetingUrl?: string; wbsItemId: string | null } {
     let list: ActionItemAttachment[] = [];
     const rawNotes = item.notes || '';
@@ -1860,8 +1869,8 @@ export async function getActionItems(projectId?: string, preloadedProjects?: any
                 originalDueDate: item.original_due_date ? String(item.original_due_date) : null,
                 startedAt: item.started_at ? String(item.started_at) : null,
                 completedAt: item.completed_at ? String(item.completed_at) : null,
-                dueDateHistory: Array.isArray(item.due_date_history) ? item.due_date_history : (item.due_date_history ? JSON.parse(item.due_date_history) : []),
-                statusHistory: Array.isArray(item.status_history) ? item.status_history : (item.status_history ? JSON.parse(item.status_history) : []),
+                dueDateHistory: parseHistory(item.due_date_history),
+                statusHistory: parseHistory(item.status_history),
                 notes: cleanNotes,
                 lessonLearnt: item.lesson_learnt || '',
                 attachments,
@@ -2020,6 +2029,7 @@ export async function createActionItem(data: {
     wbsItemId?: string | null;
     updatedAt?: string | null;
     operator?: AuditOperator;
+    skipUserDraft?: boolean; // true 時不因等候對象自動建立人員
 }) {
     const supabase = getSupabaseClient();
     try {
@@ -2057,8 +2067,8 @@ export async function createActionItem(data: {
             original_due_date: data.dueDate || null,
             started_at: data.startedAt ? new Date(data.startedAt).toISOString() : (isStarting ? nowIso : null),
             completed_at: initialStatus === 'completed' ? (data.completedAt || nowIso) : null,
-            due_date_history: JSON.stringify([]),
-            status_history: JSON.stringify(initialStatusHistory),
+            due_date_history: [],
+            status_history: initialStatusHistory,
             notes: cleanNotes,
             lesson_learnt: data.lessonLearnt || '',
             created_at: nowIso,
@@ -2150,7 +2160,7 @@ export async function createActionItem(data: {
 
         // 若有指派等候對象且尚未建立為成員，自動建置初版人員資料
         let createdUserDraft: User | undefined = undefined;
-        if (data.waitingOn) {
+        if (data.waitingOn && !data.skipUserDraft) {
             const draftRes = await ensureUserDraftIfNeeded(data.waitingOn, data.owner);
             if (draftRes?.created && draftRes.user) {
                 createdUserDraft = draftRes.user;
@@ -2191,6 +2201,7 @@ export async function updateActionItem(id: string, data: Partial<{
     dueDateReasonCategory: string;
     updatedAt: string | null;
     operator?: AuditOperator;
+    skipUserDraft?: boolean; // true 時不因等候對象自動建立人員
 }>) {
     const supabase = getSupabaseClient();
     try {
@@ -2269,9 +2280,7 @@ export async function updateActionItem(id: string, data: Partial<{
 
             // 若日期有實質變更，自動追加到 due_date_history
             if (oldDueDate !== newDueDate && (oldDueDate || newDueDate)) {
-                const history = Array.isArray(existing.due_date_history) 
-                    ? [...existing.due_date_history] 
-                    : [];
+                const history = parseHistory(existing.due_date_history);
                 const delayDays = (oldDueDate && newDueDate)
                     ? Math.round((new Date(newDueDate).getTime() - new Date(oldDueDate).getTime()) / (1000 * 60 * 60 * 24))
                     : 0;
@@ -2284,21 +2293,19 @@ export async function updateActionItem(id: string, data: Partial<{
                     ...(reason ? { reason } : {}),
                     ...(data.dueDateReasonCategory ? { reasonCategory: data.dueDateReasonCategory } : {}),
                 });
-                updatePayload.due_date_history = JSON.stringify(history);
+                updatePayload.due_date_history = history;
             }
         }
 
         // ─── 自動追蹤：status 變更歷程 ───
         if (data.status !== undefined && data.status !== existing.status) {
-            const statusHist = Array.isArray(existing.status_history) 
-                ? [...existing.status_history] 
-                : [];
+            const statusHist = parseHistory(existing.status_history);
             statusHist.push({
                 from: existing.status,
                 to: data.status,
                 at: nowIso,
             });
-            updatePayload.status_history = JSON.stringify(statusHist);
+            updatePayload.status_history = statusHist;
 
             // 自動偵測開始日：首次離開 pending → 記錄 started_at
             if (!existing.started_at && existing.status === 'pending' && 
@@ -2395,7 +2402,7 @@ export async function updateActionItem(id: string, data: Partial<{
 
         // 若有指派等候對象且尚未建立為成員，自動建置初版人員資料
         let createdUserDraft: User | undefined = undefined;
-        if (data.waitingOn) {
+        if (data.waitingOn && !data.skipUserDraft) {
             const draftRes = await ensureUserDraftIfNeeded(data.waitingOn, data.owner || existing.owner);
             if (draftRes?.created && draftRes.user) {
                 createdUserDraft = draftRes.user;
@@ -2423,8 +2430,8 @@ export async function updateActionItem(id: string, data: Partial<{
                 originalDueDate: updated.original_due_date ? String(updated.original_due_date) : null,
                 startedAt: updated.started_at ? String(updated.started_at) : null,
                 completedAt: updated.completed_at ? String(updated.completed_at) : null,
-                dueDateHistory: Array.isArray(updated.due_date_history) ? updated.due_date_history : [],
-                statusHistory: Array.isArray(updated.status_history) ? updated.status_history : [],
+                dueDateHistory: parseHistory(updated.due_date_history),
+                statusHistory: parseHistory(updated.status_history),
                 notes: extractedNotes,
                 lessonLearnt: updated.lesson_learnt || '',
                 attachments: extractedAtt,
