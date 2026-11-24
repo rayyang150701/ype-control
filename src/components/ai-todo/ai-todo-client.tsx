@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Copy, Loader2, Save, Sparkles, Trash2 } from 'lucide-react';
@@ -14,11 +14,12 @@ import {
   AI_TODO_MAX_CHARS, AI_TODO_PHASES, AI_TODO_STATUSES, AI_TODO_STATUS_LABEL,
   buildFollowUp, findMissing, openItems, retarget, taipeiToday, type AiTodoKind, type AiTodoProposal,
 } from '@/lib/ai-todo';
+import { formTemplate, isBlankForm, isForm, parseForm } from '@/lib/ai-todo-form';
 import { applyAiTodo, deleteAiTodoDraft, listAiTodoDrafts, saveAiTodoDraft, type AiTodoDraft } from '@/lib/ai-todo-actions';
 import type { ProjectActionItem } from '@/types';
 
 type ProjectLite = { id: string; name: string; caseNumber: string };
-interface Props { projects: ProjectLite[]; items: ProjectActionItem[]; people: string[]; clientNames: string[] }
+interface Props { projects: ProjectLite[]; items: ProjectActionItem[]; people: string[]; clientNames: string[]; companyOf: Record<string, string> }
 /** decision：使用者對「新增或合併」的回答；空值代表尚未回答，不可寫入 */
 type Row = AiTodoProposal & { checked: boolean; decision: '' | 'new' | 'merge'; expanded?: boolean; saved?: boolean; error?: string; allowNewPerson?: boolean };
 type MissingLevel = 'required' | 'suggested' | undefined;
@@ -44,11 +45,18 @@ function Field({ label, missing, children }: { label: string; missing?: MissingL
   );
 }
 
-export function AiTodoClient({ projects, items, people, clientNames }: Props) {
+export function AiTodoClient({ projects, items, people, clientNames, companyOf }: Props) {
   const { isSuperAdmin, isLoaded, currentUser, setIsLoginDialogOpen } = useAdmin();
   const { toast } = useToast();
   const router = useRouter();
-  const [text, setText] = useState('');
+  const [mode, setMode] = useState<'form' | 'free'>('form');
+  const [formText, setFormText] = useState(formTemplate());
+  const [freeText, setFreeText] = useState('');
+  const text = mode === 'form' ? formText : freeText;
+  const setText = mode === 'form' ? setFormText : setFreeText;
+  const blank = mode === 'form' ? isBlankForm(formText) : !freeText.trim();
+  const dirty = !isBlankForm(formText) || !!freeText.trim();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [messageDate, setMessageDate] = useState(taipeiToday());
   const [rows, setRows] = useState<Row[]>([]);
   const [parsed, setParsed] = useState(false);
@@ -57,7 +65,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
   const [draftError, setDraftError] = useState('');
   const [tab, setTab] = useState<'overdue' | 'week' | 'all'>('overdue');
 
-  const reset = () => { setText(''); setMessageDate(taipeiToday()); setRows([]); setParsed(false); };
+  const reset = () => { setFormText(formTemplate()); setFreeText(''); setMessageDate(taipeiToday()); setRows([]); setParsed(false); };
 
   const refreshDrafts = async () => {
     try {
@@ -75,11 +83,11 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
   }, []);
   // 有未處理的文字時，關閉或重新整理前提醒
   useEffect(() => {
-    if (!text.trim()) return;
+    if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [text]);
+  }, [dirty]);
   useEffect(() => { if (isSuperAdmin) refreshDrafts(); }, [isSuperAdmin]);
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -107,8 +115,58 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
     all: open,
   };
 
+  // 有疑慮的（原文對不上、缺必填）與會改到既有待辦的，預設不勾，需人工確認
+  const showProposals = (proposals: AiTodoProposal[]) => {
+    setRows(proposals.map((p): Row => {
+      // 明講「新增」就不再詢問；明講更新／完成則先帶入 AI 找到的那筆，仍需自己勾選
+      const sure = p.kind === 'create' && (!p.relatedItemId || p.explicit);
+      const merge = p.explicit && (p.kind === 'update' || p.kind === 'complete');
+      // 框架填寫時有對不到的內容，也要看過再勾
+      const doubt = mode === 'form' && !!p.question;
+      return { ...p, decision: sure ? 'new' : merge ? 'merge' : '', expanded: doubt, checked: sure && !doubt && p.evidenceVerified && !findMissing(p).required.length };
+    }));
+    setParsed(true);
+  };
+
+  const focusAt = (pos: number) =>
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(pos, pos); });
+
+  // 再加一筆：沿用上一筆的專案
+  const addBlock = () => {
+    const project = (formText.match(/^\s*專案\s*[:：].*$/gm) || []).pop()?.replace(/^\s*專案\s*[:：]/, '').trim() || '';
+    const head = `${formText.trimEnd()}\n\n`;
+    const block = formTemplate(project);
+    setFormText(head + block);
+    setRows([]);
+    setParsed(false);
+    focusAt(head.length + (project ? block.indexOf('\n事項：') + 4 : block.indexOf('\n')));
+  };
+
+  const onFormKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.shiftKey || mode !== 'form') return;
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); if (!blank && messageDate && !busy) parse(); return; }
+    // 在行尾按 Enter：跳到下一題，不插入空行
+    const el = e.currentTarget;
+    const pos = el.selectionStart;
+    if (pos !== el.selectionEnd || el.value[pos] !== '\n') return;
+    const next = el.value.slice(pos + 1).split('\n')[0];
+    if (!isForm(next)) return;
+    e.preventDefault();
+    focusAt(pos + 1 + next.length);
+  };
+
   const parse = async () => {
     if (pending.some((r) => r.checked) && !window.confirm('還有未寫入的項目，重新整理會清掉，要繼續嗎？')) return;
+    if (mode === 'form') {
+      try {
+        showProposals(parseForm(formText, messageDate, {
+          projects, items, owners, people: Array.from(peopleSet), companyOf, speaker: currentUser?.displayName || '',
+        }));
+      } catch (e: any) {
+        toast({ title: '無法帶入', description: e.message, variant: 'destructive' });
+      }
+      return;
+    }
     setBusy('parse');
     try {
       const res = await fetch('/api/ai/parse-todo', {
@@ -118,14 +176,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || '整理失敗');
-      // 有疑慮的（原文對不上、缺必填）與會改到既有待辦的，預設不勾，需人工確認
-      setRows((json.proposals as AiTodoProposal[]).map((p): Row => {
-        // 明講「新增」就不再詢問；明講更新／完成則先帶入 AI 找到的那筆，仍需自己勾選
-        const sure = p.kind === 'create' && (!p.relatedItemId || p.explicit);
-        const merge = p.explicit && (p.kind === 'update' || p.kind === 'complete');
-        return { ...p, decision: sure ? 'new' : merge ? 'merge' : '', checked: sure && p.evidenceVerified && !findMissing(p).required.length };
-      }));
-      setParsed(true);
+      showProposals(json.proposals);
       router.refresh();
     } catch (e: any) {
       toast({ title: '整理失敗', description: e.message, variant: 'destructive' });
@@ -181,8 +232,10 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
   };
 
   const loadDraft = (d: AiTodoDraft) => {
-    if (text.trim() && text !== d.content && !window.confirm('輸入框已有文字，要用草稿取代嗎？')) return;
-    setText(d.content);
+    if (dirty && text !== d.content && !window.confirm('輸入框已有文字，要用草稿取代嗎？')) return;
+    const toForm = isForm(d.content);
+    setMode(toForm ? 'form' : 'free');
+    (toForm ? setFormText : setFreeText)(d.content);
     setMessageDate(d.messageDate);
     setRows([]);
     setParsed(false);
@@ -201,34 +254,51 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
   return (
     <div className="mx-auto max-w-5xl space-y-5 pb-16">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">AI 快速輸入待辦</h1>
+        <h1 className="text-xl font-bold">快速輸入待辦</h1>
         <Link href="/internal-tasks" className="text-sm text-blue-700 hover:underline">回專案待辦</Link>
       </div>
 
       <section className="space-y-3 rounded-lg border bg-white p-3 sm:p-4">
+        <div className="flex flex-wrap gap-2">
+          {([['form', '框架填寫'], ['free', '貼對話／口述（AI）']] as const).map(([k, label]) => (
+            <Button key={k} size="sm" aria-pressed={mode === k} variant={mode === k ? 'default' : 'outline'} disabled={!!busy} onClick={() => { if (k !== mode) { setMode(k); setRows([]); setParsed(false); } }}>{label}</Button>
+          ))}
+        </div>
         <Textarea
+          ref={inputRef}
+          onKeyDown={onFormKey}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // 題目內容改了就收掉舊結果，避免寫入改之前的內容
+            if (mode === 'form') { setRows([]); setParsed(false); }
+          }}
           maxLength={AI_TODO_MAX_CHARS}
-          rows={8}
+          rows={mode === 'form' ? 9 : 8}
           aria-label="貼上或口述的內容"
           placeholder="電腦：貼上 LINE 或社群對話。手機：點這裡，再按鍵盤上的麥克風口述。"
           className="text-base"
         />
-        <p className="text-xs text-slate-600">口述範例：「新增，核一廠，提供施工計畫書，等候 James，負責億威電子，12 月 4 號前完成」</p>
+        {mode === 'form' && (
+          <p className="text-xs text-slate-600">
+            直接在題目後面輸入或口述，按 Enter 跳下一題，Ctrl+Enter 帶入；不填的留空。專案、人名、單位可打簡稱；期限可打「12/4」「下週三」「3天後」「月底」。
+          </p>
+        )}
+        {mode === 'free' && <p className="text-xs text-slate-600">口述範例：「新增，核一廠，提供施工計畫書，等候 James，負責億威電子，12 月 4 號前完成」</p>}
         <div className="flex flex-wrap items-end gap-2">
           <Field label="訊息日期（換算「明天、下週三」用）">
             <Input type="date" value={messageDate} onChange={(e) => setMessageDate(e.target.value)} className="w-44" />
           </Field>
-          <Button onClick={parse} disabled={!text.trim() || !messageDate || !!busy} className="gap-1.5">
-            {busy === 'parse' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}整理
+          <Button onClick={parse} disabled={blank || !messageDate || !!busy} className="gap-1.5">
+            {busy === 'parse' ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === 'free' && <Sparkles className="h-4 w-4" />}{mode === 'form' ? '帶入' : '整理'}
           </Button>
-          <Button variant="outline" onClick={saveDraft} disabled={!text.trim() || !messageDate || !!busy} className="gap-1.5">
+          {mode === 'form' && <Button variant="outline" onClick={addBlock} disabled={blank || !!busy}>再加一筆</Button>}
+          <Button variant="outline" onClick={saveDraft} disabled={blank || !messageDate || !!busy} className="gap-1.5">
             <Save className="h-4 w-4" />存草稿
           </Button>
           <Button variant="ghost" onClick={reset} disabled={!!busy}>清空</Button>
         </div>
-        <p className="text-xs text-muted-foreground">按「整理」會把這段文字，以及專案名稱、未完成待辦與人員名單送到 AI 服務。確認前不會寫入資料。</p>
+        <p className="text-xs text-muted-foreground">{mode === 'form' ? '框架填寫不使用 AI。' : '按「整理」會把這段文字，以及專案名稱、未完成待辦與人員名單送到 AI 服務。'}確認前不會寫入資料。</p>
         {text.length >= AI_TODO_MAX_CHARS && <p className="text-xs font-semibold text-rose-600">已達 {AI_TODO_MAX_CHARS} 字上限，超過的部分沒有貼入，請分段處理。</p>}
         {draftError && <p className="text-xs text-amber-700">{draftError}</p>}
         {drafts.length > 0 && (
@@ -297,7 +367,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                   原文：「{r.evidence || '（無）'}」
                   {!r.evidenceVerified && <span className="ml-1 font-semibold text-rose-600">⚠️ 在原文找不到這段，請自行核對</span>}
                 </p>
-                {r.question && <p className="text-sm text-rose-700">{r.question}</p>}
+                {r.question && <p className="break-words text-sm text-rose-700">{r.question}</p>}
 
                 <fieldset disabled={!!busy || r.saved} className="min-w-0 space-y-3">
                   {r.kind !== 'unclear' && !r.saved && (
@@ -306,7 +376,7 @@ export function AiTodoClient({ projects, items, people, clientNames }: Props) {
                         {r.decision
                           ? `處理方式（可改）${related && r.decision === 'new' ? `：另有相近待辦「${related.title}」` : ''}`
                           : related
-                          ? `AI 找到相近的待辦「${related.title}」。這段內容要合併進現有待辦，還是新增一筆？`
+                          ? `找到相近的待辦「${related.title}」。這段內容要合併進現有待辦，還是新增一筆？`
                           : '這段內容要合併進現有待辦，還是新增一筆？'}
                       </p>
                       <div className="flex flex-wrap gap-2">

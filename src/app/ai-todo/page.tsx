@@ -14,6 +14,7 @@ export default async function AiTodoPage() {
       projects={projects.map(({ id, name, caseNumber }) => ({ id, name, caseNumber }))}
       items={items}
       people={users.map((u) => u.displayName).filter(Boolean)}
+      companyOf={Object.fromEntries(users.filter((u) => u.displayName && u.clientName).map((u) => [u.displayName.trim(), u.clientName!.trim()]))}
       clientNames={clients.map((c) => c.name).filter(Boolean)}
     />
   );
