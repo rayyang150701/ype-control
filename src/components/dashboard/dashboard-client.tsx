@@ -459,8 +459,7 @@ export function DashboardClient({ initialSubProjects }: DashboardClientProps) {
 
       <LoginDialog 
         isOpen={isLoginDialogOpen} 
-        setIsOpen={setIsLoginDialogOpen} 
-        onLoginSuccess={() => setIsAdmin(true)} 
+        setIsOpen={setIsLoginDialogOpen}
       />
     </div>
   );
