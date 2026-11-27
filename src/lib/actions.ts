@@ -115,8 +115,13 @@ export async function loginUser(credentials: { accountOrEmail: string; password:
 
     const cleanAccount = accountOrEmail.trim();
 
-    // 1. 系統最高管理員萬能備援帳號
-    if ((cleanAccount.toLowerCase() === 'admin' || cleanAccount.toLowerCase() === 'admin@emmt.com.tw') && password === 'emmt12345') {
+    // 1. 系統最高管理員備援帳號：密碼放在環境變數 ADMIN_FALLBACK_PASSWORD，未設定時停用
+    const fallbackPassword = process.env.ADMIN_FALLBACK_PASSWORD;
+    if (
+        fallbackPassword &&
+        (cleanAccount.toLowerCase() === 'admin' || cleanAccount.toLowerCase() === 'admin@emmt.com.tw') &&
+        password === fallbackPassword
+    ) {
         return {
             success: true,
             user: {
